@@ -8,12 +8,15 @@ import Foundation
 //
 // Streams en_short.wav to one session per code and prints what came back.
 
-let apiKey = loadAPIKey()
+// Arguments before the key: called with none, the probe explains itself and
+// exits without needing Secrets.plist — which is also what lets the launcher
+// be smoke-checked offline (GitHub #21).
 let codes = Array(CommandLine.arguments.dropFirst())
 guard !codes.isEmpty else {
     fputs("usage: targetprobe <lang-code> [more codes]\n", stderr)
     exit(2)
 }
+let apiKey = loadAPIKey()
 let pcm = loadWAV("TestAudio/en_short.wav")
 
 for code in codes {
