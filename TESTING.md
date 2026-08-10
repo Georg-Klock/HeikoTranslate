@@ -148,6 +148,23 @@ that home speech happened.
 | L1.61 | A settled stale context, not merely an unsettled tally | Expires as a whole, per-session evidence included | **R2** |
 | L1.62 | A provisional translator with PCM already queued | No playback — irreversible audio needs a committed turn, not a guess | **R1** |
 
+A corroborated home settle outranks the home session's output (build 2.3.48
+device evidence, 2026-08-10). The codes settled on HOME and the partner
+session's own votes agreed, yet `noteOutputs` consults `homeIsRealTranslation`
+first and its size ratio kept reading the home session's streamed echo as a
+real translation: the direction flipped six times in four seconds while the
+speaker was still talking. The bubble was still correct and no audio played
+early — the committed-audio gate held — so this was a live-line defect, not a
+wrong-side one. Below `echoMinTokens` (4) an echo prefix cannot be *detected*
+as an echo, so the early streamed chunks fall straight through to the ratio.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.64 | The measured 2.3.48 code sequence, then both outputs streamed word by word | Never reads foreign, settles the side once — the reproduced flip was 3 oscillations in the first 3 chunks | **R2/R3** |
+| L1.64b | `commit` on that same state | RIGHT/home via the partner session — live line and bubble cannot disagree (L1.47g's doctrine) | **R2** |
+| L1.64c | L1.20's shape: codes settled home, **no** partner votes, a substantial home translation | LEFT — uncorroborated codes still lose to session behaviour; corroboration is the whole discriminator | **R2** |
+| L1.64d | A foreign settle | Unaffected — the existing veto and its narrow crossed yield still govern | **R2** |
+
 Speech end, mic-aware (#21 precedent, 2026-08-10). `SpeechEndPolicy` is pure,
 so L1 and the L3 harness run the same rule the app runs. The transcript-idle
 timer proposes; the microphone disposes.

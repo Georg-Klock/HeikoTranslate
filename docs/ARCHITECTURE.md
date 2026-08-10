@@ -98,6 +98,20 @@ translator session's audio is played.
    two strays were reproduced committing an English echo as Heiko's own
    bubble. Per-session evidence expires with the global tally, settled or
    not; a dead context must not lift a live veto.
+
+   The same corroboration runs in the other direction: when the codes settle
+   on **home** and the partner session's own votes agree, the home session's
+   output no longer gets to overrule them. Device evidence (build 2.3.48,
+   2026-08-10) had exactly that state — codes settled `de`, partner session
+   voting home nine times, home session mis-hearing nine times — and the
+   direction still flipped six times in four seconds, because
+   `homeIsRealTranslation` is consulted first and an echo shorter than
+   `echoMinTokens` cannot be recognised as an echo, so the size ratio decided
+   each streamed chunk. This is deliberately *not* "a home settle wins":
+   L1.20 is a measured turn where the codes lie about home and the home
+   session's substantial translation is right to beat them — and there the
+   partner session never votes at all. One witness can be the mis-hearing
+   session; two agreeing cannot both be.
 5. Pre-commit a direction is **provisional and re-derivable**. Streaming can
    set `.foreignSpoken` from an echo prefix that arrives before the votes
    exposing it, so a direction whose evidence no longer holds is cleared

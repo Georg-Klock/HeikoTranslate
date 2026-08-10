@@ -305,6 +305,46 @@ struct TurnLogic {
             && partnerHeardHome
     }
 
+    /// The mirror of `partnerHeardHome`: the HOME session's own votes favour
+    /// the partner language, by the same strict-plurality-plus-quorum bar.
+    /// This is the mis-hearing half of #75 — the session that reads German as
+    /// Spanish and settles the codes on it.
+    var homeHeardPartner: Bool {
+        guard let tally = sessionVotes[home],
+              let partnerCount = tally[partner.rawValue],
+              partnerCount >= Self.partnerCorroborationQuorum else { return false }
+        return tally.allSatisfy { $0.key == partner.rawValue || $0.value < partnerCount }
+    }
+
+    /// Two independent witnesses agree the HOME language was spoken: the
+    /// pooled codes settled on home, and the partner session's own votes say
+    /// home too, by the same quorum that governs every other use of that
+    /// evidence.
+    ///
+    /// Measured on device 2026-08-10, build 2.3.48, one German turn. The
+    /// codes settled on `de` 2.0s in and never moved; the partner session
+    /// reported home nine times; the home session reported the partner
+    /// language nine times — its own mis-hearing, the #75 shape. Yet
+    /// `noteOutputs` consults `homeIsRealTranslation` FIRST, and that
+    /// size-ratio judgement kept declaring the home session's echo a real
+    /// translation as it streamed. Direction flipped six times in four
+    /// seconds — foreign, home, foreign, home, foreign, home — before commit
+    /// landed it correctly. The bubble was right and no audio played early
+    /// (the committed-audio gate held), but the live line changed sides six
+    /// times while the speaker was still talking.
+    ///
+    /// So the home session's output cannot outrank a home settle that the
+    /// partner corroborates. This is deliberately NOT "a home settle wins":
+    /// L1.20 is a measured case where the codes lie about home and the home
+    /// session's substantial translation is right to beat them — and there
+    /// the partner session never votes at all, so `partnerHeardHome` is
+    /// false and that path is untouched. Corroboration is the whole
+    /// discriminator: one witness can be the mis-hearing session, two
+    /// agreeing cannot both be.
+    private var homeSettleCorroboratedByPartner: Bool {
+        spokenLang == home && partnerHeardHome
+    }
+
     /// A foreign-language veto may yield only for the full measured crossed
     /// shape. A high-overlap home output is not used to guess a side; here it
     /// verifies the specific mis-hearing mechanism that makes the global
@@ -421,7 +461,12 @@ struct TurnLogic {
         // emitted, while the service was flushing held audio for the session
         // that actually translated. GitHub #26.
         guard !hasCommitted else { return }
-        if Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
+        // A home settle the partner corroborates outranks the home session's
+        // own output (see `homeSettleCorroboratedByPartner`). Without this the
+        // size ratio re-decides on every streamed chunk and the direction
+        // oscillates against two agreeing witnesses. L1.64.
+        if !homeSettleCorroboratedByPartner,
+           Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
                                       spokenLang: spokenLang,
                                       partnerHomeEvidence: partnerHeardHome) {
             direction = .foreignSpoken
@@ -652,7 +697,12 @@ struct TurnLogic {
             (outputs[lang] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        if Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
+        // Same gate as `noteOutputs`, and here for the same reason the two
+        // share `homeIsRealTranslation` at all: the live line and the
+        // committed bubble must not be able to disagree about the side
+        // (L1.47g's doctrine). L1.64b.
+        if !homeSettleCorroboratedByPartner,
+           Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
                                       spokenLang: spokenLang,
                                       partnerHomeEvidence: partnerHeardHome) {
             // Set before reading the transcript — `bestTranscript` follows
