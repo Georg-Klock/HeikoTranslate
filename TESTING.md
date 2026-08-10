@@ -499,6 +499,13 @@ whether a problem is *ours* or *theirs*: `Tools/livetest.py` (one-shot
 probes) and `Tools/l2expiry.sh` (session-lifetime probe, ~10–20 min,
 compiled against the app's real `GeminiLiveSession`).
 
+The one-shot probe **exits nonzero when the API misbehaved** — a server
+error, a setup that was never acknowledged, an empty transcript, or no
+translated output (#20; it used to print all of that and exit 0, so a
+script checking `$?` saw green on a completely failed probe). The pass/fail
+predicate is pure and pinned by `Tools/tests/livetest-validation.py`, which
+needs no network and runs with the other L0 scripts.
+
 | ID | Check | Status |
 |---|---|---|
 | L2.1 | Handshake + setup accepted | ✅ verified |
