@@ -4,6 +4,21 @@ A one-button iPhone app for live speech translation — English↔German and
 Mexican Spanish↔German, direction detected automatically — built as a gift
 for Heiko. Voice-to-voice translation runs through Google's Gemini Live API.
 
+## What this is
+
+Heiko Translate is also an experiment. I work with engineers every day at
+my job; this project tests how far I can get without one, directing AI to
+design, build, test, and ship a real iOS app on my own, with no engineer's
+judgment anywhere in the loop.
+
+The goal is to get to something good enough to *live with*: for someone
+to carry it, use it for a few real days, and have it hold up as a
+high-level prototype that almost passes for a shipped application, not a
+demo. The invariants in `SPEC.md`, the test levels in `TESTING.md`, and the
+release process in `docs/release.md` aren't process for its own sake;
+they're the actual experiment. "AI wrote good code" only means something if
+it can survive a few real days in someone's pocket.
+
 This file is **setup only**. The other documents each own one thing:
 
 | Document | Owns |
