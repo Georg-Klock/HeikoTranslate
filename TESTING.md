@@ -120,9 +120,54 @@ PR, and stating the count in the PR body, is the gate.
 | L1.47c | A one-token identical output ("Navigator") | Still a translation — cognates, numbers and names stay LEFT | **R2** |
 | L1.47d | A third language's long translations in both sessions | LEFT via home — a real translation shares no tokens with the heard text | **R2** |
 | L1.47e | Codes settled on a language that is NEITHER side | Still vetoed — no session translated into the reader's language | **R3** |
-| L1.47f | A partner output that is itself the echo, or with nothing heard to judge against | Veto holds — the yield needs positive proof of translation | **R2/R3** |
+| L1.47f | A partner output that is itself the echo, or a settle with no partner-session votes at all | Veto holds — the yield needs positive evidence that HOME was spoken, not a plausible-looking translation | **R2/R3** |
 | L1.47g | `noteOutputs` on the same #75 data | homeSpoken after the confirm window — streaming and commit agree | **R2** |
-| L1.47h | Both sessions misread half the German, crossed (after-run 1) | RIGHT — echo judged against the union, translation against its own transcript | **R1/R2** |
+| L1.47h | Both sessions misread half the German, crossed (after-run 1) | RIGHT — the union echo test sees the round trip for what it is, and the crossed per-session votes carry the yield | **R1/R2** |
+
+Routing on per-session evidence (#83/#84, 2026-08-10). The tell is no longer
+token overlap — which was letting plurals and apostrophes decide who spoke —
+but WHO reported which language. `noteInputLanguage` now records the
+reporting session, and a yield needs the partner's own reading to corroborate
+that home speech happened.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.48 | An English paraphrase-echo of English speech (#83's five-row table) | All five drop — before the fix, three committed the partner's speech as Heiko's | **R2** |
+| L1.49 | A genuine home translation that preserves names: 0.80 token overlap, codes settled | Commits — names and numbers surviving translation are what a CORRECT translation looks like | **R2** |
+| L1.49b | The same turn with the codes not yet settled | Commits — the shipped rule resolved home-spoken off the partner echo and put the foreign sentence in Heiko's bubble | **R1/R2** |
+| L1.50 | Run 6's real event order: the echo prefix arrives before the votes that expose it | The provisional foreign direction clears and re-derives instead of latching | **R2** |
+| L1.51 | Four output tokens judged against ONE heard token | Not an echo — the token floor is two-sided, as documented since #75 | **R2** |
+| L1.54 | One stray partner vote for home against a fresh foreign settle | Veto holds — corroboration needs a quorum, a lone stray is not testimony | **R2** |
+| L1.54b | A quorum of home votes amid a run of unmapped codes ("ja"/"pt") | Veto holds — unmapped codes are competing testimony from the same witness | **R2** |
+| L1.55 | Partner-home votes from a dead context (gap > `voteExpiry`) | They expire with the global tally — stale evidence cannot lift a fresh veto | **R2** |
+| L1.56 | A provisional homeSpoken, then a late foreign settle arms the veto | The direction clears — `translator` must not keep naming the partner session | **R1/R2** |
+| L1.57 | Run 6 interleaved exactly as the service sees it, `noteOutputs` re-run per code | provisional-foreign → cleared → homeSpoken; streaming and commit agree | **R2** |
+| L1.58 | Two mapped home codes from the partner session | Session-local noise — not enough to override a settled foreign veto | **R2** |
+| L1.59 | A partner-home quorum that arrives only AFTER a real foreign verdict | No override — the #75 signal is evidence that helped FORM the settle | **R2** |
+| L1.60 | Crossed evidence whose quorum completes after the partner-language settle | Still valid — the partner had already testified HOME before that settle formed | **R2** |
+| L1.61 | A settled stale context, not merely an unsettled tally | Expires as a whole, per-session evidence included | **R2** |
+| L1.62 | A provisional translator with PCM already queued | No playback — irreversible audio needs a committed turn, not a guess | **R1** |
+
+Speech end, mic-aware (#21 precedent, 2026-08-10). `SpeechEndPolicy` is pure,
+so L1 and the L3 harness run the same rule the app runs. The transcript-idle
+timer proposes; the microphone disposes.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.52 | The idle timer fires 148ms after a loud mic buffer, speaker mid-sentence | Release defers — the mic outranks a lagging transcript | **R5** |
+| L1.52b | The same turn once speech genuinely ends | The deferred release proceeds | **R5** |
+| L1.52c | A normal quiet release (≥1s since any loud buffer) | Zero added latency — release stays on the original schedule | **R5** |
+| L1.52d | No loud mic buffer this session (silence, or a dead route) | The gate holds nothing | **R5** |
+| L1.53 | A restaurant-loud room — babble the RMS floor was never calibrated against | Defers only to `maxMicExtension`, then degrades to the OLD behaviour | **R5** |
+| L1.53b | A breath pause with speech resuming into the deferral | Stays deferred until the speaker actually finishes | **R5** |
+
+Commit diagnostics. Evidence only — these must never influence which
+transcript `TurnLogic` commits.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.63 | The two sessions disagree on a number at commit | Both readings logged, in a deterministic order, so selection failure is distinguishable from shared mis-transcription | **diagnostic** |
+| L1.63b | An active session with no text; a transcript carrying quotes and newlines | Every active session logged and escaped, so no transcript can forge a log line; a non-active session's stale input is excluded | **diagnostic** |
 
 > Beyond the numbered rows: `FillerWordTests` / `FillerWordsFromDeviceTests` /
 > `FillerWordFalsePositiveTests` cover hesitation stripping (including the
@@ -549,9 +594,9 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 37 XCTest cases bound to the real `TurnLogic` (2026-07-29) |
+| L1 | ✅ Built and passing — 113 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy` and `GeminiLiveTranslationService` (2026-08-10) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
-| L3 | ✅ Built and passing — 56 assertions across 8 replays, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
+| L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Needs a device re-run: fixes landed for the D2 root cause (mic now opens on setupComplete and flushes pre-connect audio), D3/D4 (settle-window + straggler grace + commit gates in `TurnLogic`), D5 (output-tail no longer finalizes while the speaker is still talking), D7/D8 (goAway closes are no longer treated as intentional, so sessions actually reconnect), and D10 (all three sessions now run, so German→Spanish is possible at all) — none re-verified on a phone yet |
 
 ## What I got wrong

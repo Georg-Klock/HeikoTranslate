@@ -67,10 +67,10 @@ translator session's audio is played.
 2. Sessions stream back `inputTranscription` (detected language code +
    text — drives the live provisional line and the button glow) and
    `outputTranscription` + audio chunks (the translation).
-3. `TurnLogic.noteInputLanguage` locks the spoken language — and with it
-   the translator session — by **settling, never first-code-wins**: votes
-   are collected for a 1.5s window after the first recognized code, then
-   the plurality wins. Live replays showed a turn's opening burst can be
+3. `TurnLogic.noteInputLanguage(_:from:)` locks the spoken language — and
+   with it the translator session — by **settling, never first-code-wins**:
+   votes are collected for a 1.5s window after the first recognized code,
+   then the plurality wins. Live replays showed a turn's opening burst can be
    unanimously wrong (German after Spanish reads as "es" for ~1s before
    every session corrects itself), stragglers keep re-announcing a finished
    turn's language for ~2s after it finalizes (a grace window drops exactly
@@ -78,12 +78,50 @@ translator session's audio is played.
    counts), a stale vote tally expires after 4s so a stray code can't
    pre-expire the settle window, and the session whose target equals the
    spoken language can emit pure garbage ("ja" + a katakana transcript for
-   plain English — unrecognized codes are ignored). Only the translator
-   session's audio plays (energy-gated by RMS to skip near-silence);
-   translated audio arriving before the language settles is buffered, then
-   flushed or dropped once the translator is known, so the head of a
+   plain English — those codes cast no global vote).
+4. **Which session reported a code is itself evidence** (#83/#84,
+   2026-08-10). Alongside the global tally, `TurnLogic` keeps a per-session
+   record of that session's own votes — keyed by the raw code, so unmapped
+   ones like "ja"/"pt" compete rather than vanish. This exists because the
+   earlier tell, token overlap between an output and what was heard, was
+   deciding who spoke on the strength of plurals and apostrophes. Measured
+   across 50 kept replay logs: every mis-hearing round-trip turn shows the
+   **crossed** pattern — the home session votes the partner language
+   unanimously while the partner session, which heard the German correctly,
+   votes home — and no genuinely-foreign turn ever has the partner session
+   reading home. So a high-overlap home output counts as an echo only when
+   the partner's own reading corroborates that home speech happened, and the
+   foreign-language veto yields only for that complete crossed shape:
+   partner settle **plus** partner-home evidence that predates the settle
+   **plus** a corroborated round-trip echo. The corroboration bar is a
+   strict plurality within that session's own votes and a quorum of three —
+   two strays were reproduced committing an English echo as Heiko's own
+   bubble. Per-session evidence expires with the global tally, settled or
+   not; a dead context must not lift a live veto.
+5. Pre-commit a direction is **provisional and re-derivable**. Streaming can
+   set `.foreignSpoken` from an echo prefix that arrives before the votes
+   exposing it, so a direction whose evidence no longer holds is cleared
+   rather than latched — in both directions, since a `homeSpoken` resolved
+   before the codes arrive must also clear when a late foreign settle arms
+   the veto. Only the translator session's audio plays (energy-gated by RMS
+   to skip near-silence), and it is released **only through
+   `TurnLogic.committedTranslator`** — a pure gate that names a session only
+   after a successful commit. Playing PCM is irreversible and can speak the
+   other person's words in Heiko's voice, so a guess is never enough;
+   translated audio arriving earlier is buffered so the head of a
    translation isn't clipped.
-4. A turn finalizes when translated audio has been quiet for 0.45s
+6. **When the speaker has stopped is decided by `SpeechEndPolicy`**, pure for
+   the same reason `FinalizePolicy` is (#21): L1 and the L3 harness run the
+   rule the app runs. The transcript-idle timer proposes at 1.4s; the
+   microphone disposes. A speech-level mic buffer within 0.5s of the attempt
+   means the speaker is plausibly still going, so the release defers and
+   re-checks every 0.25s — device evidence had the idle timer firing 148ms
+   after a loud buffer, mid-sentence. Accumulated deferral is capped at 2.5s
+   so a loud room degrades to the old behaviour instead of holding a turn
+   open: the RMS floor was calibrated speech-vs-silence, not speech-vs-babble,
+   and the cap is what makes that ignorance safe. A normally-ending turn is
+   unaffected — the mic is already quiet when the timer fires.
+7. A turn finalizes when translated audio has been quiet for 0.45s
    (`outputTailTimeout`) — but never while input transcription is still
    progressing, since a pause in the translation mid-sentence is a breath,
    not the end of the turn (truncating there was the long-sentence R5
@@ -93,12 +131,15 @@ translator session's audio is played.
    server's `turnComplete` is parsed but ignored: this preview model
    doesn't send it reliably (see wire findings below), so the idle
    timeouts are the only turn-end signal.
-5. `TurnLogic.commit` enforces SPEC §5.1's gates (language known — with a
+8. `TurnLogic.commit` enforces SPEC §5.1's gates (language known — with a
    plurality fallback for short turns that never settled, something said,
    translation present, not already committed) and produces exactly one
    bubble per utterance. The committed original prefers the **translator
    session's transcript** (its target never equals the spoken language, so
-   it avoids the garbage-transcript quirk). Then per-turn state resets;
+   it avoids the garbage-transcript quirk). The commit also logs what *both*
+   sessions heard, escaped onto one line — diagnostic only, and deliberately
+   not the transcript-selection input, so a log can distinguish a selection
+   failure from a shared mis-transcription. Then per-turn state resets;
    `activePartner` (the direction memory) survives.
 
 ## Audio: full-duplex with real echo cancellation

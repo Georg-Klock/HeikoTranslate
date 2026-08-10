@@ -72,6 +72,62 @@ EOF
   fi
 done < "$PATTERNS"
 
+# --- UUIDs -----------------------------------------------------------------
+# No UUID belongs in a tracked file unless it is deliberately fake. This gate
+# exists because the pattern file did NOT catch the real one: a device
+# identifier lifted straight out of gitignored Tools/local.env sat in a test
+# fixture, passed this check, and was pushed to the public remote. A force-push
+# does not unpublish a commit, so the gate has to be structural rather than a
+# list of values anyone remembered to add.
+#
+# Rule: every UUID-shaped string in a tracked file must be on SYNTHETIC_UUIDS
+# below. Adding one is a deliberate, reviewable act — which is the point. Test
+# fixtures should look obviously invented: prefer a run of repeated nibbles
+# over anything a tool could have generated.
+SYNTHETIC_UUIDS='
+AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE
+11111111-1111-1111-1111-111111111111
+22222222-2222-2222-2222-222222222222
+'
+UUID_RE='[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}'
+uuid_hits=$(tr '\n' '\0' < "$LIST" | xargs -0 grep -InoE "$UUID_RE" 2>/dev/null)
+if [ -n "$uuid_hits" ]; then
+  while IFS= read -r allowed; do
+    [ -n "$allowed" ] || continue
+    uuid_hits=$(printf '%s\n' "$uuid_hits" | grep -viE ":$allowed\$" || true)
+  done <<EOF
+$SYNTHETIC_UUIDS
+EOF
+fi
+if [ -n "$uuid_hits" ]; then
+  echo "=== [uuid] ==="
+  echo "$uuid_hits"
+  echo "  A UUID in a tracked file is a machine or account identifier until"
+  echo "  proven otherwise. If it is genuinely invented, add it to"
+  echo "  SYNTHETIC_UUIDS in Tools/privacy-check.sh with a reason."
+  FAIL=1
+fi
+
+# Belt and braces: the machine-local values themselves must never appear in a
+# tracked file, whatever shape they are. Read from the gitignored file so this
+# check can name the value without ever containing it.
+if [ -f Tools/local.env ]; then
+  # shellcheck disable=SC1091
+  . Tools/local.env 2>/dev/null || true
+  for secret_name in DEVICE_UUID DEVELOPMENT_TEAM; do
+    eval "secret_value=\${$secret_name:-}"
+    [ -n "$secret_value" ] || continue
+    leaked=$(tr '\n' '\0' < "$LIST" | xargs -0 grep -InFi -- "$secret_value" 2>/dev/null)
+    if [ -n "$leaked" ]; then
+      echo "=== [local-env-leak: $secret_name] ==="
+      echo "$leaked"
+      echo "  This value lives in gitignored Tools/local.env. It must not be"
+      echo "  committed — pushing publishes it permanently."
+      FAIL=1
+    fi
+  done
+fi
+
 # Anything tracked under private/ is a mistake by definition: `git mv` into a
 # gitignored directory still stages the file, and ignore rules do not apply to
 # already-tracked paths. This is how paperwork ends up published inside a

@@ -239,6 +239,17 @@ the point of the project; hiding it is what would look bad.
   stages the file, and ignore rules do not apply to already-tracked paths).
   Reviewed exceptions live in `private/privacy-allow.txt`, scoped to a pattern
   AND a line so they cannot blind the check to the rest of a file.
+  **Two gates do not depend on the pattern file at all**, because the pattern
+  file is exactly what failed the one time this mattered: a device identifier
+  copied out of `Tools/local.env` into a test fixture passed the check and was
+  pushed to the public remote (2026-08-10, PR #42). So (1) **any** UUID-shaped
+  string in a tracked file fails unless it is listed in `SYNTHETIC_UUIDS` in
+  the script — invented fixtures should look invented, a run of repeated
+  nibbles rather than anything a tool could have produced; and (2) the values
+  in `Tools/local.env` are read at run time and searched for literally, so the
+  check can catch them without ever containing them. A force-push does not
+  unpublish a commit, which is why these are structural rather than a list
+  someone has to remember to extend.
 - **Run `Tools/l1.sh` before opening a PR, and put the result in the PR
   body** ("L1 90/90"). Since CI no longer runs on pull requests, this is the
   only thing standing between a branch and `main` — and unlike a CI check,
