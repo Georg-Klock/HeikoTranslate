@@ -560,6 +560,7 @@ that transient first second doesn't decide the turn.
 ```bash
 Tools/tests/build-number-windows.sh
 Tools/tests/shell-syntax.sh
+Tools/tests/l1-gate-regenerates.sh
 ```
 
 Runs in a couple of seconds and needs nothing installed — it stubs `xcrun`,
@@ -586,6 +587,16 @@ over DerivedData — the old `ls | head -1` picked alphabetically, so a stale
 hash directory sorting first got *installed* while the fresh build number
 was committed. A decoy-directory case fails against the old resolution with
 exactly that symptom.
+
+`l1-gate-regenerates.sh` pins the other tooling invariant (#17): **the L1
+gate tests the project generated from this checkout.** `Tools/l1.sh` runs
+`xcodegen generate` before `xcodebuild test` — the generated project is
+gitignored and does not follow a branch switch, so a stale one can silently
+omit newly added sources and tests — and a failed generation stops the gate
+instead of testing whatever project was lying around. The cases run the
+REAL `l1.sh` against logging stubs, so the ordering is asserted on the
+script that ships, not a re-implementation. `release.sh` and `deploy.sh`
+inherit the guarantee through `l1.sh`, which they both call.
 
 The invariant under test is the one #16 established and #22 found holes in:
 **every build number that ever reaches a screen or Apple exists in exactly one
