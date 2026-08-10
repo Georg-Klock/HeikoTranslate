@@ -333,16 +333,29 @@ struct TurnLogic {
     /// (the committed-audio gate held), but the live line changed sides six
     /// times while the speaker was still talking.
     ///
-    /// So the home session's output cannot outrank a home settle that the
-    /// partner corroborates. This is deliberately NOT "a home settle wins":
-    /// L1.20 is a measured case where the codes lie about home and the home
-    /// session's substantial translation is right to beat them — and there
-    /// the partner session never votes at all, so `partnerHeardHome` is
-    /// false and that path is untouched. Corroboration is the whole
-    /// discriminator: one witness can be the mis-hearing session, two
-    /// agreeing cannot both be.
-    private var homeSettleCorroboratedByPartner: Bool {
-        spokenLang == home && partnerHeardHome
+    /// So the home session's output cannot outrank this. What it may not do
+    /// is mistake ONE witness for two. The pooled settle is not independent
+    /// of `partnerHeardHome`: `spokenLang` is derived from a tally that
+    /// already contains the partner session's votes, so a partner session
+    /// emitting a quorum of stray home codes and nothing else satisfies both
+    /// halves by itself — it carries the pooled tally to home AND clears the
+    /// quorum, with the same three votes. Requiring only those two committed
+    /// an ordinary foreign turn as Heiko's own bubble (L1.64e, caught in
+    /// review of #47).
+    ///
+    /// Independence comes from the HOME session's own reading, which no
+    /// amount of partner noise can forge: the full crossed shape, each
+    /// session reporting the other's language by its own strict plurality
+    /// and quorum. That is what the device turn had, and it is the #75
+    /// pattern this evidence was gathered for.
+    ///
+    /// Deliberately NOT "a home settle wins": L1.20 is a measured case where
+    /// the codes lie about home and the home session's substantial
+    /// translation is right to beat them. There the home session is reading
+    /// HOME, not the partner language, so the crossed shape never forms and
+    /// that path is untouched (L1.64c).
+    private var homeSettleWithCrossedEvidence: Bool {
+        spokenLang == home && homeHeardPartner && partnerHeardHome
     }
 
     /// A foreign-language veto may yield only for the full measured crossed
@@ -461,11 +474,11 @@ struct TurnLogic {
         // emitted, while the service was flushing held audio for the session
         // that actually translated. GitHub #26.
         guard !hasCommitted else { return }
-        // A home settle the partner corroborates outranks the home session's
-        // own output (see `homeSettleCorroboratedByPartner`). Without this the
-        // size ratio re-decides on every streamed chunk and the direction
-        // oscillates against two agreeing witnesses. L1.64.
-        if !homeSettleCorroboratedByPartner,
+        // A home settle backed by the full crossed shape outranks the home
+        // session's own output (see `homeSettleWithCrossedEvidence`). Without
+        // it the size ratio re-decides on every streamed chunk and the
+        // direction oscillates against two agreeing witnesses. L1.64.
+        if !homeSettleWithCrossedEvidence,
            Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
                                       spokenLang: spokenLang,
                                       partnerHomeEvidence: partnerHeardHome) {
@@ -701,7 +714,7 @@ struct TurnLogic {
         // share `homeIsRealTranslation` at all: the live line and the
         // committed bubble must not be able to disagree about the side
         // (L1.47g's doctrine). L1.64b.
-        if !homeSettleCorroboratedByPartner,
+        if !homeSettleWithCrossedEvidence,
            Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
                                       spokenLang: spokenLang,
                                       partnerHomeEvidence: partnerHeardHome) {

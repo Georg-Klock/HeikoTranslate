@@ -1220,6 +1220,32 @@ final class TurnLogicTests: XCTestCase {
         XCTAssertEqual(bubble?.isHome, false, "L1.20 must be untouched")
     }
 
+    /// L1.64e — the pooled settle is NOT an independent witness. `spokenLang`
+    /// is settled from the pooled tally, and that tally already contains the
+    /// partner session's votes, so a partner session that emits a quorum of
+    /// stray home codes and nothing else satisfies BOTH halves by itself: it
+    /// carries the pooled tally to home and clears `partnerHeardHome` with the
+    /// same three votes. Nothing about that is corroboration.
+    ///
+    /// This is an ordinary foreign turn — English spoken, the home session
+    /// producing a real German translation, the partner session echoing the
+    /// English — and it must still commit LEFT via the home session (L1.20's
+    /// rule). Caught in review of #47.
+    func testL1_64e_partnerNoiseAloneIsNotCorroboration() {
+        var l = TurnLogic(home: .de, partner: .en)
+        settle(&l, "de", at: t(0), from: .en)      // three stray partner votes, nothing else
+        XCTAssertEqual(l.spokenLang, .de, "the stray votes carry the pooled tally by themselves")
+        XCTAssertTrue(l.partnerHeardHome, "…and clear the quorum with the very same votes")
+        XCTAssertFalse(l.homeHeardPartner, "the home session never reported the partner language")
+
+        let bubble = l.commit(inputs: [.en: "Where is the station, please?"],
+                              outputs: [.de: "Wo ist der Bahnhof, bitte?",
+                                        .en: "Where is the station, please?"])
+        XCTAssertEqual(bubble?.isHome, false,
+                       "a real home translation still means foreign speech (L1.20)")
+        XCTAssertEqual(l.translator, .de)
+    }
+
     /// L1.64d — a foreign settle is not affected either. Corroboration only
     /// speaks where the pooled codes already said HOME; everywhere else the
     /// existing veto and its narrow crossed-evidence yield still govern.
