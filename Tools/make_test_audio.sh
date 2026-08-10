@@ -45,6 +45,15 @@ say -v "$DE_VOICE" "${FMT[@]}" -o TestAudio/de_reply_long.wav \
   "Mir geht es sehr gut, vielen Dank für die Nachfrage. Und wie geht es \
 Ihnen heute bei diesem schönen Wetter?"
 
+# The two halves of one utterance with a breath pause between them (#78):
+# a natural mid-order pause, shorter than the 1.4s transcript-idle
+# threshold in audio terms but longer once transcript lag is added — the
+# shape that made the app talk over the speaker on device.
+say -v "$DE_VOICE" "${FMT[@]}" -o TestAudio/de_pause_a.wav \
+  "Ich hätte gerne einmal das große Schnitzel"
+say -v "$DE_VOICE" "${FMT[@]}" -o TestAudio/de_pause_b.wav \
+  "und dazu bitte noch eine große Apfelschorle."
+
 # Composite files: utterance, a long pause (so the turn can finalize while
 # the translation streams back), then a second utterance in German. These
 # test the direction memory — German must come back in the language heard
@@ -81,6 +90,14 @@ gap = silence(6.0)
 
 write("TestAudio/de_after_en.wav", en, gap, de, silence(1.0))
 write("TestAudio/de_after_es.wav", es, gap, de_long, silence(1.0))
+# One utterance, breath pause inside (#78). 1.8s: long enough that the
+# TRANSCRIPT gap clears the 1.4s release threshold (transcript events lag
+# the audio ~1.6-1.8s, measured in this replay, so a shorter pause never
+# even arms the old failure), short enough that the resumed speech is
+# already flowing when the release attempt fires. The model keeps it one
+# utterance at 1.8s.
+pa, pb = read("TestAudio/de_pause_a.wav"), read("TestAudio/de_pause_b.wav")
+write("TestAudio/de_pause.wav", pa, silence(1.8), pb, silence(1.0))
 write("TestAudio/silence.wav", silence(5.0))
 write("TestAudio/noise.wav", noise(5.0))
 print("composite + silence/noise files written")

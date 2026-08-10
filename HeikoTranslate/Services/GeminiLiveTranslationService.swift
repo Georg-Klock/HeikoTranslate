@@ -193,12 +193,11 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// longer an interruption. Gates all playback.
     private var speakerHasStopped = false
     private var speechEndTimer: Timer?
-    /// How long a silence means "they're done" rather than "they're thinking".
-    /// Raised from 1.0s after device evidence: natural pauses mid-thought
-    /// ("Um, so sorry, we're out of pickles…" [pause] "…would you like that
-    /// to be okay?") were ending the turn and splitting one utterance across
-    /// three bubbles.
-    private let speechEndPause: TimeInterval = 1.4
+    // The transcript-idle threshold that arms release lives in
+    // `SpeechEndPolicy`. The policy also owns the microphone veto: transcripts
+    // may lag the speaker, while the microphone signal does not.
+    /// Most recent mic buffer above `micSpeechRMSFloor`.
+    private var lastLoudMicAt: Date?
 
     /// When a session's translation text last grew. A turn must not finalize
     /// while the translation is still arriving: device evidence showed
@@ -359,6 +358,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         speechEndTimer?.invalidate()
         speechEndTimer = nil
         speakerHasStopped = false
+        lastLoudMicAt = nil
         pendingOutput = [:]
         stopDirectionRecheck()
         lingeringTranslator = nil
@@ -448,7 +448,10 @@ final class GeminiLiveTranslationService: ObservableObject {
                 self.micBufferCount += 1
                 self.peakMicRMS = max(self.peakMicRMS, rms)
                 self.secondPeakRMS = max(self.secondPeakRMS, rms)
-                if rms > Self.micSpeechRMSFloor { self.speechHeardThisTurn = true }
+                if rms > Self.micSpeechRMSFloor {
+                    self.speechHeardThisTurn = true
+                    self.lastLoudMicAt = Date()
+                }
                 // One line a second, so "the room was quiet" is always
                 // distinguishable from "the microphone was dead".
                 if Date().timeIntervalSince(self.lastMicHeartbeat) >= 1.0 {
@@ -940,13 +943,34 @@ final class GeminiLiveTranslationService: ObservableObject {
         lingeringTranslator = nil   // new speech owns the buffers again
         speakerHasStopped = false
         speechEndTimer?.invalidate()
-        speechEndTimer = Timer.scheduledTimer(withTimeInterval: speechEndPause, repeats: false) { [weak self] _ in
+        speechEndTimer = Timer.scheduledTimer(
+            withTimeInterval: SpeechEndPolicy.transcriptIdleThreshold,
+            repeats: false
+        ) { [weak self] _ in
             Task { @MainActor in self?.speakerStopped() }
         }
     }
 
-    private func speakerStopped() {
+    private func speakerStopped(deferredSince: Date? = nil) {
         guard isRunning, !speakerHasStopped else { return }
+        if !SpeechEndPolicy.mayRelease(
+            now: Date(),
+            lastLoudMicAt: lastLoudMicAt,
+            deferredSince: deferredSince
+        ) {
+            let since = deferredSince ?? Date()
+            if deferredSince == nil {
+                diag("turn", "speaker-stop deferred — mic still hears speech")
+            }
+            speechEndTimer?.invalidate()
+            speechEndTimer = Timer.scheduledTimer(
+                withTimeInterval: SpeechEndPolicy.recheckInterval,
+                repeats: false
+            ) { [weak self] _ in
+                Task { @MainActor in self?.speakerStopped(deferredSince: since) }
+            }
+            return
+        }
         speakerHasStopped = true
         diag("turn", "speaker stopped — waiting for committed translation audio")
         // Re-evaluate first: the home-silence confirm is time-based, and on a
