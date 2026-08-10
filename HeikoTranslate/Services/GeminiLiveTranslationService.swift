@@ -174,6 +174,31 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// garbage — `TurnLogic.bestTranscript` picks the trustworthy one.
     private var inputs: [Lang: String] = [:]
     private var outputs: [Lang: String] = [:]
+
+    /// A stable, single-line record of what every active session heard.
+    ///
+    /// This is deliberately diagnostic-only: it must not influence which
+    /// transcript TurnLogic commits. Quoting and escaping preserve an empty
+    /// or multi-line raw transcript as one log entry, so the next diagnostic
+    /// line cannot be mistaken for part of what Gemini heard. Kept internal so
+    /// L1 can pin the exact format emitted by this real service.
+    static func inputTranscriptDiagnosticLine(inputs: [Lang: String],
+                                              sessions: Set<Lang>) -> String {
+        let heard = sessions.sorted { $0.rawValue < $1.rawValue }.map { lang in
+            "heard[\(lang.rawValue)] \"\(escapedDiagnosticTranscript(inputs[lang] ?? ""))\""
+        }.joined(separator: "   ")
+        return "  \(heard)"
+    }
+
+    private static func escapedDiagnosticTranscript(_ transcript: String) -> String {
+        transcript
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\t", with: "\\t")
+    }
+
     /// Translated audio, held until a turn has committed. The model is a
     /// *simultaneous* interpreter, but a provisional direction can still be
     /// invalidated by later codes or transcripts. Playing early is
@@ -1142,6 +1167,7 @@ final class GeminiLiveTranslationService: ObservableObject {
             return
         }
         diag("turn", "commit \(bubble.isHome ? "RIGHT/home" : "LEFT/foreign") via \(turn.translator?.rawValue ?? "?") | \(bubble.original.prefix(60)) → \(bubble.translation.prefix(60))")
+        diag("turn", Self.inputTranscriptDiagnosticLine(inputs: inputs, sessions: activePair))
         onUtterance?(bubble.original, bubble.translation, bubble.isHome)  // R2: side from spoken language
     }
 
