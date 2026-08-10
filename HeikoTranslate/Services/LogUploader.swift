@@ -28,6 +28,7 @@ enum LogUploader {
     static var isEnabled: Bool { AppConfig.diagnosticUploadURL != nil }
 
     /// Call when the app backgrounds or a session ends. Returns immediately.
+    @MainActor
     static func uploadCurrentLog(reason: String) {
         guard let endpoint = AppConfig.diagnosticUploadURL else { return }
         guard Date().timeIntervalSince(lastUploadAt) > minimumInterval else { return }
@@ -56,13 +57,11 @@ enum LogUploader {
         request.httpBody = data
 
         // Ask iOS for a moment to finish while backgrounding, and give it
-        // back whatever happens — never hold the app open.
-        var task: UIBackgroundTaskIdentifier = .invalid
-        task = UIApplication.shared.beginBackgroundTask(withName: "diagnostic-upload") {
-            if task != .invalid { UIApplication.shared.endBackgroundTask(task); task = .invalid }
-        }
-
-        URLSession.shared.dataTask(with: request) { _, response, error in
+        // back whatever happens — never hold the app open. The lease ends the
+        // background task exactly once, whichever comes second: the upload's
+        // completion or iOS calling time (GitHub #11).
+        let lease = BackgroundTaskLease()
+        let upload = URLSession.shared.dataTask(with: request) { _, response, error in
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
             if error == nil, (200..<300).contains(code) {
                 UserDefaults.standard.set(data.count, forKey: defaultsKey)
@@ -70,7 +69,14 @@ enum LogUploader {
             } else {
                 diag("upload", "diagnostic log NOT sent (\(error?.localizedDescription ?? "HTTP \(code)")) — kept on device")
             }
-            if task != .invalid { UIApplication.shared.endBackgroundTask(task); task = .invalid }
-        }.resume()
+            // This callback runs on URLSession's queue; the lease lives on
+            // the main actor.
+            Task { @MainActor in lease.finish() }
+        }
+        // If time runs out first, abandon the upload too — one attempt is the
+        // design. The cancel makes the completion fire promptly; its late
+        // finish() then finds nothing left to end.
+        lease.begin(name: "diagnostic-upload") { upload.cancel() }
+        upload.resume()
     }
 }
