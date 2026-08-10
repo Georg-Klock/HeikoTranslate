@@ -213,6 +213,21 @@ reintroducing the original selection: all four cases fail.
 | L1.67c | A session error during a replacement window | Held audio is dropped, not delivered stale seconds later; the healthy side is unaffected | **R7** |
 | L1.67d | More speech during the window than the queue holds | A rolling ~3.2s window — newest chunks win, staleness stays bounded however slow the reconnect | **R4** |
 
+Audio startup as a transaction (#16, 2026-08-10). The choreography runs
+against the `AudioGraphControlling` seam (`AudioStartupTests`), so ordering,
+the once-only player wiring and the rollback are pinned without an
+AVAudioEngine. Verified by reintroducing the original behaviour (wire every
+start, no rollback): four of the five cases fail; the AEC case passes both
+ways because it pins behaviour that predates the fix.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.68 | start → stop → start | The player node is attached and connected exactly ONCE per engine lifetime; the tap cycles with every start | **R8** |
+| L1.68b | The engine fails to start | Rollback through the shared teardown — no tap, no playback, no activated session left; the next start succeeds | **R8** |
+| L1.68c | The 0 Hz placeholder format a cold launch can report | The converter guard's throw unwinds the same way | **R8** |
+| L1.68d | AEC cannot be enabled | Logged, not fatal — full-duplex without cancellation beats not running (pre-existing decision, pinned) | **R6** |
+| L1.68e | The 0.5s mic watchdog rebuild | Shared teardown first, then a restart that obeys the once-only wiring | **R8/R4** |
+
 > Beyond the numbered rows: `FillerWordTests` / `FillerWordsFromDeviceTests` /
 > `FillerWordFalsePositiveTests` cover hesitation stripping (including the
 > seven real words an adversarial review caught the first version deleting),
@@ -638,7 +653,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 122 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy` and `GeminiLiveTranslationService` (2026-08-10) |
+| L1 | ✅ Built and passing — 127 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy` and `GeminiLiveTranslationService` (2026-08-10) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Needs a device re-run: fixes landed for the D2 root cause (mic now opens on setupComplete and flushes pre-connect audio), D3/D4 (settle-window + straggler grace + commit gates in `TurnLogic`), D5 (output-tail no longer finalizes while the speaker is still talking), D7/D8 (goAway closes are no longer treated as intentional, so sessions actually reconnect), and D10 (all three sessions now run, so German→Spanish is possible at all) — none re-verified on a phone yet |
