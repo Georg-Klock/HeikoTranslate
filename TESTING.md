@@ -198,6 +198,21 @@ transcript `TurnLogic` commits.
 | L1.63 | The two sessions disagree on a number at commit | Both readings logged, in a deterministic order, so selection failure is distinguishable from shared mis-transcription | **diagnostic** |
 | L1.63b | An active session with no text; a transcript carrying quotes and newlines | Every active session logged and escaped, so no transcript can forge a log line; a non-active session's stale input is excluded | **diagnostic** |
 
+The replacement window (#15, 2026-08-10). On every renewal — the routine
+goAway after ~9 minutes, or an abrupt drop — the fresh WebSocket used to be
+fed mic audio before its own `setupComplete`, because the sending paths
+selected on "not dead" and `reconnect` never cleared readiness. Sessions are
+faked at the `LiveTranslationSocket` seam; a fake's events take the shipping
+route into the handler, registry token check included. Verified by
+reintroducing the original selection: all four cases fail.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.67 | A goAway renewal, mic open, speech continuing | The replacement receives NOTHING before its own setupComplete, then the held chunks exactly once, oldest first, then live; the other side of the pair streams uninterrupted | **R7/R4** |
+| L1.67b | An abrupt drop, including the cooldown before the reconnect exists | The closed session is not fed while the reconnect waits; speech from the whole gap is delivered once after the new setup | **R7/R4** |
+| L1.67c | A session error during a replacement window | Held audio is dropped, not delivered stale seconds later; the healthy side is unaffected | **R7** |
+| L1.67d | More speech during the window than the queue holds | A rolling ~3.2s window — newest chunks win, staleness stays bounded however slow the reconnect | **R4** |
+
 > Beyond the numbered rows: `FillerWordTests` / `FillerWordsFromDeviceTests` /
 > `FillerWordFalsePositiveTests` cover hesitation stripping (including the
 > seven real words an adversarial review caught the first version deleting),
@@ -623,7 +638,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 113 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy` and `GeminiLiveTranslationService` (2026-08-10) |
+| L1 | ✅ Built and passing — 122 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy` and `GeminiLiveTranslationService` (2026-08-10) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Needs a device re-run: fixes landed for the D2 root cause (mic now opens on setupComplete and flushes pre-connect audio), D3/D4 (settle-window + straggler grace + commit gates in `TurnLogic`), D5 (output-tail no longer finalizes while the speaker is still talking), D7/D8 (goAway closes are no longer treated as intentional, so sessions actually reconnect), and D10 (all three sessions now run, so German→Spanish is possible at all) — none re-verified on a phone yet |

@@ -23,6 +23,18 @@ import Network
 /// audio; the hardware voice-processing unit's echo cancellation (see
 /// `startAudioIO`) stops the app from re-hearing its own output. Each
 /// completed turn is reported via `onUtterance`.
+/// The slice of `GeminiLiveSession` the orchestrator drives. Exists so the
+/// replacement-window rules (GitHub #15) can run against a fake at L1 — for
+/// the same reason `TurnLogic` is pure: the real thing needs a network. The
+/// real session conforms as-is.
+protocol LiveTranslationSocket: AnyObject {
+    func connect()
+    func close()
+    func sendAudio(_ pcm16kData: Data)
+}
+
+extension GeminiLiveSession: LiveTranslationSocket {}
+
 @MainActor
 final class GeminiLiveTranslationService: ObservableObject {
     @Published private(set) var isRunning = false
@@ -51,7 +63,7 @@ final class GeminiLiveTranslationService: ObservableObject {
     private var finalizePolicy = FinalizePolicy()
     private var deferralTimer: Timer?
 
-    private var sessions: [Lang: GeminiLiveSession] = [:]
+    private var sessions: [Lang: any LiveTranslationSocket] = [:]
 
     /// Which session instance is current, per language. Every asynchronous
     /// continuation — a session's event callback, a reconnect timer —
@@ -64,14 +76,18 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// The only way sessions are constructed: mints the token and wires the
     /// event callback behind a token check. `start()` and `reconnect()` both
     /// use it, so there is no path that creates an unguarded session.
-    private func makeSession(_ lang: Lang, apiKey: String) -> GeminiLiveSession {
+    private func makeSession(_ lang: Lang, apiKey: String) -> any LiveTranslationSocket {
         let token = registry.register(lang)
-        return GeminiLiveSession(targetLanguageCode: lang.rawValue, apiKey: apiKey) { [weak self] event in
+        let onEvent: (GeminiLiveSession.Event) -> Void = { [weak self] event in
             Task { @MainActor in
                 guard let self, self.registry.isCurrent(token, for: lang) else { return }
                 self.handle(lang, event)
             }
         }
+        #if DEBUG
+        if let factory = sessionFactoryForTesting { return factory(lang, onEvent) }
+        #endif
+        return GeminiLiveSession(targetLanguageCode: lang.rawValue, apiKey: apiKey, onEvent: onEvent)
     }
     /// The two languages this run is supposed to be running, and the ONLY
     /// ones any code here may connect. `Lang.allCases` is the settings menu
@@ -255,6 +271,36 @@ final class GeminiLiveTranslationService: ObservableObject {
     private var pendingAudio: [Data] = []
     private let maxPendingChunks = 250
 
+    /// Mic audio captured for a session that is mid-replacement — between its
+    /// predecessor closing (goAway renewal, abrupt drop) and its own
+    /// `.setupComplete`. Sending `realtimeInput` before the server
+    /// acknowledges setup is exactly the premature-audio state the connect
+    /// path already guards against, and the renewal path used to do it on
+    /// every goAway. Held per language: the other side of the pair keeps
+    /// streaming live. GitHub #15.
+    private var pendingReplacementAudio: [Lang: [Data]] = [:]
+
+    /// ~3.2s of 64ms chunks, kept as a ROLLING window (newest win). The
+    /// opposite trade from `pendingAudio`, which keeps the oldest because at
+    /// launch the start of the first utterance is what must survive (R4).
+    /// Mid-conversation, the newest audio is the speech being said right
+    /// now — and the roll is also the staleness bound: a reconnect that takes
+    /// 10s flushes at most ~3s of tail into the fresh session, not 10s of
+    /// history into a turn whose timers have long moved on. GitHub #15.
+    private let maxReplacementChunks = 50
+
+    #if DEBUG
+    /// Test seams (GitHub #15): stand in for the WebSocket sessions so the
+    /// replacement window runs as deterministic L1 cases. The factory
+    /// receives the same event callback the real session would own — the
+    /// registry token check included — so a fake's events take the shipping
+    /// route into `handle`. `nil` (the shipping state) means the real thing.
+    var sessionFactoryForTesting: ((Lang, @escaping (GeminiLiveSession.Event) -> Void) -> any LiveTranslationSocket)?
+    /// Skips the AVAudioEngine setup so `start()` runs without audio
+    /// hardware; tests drive `forward(_:)` directly instead of the mic tap.
+    var skipAudioIOForTesting = false
+    #endif
+
     func requestPermissions() async -> Bool {
         await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             AVAudioApplication.requestRecordPermission { granted in cont.resume(returning: granted) }
@@ -315,7 +361,12 @@ final class GeminiLiveTranslationService: ObservableObject {
         isSendingAudio = false
         readySessions = []
         pendingAudio = []
+        pendingReplacementAudio = [:]
+        #if DEBUG
+        if !skipAudioIOForTesting { try startAudioIO() }
+        #else
         try startAudioIO()
+        #endif
 
         // One session per side of the selected pair, both fed the same mic
         // audio. The pair is explicit (settings), so exactly two sessions.
@@ -338,11 +389,43 @@ final class GeminiLiveTranslationService: ObservableObject {
         guard !pendingAudio.isEmpty else { return }
         let queued = pendingAudio
         pendingAudio = []
-        for chunk in queued {
-            for (lang, session) in sessions where !dead.contains(lang) {
+        for chunk in queued { forward(chunk) }
+    }
+
+    /// Route one mic chunk to the pair. Ready sessions get it now; a live
+    /// session that is mid-replacement gets it queued for delivery after ITS
+    /// `.setupComplete` — never sent early. Dead sessions get nothing.
+    /// Selecting on readiness rather than mere absence from `dead` is the
+    /// GitHub #15 fix; internal so L1 can drive it without audio hardware.
+    func forward(_ chunk: Data) {
+        for (lang, session) in sessions {
+            if readySessions.contains(lang) {
                 session.sendAudio(chunk)
+            } else if !dead.contains(lang) {
+                queueForReplacement(lang, chunk)
             }
         }
+    }
+
+    private func queueForReplacement(_ lang: Lang, _ chunk: Data) {
+        var queue = pendingReplacementAudio[lang, default: []]
+        queue.append(chunk)
+        if queue.count > maxReplacementChunks {
+            queue.removeFirst(queue.count - maxReplacementChunks)
+        }
+        pendingReplacementAudio[lang] = queue
+    }
+
+    /// The replacement finished its handshake: deliver what accumulated while
+    /// it couldn't listen, oldest first, then live forwarding resumes on the
+    /// next mic chunk. Chunks are sent exactly once — the queue is taken
+    /// before sending. GitHub #15.
+    private func flushReplacementAudio(_ lang: Lang) {
+        guard let queued = pendingReplacementAudio[lang], !queued.isEmpty else { return }
+        pendingReplacementAudio[lang] = nil
+        guard isSendingAudio, let session = sessions[lang] else { return }
+        diag("audio", "[\(lang.rawValue)] replacement ready — flushing \(queued.count) held chunks")
+        for chunk in queued { session.sendAudio(chunk) }
     }
 
     private func resetForNextUtterance() {
@@ -371,6 +454,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         isSendingAudio = false
         anySessionReady = false
         readySessions = []
+        pendingReplacementAudio = [:]
         inputIdleTimer?.invalidate()
         inputIdleTimer = nil
         deferralTimer?.invalidate()
@@ -499,9 +583,7 @@ final class GeminiLiveTranslationService: ObservableObject {
                     }
                     return
                 }
-                for (lang, session) in self.sessions where !self.dead.contains(lang) {
-                    session.sendAudio(pcmData)
-                }
+                self.forward(pcmData)
             }
         }
         tapInstalled = true
@@ -520,6 +602,12 @@ final class GeminiLiveTranslationService: ObservableObject {
     // recovery by itself, once.
 
     private func startWatchdogs() {
+        #if DEBUG
+        // The watchdogs exist to rebuild the audio path and rescue stalled
+        // handshakes; a test that stubbed both (GitHub #15) must not have a
+        // timer reach for the real AVAudioEngine mid-case.
+        if skipAudioIOForTesting { return }
+        #endif
         micBufferCount = 0
         peakMicRMS = 0
         audioRebuilds = 0
@@ -646,6 +734,7 @@ final class GeminiLiveTranslationService: ObservableObject {
             // cooldown over, so one bad tunnel doesn't leave this language on
             // a 10s delay for the rest of the trip. GitHub #3.
             dropBackoff[lang] = 0
+            flushReplacementAudio(lang)
             openMicIfReady()
         case .audioChunk(let data):
             lastServerEventAt = Date()
@@ -684,6 +773,11 @@ final class GeminiLiveTranslationService: ObservableObject {
         case .raw(let text):
             diag("session", "[\(lang.rawValue)] raw: \(text.prefix(300))")
         case .closed(let expected):
+            // Whatever replaces this session cannot listen until its own
+            // setupComplete. Leaving the language in `readySessions` was the
+            // GitHub #15 bug: the fresh WebSocket received realtimeInput
+            // mid-handshake on every goAway renewal.
+            readySessions.remove(lang)
             if expected {
                 // A goAway: the server announced the duration limit and we
                 // closed on cue. Nothing is wrong, so reconnect immediately —
@@ -702,6 +796,10 @@ final class GeminiLiveTranslationService: ObservableObject {
             diag("session", "[\(lang.rawValue)] ERROR: \(message)")
             dead.insert(lang)
             readySessions.remove(lang)
+            // A retry lands seconds later at the earliest; audio held from
+            // before the error would arrive stale into a turn whose timers
+            // have moved on. Dropping it is the lesser loss. GitHub #15.
+            pendingReplacementAudio[lang] = nil
             onError?("\(lang): \(message)")
             scheduleSessionRetry(lang)
             // One failed session must not hold the mic shut for the two
@@ -802,6 +900,9 @@ final class GeminiLiveTranslationService: ObservableObject {
 
     private func reconnect(_ lang: Lang) {
         guard isRunning, !dead.contains(lang), activePair.contains(lang) else { return }
+        // Belt to the .closed handler's braces: whatever path reached here,
+        // the replacement is not ready until it says so. GitHub #15.
+        readySessions.remove(lang)
         // Close the instance being replaced. On the .error path the old
         // transport is not necessarily dead (an error frame is not a closed
         // socket), and close() is also what invalidates its URLSession —
