@@ -1117,6 +1117,146 @@ final class TurnLogicTests: XCTestCase {
                                          outputs: [.de: "Guten Morgen Heiko"]))
         XCTAssertEqual(committed.committedTranslator, .de)
     }
+
+    // MARK: - A corroborated home settle outranks the home session's output
+
+    /// The exact code events from device build 2.3.48, 2026-08-10 — one
+    /// German turn, replayed by timestamp. Times are seconds from the first
+    /// code; `de` is home and `en` the partner. The home session reads the
+    /// German as English nine times (its own mis-hearing) while the partner
+    /// session reads it correctly as German nine times.
+    private static let deviceCrossedCodes: [(t: TimeInterval, code: String, from: TurnLogic.Lang)] = [
+        (0.000, "de", .en), (0.067, "de", .de),
+        (0.983, "en", .de), (1.009, "de", .en),
+        (2.036, "de", .en), (2.038, "en", .de),
+        (2.984, "en", .de), (3.044, "de", .en),
+        (3.999, "en", .de), (4.015, "de", .en),
+        (5.112, "de", .en), (5.122, "en", .de),
+        (6.105, "en", .de), (6.131, "de", .en),
+        (6.960, "en", .de), (6.960, "de", .en),
+        (7.947, "en", .de), (7.984, "de", .en),
+        (9.964, "en", .de),
+    ]
+
+    private func replayDeviceCrossedCodes(_ logic: inout TurnLogic, from base: Date) {
+        for e in Self.deviceCrossedCodes {
+            logic.noteInputLanguage(e.code, from: e.from, at: base.addingTimeInterval(e.t))
+        }
+    }
+
+    /// Home speech. The home session's "translation" is its own mis-hearing
+    /// read back at full length; the partner session's is the real one.
+    private static let crossedHomeInputs: [TurnLogic.Lang: String] = [
+        .de: "Big Mac and extra spicy to take away please",
+        .en: "Einen Big Mac und extra scharf zum Mitnehmen bitte"
+    ]
+
+    /// L1.64 — the measured 2.3.48 turn. The codes settle on HOME two seconds
+    /// in and never move, and the partner session's own votes agree. Yet
+    /// `noteOutputs` consulted `homeIsRealTranslation` first, and its size
+    /// ratio kept calling the home session's echo a real translation as the
+    /// text streamed: the direction flipped six times in four seconds while
+    /// the speaker was still talking. Two witnesses agreeing on home must not
+    /// be overruled by the output of the one session known to be mis-hearing.
+    func testL1_64_corroboratedHomeSettleDoesNotOscillate() {
+        var l = TurnLogic(home: .de, partner: .en)
+        replayDeviceCrossedCodes(&l, from: t(0))
+        XCTAssertEqual(l.spokenLang, .de, "the measured codes settle on home")
+        XCTAssertTrue(l.partnerHeardHome, "and the partner session independently agrees")
+
+        // Stream BOTH outputs word by word, as the sessions actually deliver
+        // them. The early steps are the dangerous ones: a home output of
+        // three tokens or fewer cannot be a round-trip echo (`echoMinTokens`
+        // is 4), so the echo guard is inert and the size ratio decides — and
+        // a short echo prefix beside a short real translation clears the 0.4
+        // floor easily. That is the window the device fell through.
+        var flips = 0
+        var previous: TurnLogic.Direction?
+        let homeWords = Self.crossedHomeInputs[.de]!.split(separator: " ")
+        let partnerWords = Self.crossedHomeInputs[.en]!.split(separator: " ")
+        for step in 1...max(homeWords.count, partnerWords.count) {
+            l.noteOutputs([.de: homeWords.prefix(step).joined(separator: " "),
+                           .en: partnerWords.prefix(step).joined(separator: " ")],
+                          inputs: Self.crossedHomeInputs,
+                          at: t(10 + Double(step) * 0.3))
+            if l.direction != previous { flips += 1; previous = l.direction }
+            XCTAssertNotEqual(l.direction, .foreignSpoken,
+                              "step \(step): read foreign against a corroborated home settle")
+        }
+        XCTAssertEqual(l.direction, .homeSpoken)
+        XCTAssertEqual(l.translator, .en)
+        XCTAssertLessThanOrEqual(flips, 1, "the side must settle once, not oscillate")
+    }
+
+    /// L1.64b — commit reaches the same verdict on that state. The two share
+    /// `homeIsRealTranslation` precisely so the live line and the bubble
+    /// cannot disagree about the side (L1.47g), so the gate has to apply to
+    /// both or it reintroduces the disagreement it exists to prevent.
+    func testL1_64b_commitAgreesWithTheLivePath() {
+        var l = TurnLogic(home: .de, partner: .en)
+        replayDeviceCrossedCodes(&l, from: t(0))
+        let bubble = l.commit(inputs: Self.crossedHomeInputs,
+                              outputs: [.de: Self.crossedHomeInputs[.de]!,
+                                        .en: Self.crossedHomeInputs[.en]!])
+        XCTAssertNotNil(bubble, "reason: \(l.lastRejectReason ?? "none")")
+        XCTAssertEqual(bubble?.isHome, true, "German speech belongs on the RIGHT")
+        XCTAssertEqual(l.translator, .en)
+    }
+
+    /// L1.64c — the discriminator, and the reason this is not "a home settle
+    /// wins". L1.20 is a measured turn where the codes lie about home and the
+    /// home session's substantial translation is right to beat them. There
+    /// the partner session never votes, so there is no corroboration and the
+    /// old path must still run. Same shape, asserted directly.
+    func testL1_64cAnUncorroboratedHomeSettleStillLosesToARealTranslation() {
+        var l = TurnLogic(home: .de, partner: .es)
+        settle(&l, "de-DE", from: .de)          // only the home session votes
+        XCTAssertEqual(l.spokenLang, .de)
+        XCTAssertFalse(l.partnerHeardHome, "no partner votes — nothing corroborates")
+
+        let bubble = l.commit(inputs: [.de: "Do you want caramel sauce?"],
+                              outputs: [.de: "Möchten Sie Karamellsauce?",
+                                        .es: "¿Quieres salsa de caramelo?"])
+        XCTAssertEqual(bubble?.isHome, false, "L1.20 must be untouched")
+    }
+
+    /// L1.64e — the pooled settle is NOT an independent witness. `spokenLang`
+    /// is settled from the pooled tally, and that tally already contains the
+    /// partner session's votes, so a partner session that emits a quorum of
+    /// stray home codes and nothing else satisfies BOTH halves by itself: it
+    /// carries the pooled tally to home and clears `partnerHeardHome` with the
+    /// same three votes. Nothing about that is corroboration.
+    ///
+    /// This is an ordinary foreign turn — English spoken, the home session
+    /// producing a real German translation, the partner session echoing the
+    /// English — and it must still commit LEFT via the home session (L1.20's
+    /// rule). Caught in review of #47.
+    func testL1_64e_partnerNoiseAloneIsNotCorroboration() {
+        var l = TurnLogic(home: .de, partner: .en)
+        settle(&l, "de", at: t(0), from: .en)      // three stray partner votes, nothing else
+        XCTAssertEqual(l.spokenLang, .de, "the stray votes carry the pooled tally by themselves")
+        XCTAssertTrue(l.partnerHeardHome, "…and clear the quorum with the very same votes")
+        XCTAssertFalse(l.homeHeardPartner, "the home session never reported the partner language")
+
+        let bubble = l.commit(inputs: [.en: "Where is the station, please?"],
+                              outputs: [.de: "Wo ist der Bahnhof, bitte?",
+                                        .en: "Where is the station, please?"])
+        XCTAssertEqual(bubble?.isHome, false,
+                       "a real home translation still means foreign speech (L1.20)")
+        XCTAssertEqual(l.translator, .de)
+    }
+
+    /// L1.64d — a foreign settle is not affected either. Corroboration only
+    /// speaks where the pooled codes already said HOME; everywhere else the
+    /// existing veto and its narrow crossed-evidence yield still govern.
+    func testL1_64d_aForeignSettleIsUnaffected() {
+        var l = TurnLogic(home: .de, partner: .en)
+        settle(&l, "en", at: t(0), from: .de)
+        XCTAssertEqual(l.spokenLang, .en)
+        l.noteOutputs([.de: "Wo ist der Bahnhof, bitte?"],
+                      inputs: [.en: "Where is the station, please?"], at: t(10))
+        XCTAssertEqual(l.direction, .foreignSpoken)
+    }
 }
 
 /// Filler-word stripping — unchanged semantics, still German/English/Spanish

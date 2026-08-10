@@ -98,6 +98,28 @@ translator session's audio is played.
    two strays were reproduced committing an English echo as Heiko's own
    bubble. Per-session evidence expires with the global tally, settled or
    not; a dead context must not lift a live veto.
+
+   The same corroboration runs in the other direction: when the codes settle
+   on **home** and the FULL crossed shape is present — each session reporting
+   the other's language by its own plurality and quorum — the home session's
+   output no longer gets to overrule them. Device evidence (build 2.3.48,
+   2026-08-10) had exactly that state — codes settled `de`, partner session
+   voting home nine times, home session mis-hearing nine times — and the
+   direction still flipped six times in four seconds, because
+   `homeIsRealTranslation` is consulted first and an echo shorter than
+   `echoMinTokens` cannot be recognised as an echo, so the size ratio decided
+   each streamed chunk.
+
+   The crossed shape is required rather than just "settled home + partner
+   agrees", because **those two are not independent**: `spokenLang` is derived
+   from a pooled tally that already contains the partner session's votes, so a
+   partner session emitting a quorum of stray home codes satisfies both halves
+   with the same three votes. That version committed an ordinary foreign turn
+   as Heiko's own bubble (L1.64e). The home session's own reading is what
+   partner noise cannot forge. And this is deliberately *not* "a home settle
+   wins": L1.20 is a measured turn where the codes lie about home and the home
+   session's substantial translation is right to beat them — there the home
+   session reads HOME, so the crossed shape never forms.
 5. Pre-commit a direction is **provisional and re-derivable**. Streaming can
    set `.foreignSpoken` from an echo prefix that arrives before the votes
    exposing it, so a direction whose evidence no longer holds is cleared

@@ -305,6 +305,59 @@ struct TurnLogic {
             && partnerHeardHome
     }
 
+    /// The mirror of `partnerHeardHome`: the HOME session's own votes favour
+    /// the partner language, by the same strict-plurality-plus-quorum bar.
+    /// This is the mis-hearing half of #75 — the session that reads German as
+    /// Spanish and settles the codes on it.
+    var homeHeardPartner: Bool {
+        guard let tally = sessionVotes[home],
+              let partnerCount = tally[partner.rawValue],
+              partnerCount >= Self.partnerCorroborationQuorum else { return false }
+        return tally.allSatisfy { $0.key == partner.rawValue || $0.value < partnerCount }
+    }
+
+    /// Two independent witnesses agree the HOME language was spoken: the
+    /// pooled codes settled on home, and the partner session's own votes say
+    /// home too, by the same quorum that governs every other use of that
+    /// evidence.
+    ///
+    /// Measured on device 2026-08-10, build 2.3.48, one German turn. The
+    /// codes settled on `de` 2.0s in and never moved; the partner session
+    /// reported home nine times; the home session reported the partner
+    /// language nine times — its own mis-hearing, the #75 shape. Yet
+    /// `noteOutputs` consults `homeIsRealTranslation` FIRST, and that
+    /// size-ratio judgement kept declaring the home session's echo a real
+    /// translation as it streamed. Direction flipped six times in four
+    /// seconds — foreign, home, foreign, home, foreign, home — before commit
+    /// landed it correctly. The bubble was right and no audio played early
+    /// (the committed-audio gate held), but the live line changed sides six
+    /// times while the speaker was still talking.
+    ///
+    /// So the home session's output cannot outrank this. What it may not do
+    /// is mistake ONE witness for two. The pooled settle is not independent
+    /// of `partnerHeardHome`: `spokenLang` is derived from a tally that
+    /// already contains the partner session's votes, so a partner session
+    /// emitting a quorum of stray home codes and nothing else satisfies both
+    /// halves by itself — it carries the pooled tally to home AND clears the
+    /// quorum, with the same three votes. Requiring only those two committed
+    /// an ordinary foreign turn as Heiko's own bubble (L1.64e, caught in
+    /// review of #47).
+    ///
+    /// Independence comes from the HOME session's own reading, which no
+    /// amount of partner noise can forge: the full crossed shape, each
+    /// session reporting the other's language by its own strict plurality
+    /// and quorum. That is what the device turn had, and it is the #75
+    /// pattern this evidence was gathered for.
+    ///
+    /// Deliberately NOT "a home settle wins": L1.20 is a measured case where
+    /// the codes lie about home and the home session's substantial
+    /// translation is right to beat them. There the home session is reading
+    /// HOME, not the partner language, so the crossed shape never forms and
+    /// that path is untouched (L1.64c).
+    private var homeSettleWithCrossedEvidence: Bool {
+        spokenLang == home && homeHeardPartner && partnerHeardHome
+    }
+
     /// A foreign-language veto may yield only for the full measured crossed
     /// shape. A high-overlap home output is not used to guess a side; here it
     /// verifies the specific mis-hearing mechanism that makes the global
@@ -421,7 +474,12 @@ struct TurnLogic {
         // emitted, while the service was flushing held audio for the session
         // that actually translated. GitHub #26.
         guard !hasCommitted else { return }
-        if Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
+        // A home settle backed by the full crossed shape outranks the home
+        // session's own output (see `homeSettleWithCrossedEvidence`). Without
+        // it the size ratio re-decides on every streamed chunk and the
+        // direction oscillates against two agreeing witnesses. L1.64.
+        if !homeSettleWithCrossedEvidence,
+           Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
                                       spokenLang: spokenLang,
                                       partnerHomeEvidence: partnerHeardHome) {
             direction = .foreignSpoken
@@ -652,7 +710,12 @@ struct TurnLogic {
             (outputs[lang] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        if Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
+        // Same gate as `noteOutputs`, and here for the same reason the two
+        // share `homeIsRealTranslation` at all: the live line and the
+        // committed bubble must not be able to disagree about the side
+        // (L1.47g's doctrine). L1.64b.
+        if !homeSettleWithCrossedEvidence,
+           Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
                                       spokenLang: spokenLang,
                                       partnerHomeEvidence: partnerHeardHome) {
             // Set before reading the transcript — `bestTranscript` follows
