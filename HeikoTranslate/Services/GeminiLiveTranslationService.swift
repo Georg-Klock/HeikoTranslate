@@ -158,7 +158,19 @@ final class GeminiLiveTranslationService: ObservableObject {
         let token = registry.register(lang)
         let onEvent: (GeminiLiveSession.Event) -> Void = { [weak self] event in
             Task { @MainActor in
-                guard let self, self.registry.isCurrent(token, for: lang) else { return }
+                guard let self else { return }
+                // Cost counts no matter which run or instance the frame came
+                // from: the token check exists to keep a stale event from
+                // steering the CURRENT session, and billing steers nothing.
+                // Usage frames in flight at a mute or a goAway renewal used
+                // to be dropped here, before handle() could record them —
+                // the tally only ever erred low. This is the ONE recording
+                // point; handle()'s .usage case keeps only the liveness
+                // bookkeeping. GitHub #4.
+                if case .usage(let usage) = event {
+                    CostTracker.shared.record(usage: usage)
+                }
+                guard self.registry.isCurrent(token, for: lang) else { return }
                 self.handle(lang, event)
             }
         }
@@ -831,10 +843,11 @@ final class GeminiLiveTranslationService: ObservableObject {
         // through every late event in exactly the post-stop window this guard
         // exists for. The token check in makeSession's callback already drops
         // those; this guard now states only its documented intent. GitHub #20.
-        guard activePair.contains(lang) else {
-            if case .usage(let usage) = event { CostTracker.shared.record(usage: usage) }
-            return
-        }
+        // Usage frames are recorded in that callback, ahead of the token
+        // check, so there is nothing left for this guard to count — the old
+        // else-branch here was dead code reading as live protection, while
+        // the frames it promised to keep were dropped upstream. GitHub #4.
+        guard activePair.contains(lang) else { return }
         switch event {
         case .opened:
             // Handshake only — the session can't process audio until the
@@ -882,10 +895,11 @@ final class GeminiLiveTranslationService: ObservableObject {
             reportDirectionIfChanged()
         case .turnComplete:
             break
-        case .usage(let usage):
+        case .usage:
+            // Recorded upstream in makeSession's callback (the one recording
+            // point — GitHub #4); here a usage frame only proves liveness.
             lastServerEventAt = Date()
             noteServerRecovered()
-            CostTracker.shared.record(usage: usage)
         case .raw(let text):
             diag("session", "[\(lang.rawValue)] raw: \(text.prefix(300))")
         case .closed(let expected):

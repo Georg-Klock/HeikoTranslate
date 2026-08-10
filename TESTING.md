@@ -228,6 +228,16 @@ ways because it pins behaviour that predates the fix.
 | L1.68d | AEC cannot be enabled | Logged, not fatal — full-duplex without cancellation beats not running (pre-existing decision, pinned) | **R6** |
 | L1.68e | The 0.5s mic watchdog rebuild | Shared teardown first, then a restart that obeys the once-only wiring | **R8/R4** |
 
+Cost accounting (#4, 2026-08-10). Usage frames are recorded in the session
+callback ahead of the registry token check — billing happened whether or not
+the instance is still current — and nowhere else. Verified fail-first: with
+the recording back in `handle()`, both late-frame cases fail.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.69 | A usage frame in flight when the run stops, or from a superseded instance | Counted — a mute or goAway renewal must not lose the frames it had in flight | **costs** |
+| L1.69b | A current session's usage frame | Counted exactly ONCE — the recording moved, it did not gain a second site | **costs** |
+
 > Beyond the numbered rows: `FillerWordTests` / `FillerWordsFromDeviceTests` /
 > `FillerWordFalsePositiveTests` cover hesitation stripping (including the
 > seven real words an adversarial review caught the first version deleting),
@@ -653,7 +663,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 127 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy` and `GeminiLiveTranslationService` (2026-08-10) |
+| L1 | ✅ Built and passing — 130 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy` and `GeminiLiveTranslationService` (2026-08-11) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Needs a device re-run: fixes landed for the D2 root cause (mic now opens on setupComplete and flushes pre-connect audio), D3/D4 (settle-window + straggler grace + commit gates in `TurnLogic`), D5 (output-tail no longer finalizes while the speaker is still talking), D7/D8 (goAway closes are no longer treated as intentional, so sessions actually reconnect), and D10 (all three sessions now run, so German→Spanish is possible at all) — none re-verified on a phone yet |
