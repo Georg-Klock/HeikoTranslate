@@ -13,6 +13,7 @@
 # has cost this project more time than any bug in the app.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source Tools/ios_device.sh
 
 BUNDLE_ID="com.klock.heikotranslate"
 
@@ -263,13 +264,18 @@ deadline=$((SECONDS + WAIT_SECONDS))
 # "connected" is the USB word. Over Wi-Fi a perfectly installable phone reads
 # "available (paired)" — and install works: it opens a tunnel and goes. Gating
 # on "connected" alone made every wireless deploy fail with a message telling
-# Georg to unlock a phone that was already unlocked. Accept either, and let the
-# install itself be the thing that decides.
-until xcrun devicectl list devices 2>/dev/null | grep -iE 'iphone|ipad' | grep -qiE 'connected|available'; do
+# the user to unlock a phone that was already unlocked. Accept either, but only
+# for the configured target — another reachable device must not make an
+# unavailable target appear ready.
+while true; do
+  if ios_device_with_uuid_is_reachable "$DEVICE_UUID"; then
+    break
+  fi
   if (( SECONDS > deadline )); then
     echo >&2
     echo "Never became reachable. devicectl sees:" >&2
-    xcrun devicectl list devices 2>/dev/null | grep -iE 'iphone|ipad' >&2 || true
+    DEVICE_LISTING=$(xcrun devicectl list devices 2>/dev/null || true)
+    grep -iE 'iphone|ipad' <<<"$DEVICE_LISTING" >&2 || true
     echo >&2
     echo "UNLOCK the phone (locked reads as 'unavailable'), and prefer a data" >&2
     echo "cable — macOS has been seeing zero iPhones on USB." >&2
