@@ -230,6 +230,35 @@ final class ConversationViewModel: ObservableObject {
     /// True while a start attempt is in flight (permission prompt, connect).
     @Published private(set) var isLaunching = false
 
+    /// The one pending start attempt, and the stamp that says whether it is
+    /// still current. GitHub #13: every trigger used to spawn its own
+    /// unstructured `Task { beginListening() }`, so two taps during a slow
+    /// permission prompt awaited the gate concurrently and BOTH called
+    /// `start()` — the second silently tearing down and rebuilding the
+    /// first's live run — and a prompt still up while the app backgrounded
+    /// could return and open the microphone with the app not on screen.
+    /// The task is owned so invalidation can cancel it; the generation is
+    /// what a start that survives its await checks before touching anything,
+    /// because the world it was started in may be gone.
+    private var startTask: Task<Void, Never>?
+    private var startGeneration = 0
+
+    /// Counts calls that actually reached the service-start step. Exists so a
+    /// test can prove two rapid taps produce exactly ONE start and a
+    /// backgrounded prompt produces ZERO — the properties that broke in #13,
+    /// invisible from outside for the same reason `languageApplyCount` and
+    /// `automaticResumeCount` exist. GitHub #13.
+    private(set) var serviceStartCount = 0
+
+    #if DEBUG
+    /// Test seams (GitHub #13): stand-ins for the permission prompt and the
+    /// real service start, so the start path's interleavings — the delayed
+    /// grant, the grant arriving after backgrounding — can be driven
+    /// deterministically. `nil` (the shipping state) means the real thing.
+    var permissionRequestForTesting: (() async -> Bool)?
+    var serviceStartForTesting: (() -> Bool)?
+    #endif
+
     /// Set when listening was stopped by the system (backgrounding, a phone
     /// call, Siri) rather than by the user — so the app resumes by itself
     /// when it becomes active again instead of sitting muted (R8).
@@ -412,8 +441,16 @@ final class ConversationViewModel: ObservableObject {
         noteManualToggle()
         if isListening {
             stop()
+        } else if isLaunching {
+            // A tap while a start is already pending is a no-op, explicitly:
+            // the likely cause is an accidental double-tap, and for this
+            // user "double-tapped and it still ends up listening" beats
+            // "double-tapped and it silently cancelled". The spinner is
+            // already saying Verbinde…; the pending start owns the session.
+            // GitHub #13.
+            diag("ui", "tap while a start is pending — the pending start owns it")
         } else {
-            Task { await self.beginListening() }
+            startTask = Task { [weak self] in await self?.beginListening() }
         }
     }
 
@@ -441,8 +478,36 @@ final class ConversationViewModel: ObservableObject {
     /// Ensures mic permission, then starts listening. Called on every unmute
     /// and when resuming after an interruption.
     func beginListening() async {
+        // One start at a time: a second trigger while one is pending (a
+        // double-tap racing an automatic resume, two resume paths firing)
+        // must not run the gate concurrently — two grants both called
+        // start(), and the second tore down the first's live run. GitHub #13.
+        guard !isLaunching else {
+            diag("app", "start already pending — ignoring a second trigger")
+            return
+        }
         isLaunching = true
-        let granted = await translator.requestPermissions()
+        startGeneration &+= 1
+        let generation = startGeneration
+        let granted: Bool
+        #if DEBUG
+        if let stub = permissionRequestForTesting {
+            granted = await stub()
+        } else {
+            granted = await translator.requestPermissions()
+        }
+        #else
+        granted = await translator.requestPermissions()
+        #endif
+        // The world can move on while the prompt is up: backgrounding or a
+        // stop invalidates pending starts. A stale grant does nothing — most
+        // of all it does not open the microphone with the app off screen —
+        // and it must not touch `isLaunching`, which now belongs to whoever
+        // is current. GitHub #13.
+        guard generation == startGeneration, !Task.isCancelled else {
+            diag("app", "pending start invalidated while awaiting permission — not starting")
+            return
+        }
         isLaunching = false
         guard granted else {
             diag("app", "microphone permission DENIED")
@@ -452,6 +517,16 @@ final class ConversationViewModel: ObservableObject {
         }
         hasEverStarted = true
         start()
+    }
+
+    /// Any pending start attempt is now void — the state it was started in
+    /// is gone. Bumping the generation is what a stale await checks; the
+    /// cancel is for the owned task on top. GitHub #13.
+    private func invalidatePendingStart() {
+        startGeneration &+= 1
+        startTask?.cancel()
+        startTask = nil
+        isLaunching = false
     }
 
     /// Ask for the microphone at launch so the first tap goes straight into
@@ -467,6 +542,12 @@ final class ConversationViewModel: ObservableObject {
         case .background:
             diag("app", "backgrounded (listening=\(isListening))")
             DiagnosticLog.shared.flush()
+            // A permission prompt still up when the app leaves the screen
+            // must not come back granted and start audio and sockets while
+            // the app is backgrounded. The user starts fresh on return —
+            // deliberately no auto-resume for a start that never happened.
+            // GitHub #13.
+            invalidatePendingStart()
             if isListening {
                 resumeWhenActive = true
                 stop()
@@ -483,7 +564,7 @@ final class ConversationViewModel: ObservableObject {
             // prompt. GitHub #25.
             noteMicPermission(granted: AVAudioApplication.shared.recordPermission == .granted)
             if noteBecameActive() {
-                Task { await self.beginListening() }
+                startTask = Task { [weak self] in await self?.beginListening() }
             }
         default:
             break
@@ -800,6 +881,15 @@ final class ConversationViewModel: ObservableObject {
     }
 
     private func start() {
+        serviceStartCount += 1
+        #if DEBUG
+        // Test seam (GitHub #13): the counting above is the real path's; a
+        // stub stands in only for the audio-and-network step below it.
+        if let stub = serviceStartForTesting {
+            isListening = stub()
+            return
+        }
+        #endif
         errorMessage = nil
         // A fresh start re-judges the connection — never resurrect a warning
         // frozen at mute time (nothing publishes quality while muted), or
@@ -864,6 +954,10 @@ final class ConversationViewModel: ObservableObject {
     }
 
     private func stop() {
+        // A stop of any kind voids a start still in flight — a stale grant
+        // must not arrive afterwards and restart what was just stopped.
+        // GitHub #13.
+        invalidatePendingStart()
         translator.stopSession()
         // The notice describes a listening state that is now over — it must
         // never linger over "Mikrofon pausiert". GitHub #28.
