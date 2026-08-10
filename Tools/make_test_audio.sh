@@ -22,6 +22,13 @@ say -v "$DE_VOICE" "${FMT[@]}" -o TestAudio/de_short.wav \
 say -v "$ES_VOICE" "${FMT[@]}" -o TestAudio/es_short.wav \
   "¿Dónde está la estación de tren, por favor?"
 
+# The #77-review entity list (#83): every content word survives translation
+# into German except "and", so a token-overlap echo rule reads the genuine
+# translation as an echo. Names, brands, numbers — the app's load-bearing
+# content at a till — all have this shape.
+say -v "$EN_VOICE" "${FMT[@]}" -o TestAudio/en_entities.wav \
+  "Apple, Google, Netflix and Amazon."
+
 # 60 words — the R5 truncation test.
 say -v "$EN_VOICE" "${FMT[@]}" -o TestAudio/en_long.wav \
   "Yesterday afternoon my wife and I walked through the old market square, \
