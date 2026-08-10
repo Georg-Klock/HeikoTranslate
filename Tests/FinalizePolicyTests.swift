@@ -61,9 +61,9 @@ final class FinalizePolicyTests: XCTestCase {
         }
         let t0 = Date(timeIntervalSinceReferenceDate: 2_000_000)
         func settleForeign(_ l: inout TurnLogic) {
-            l.noteInputLanguage("en", at: t0)
-            l.noteInputLanguage("en", at: t0.addingTimeInterval(0.5))
-            l.noteInputLanguage("en", at: t0.addingTimeInterval(TurnLogic.settleWindow + 0.1))
+            l.noteInputLanguage("en", from: .de, at: t0)
+            l.noteInputLanguage("en", from: .de, at: t0.addingTimeInterval(0.5))
+            l.noteInputLanguage("en", from: .de, at: t0.addingTimeInterval(TurnLogic.settleWindow + 0.1))
         }
         return [
             (.codesVeto, reason { l in

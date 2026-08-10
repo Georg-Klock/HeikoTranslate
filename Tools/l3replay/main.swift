@@ -42,6 +42,11 @@ let expectations: [String: [ExpectedBubble]] = [
     "en_short": [ExpectedBubble(isHome: false, translator: .de)],
     "de_short": [ExpectedBubble(isHome: true, translator: .en)],
     "es_short": [ExpectedBubble(isHome: false, translator: .de)],
+    // Entity-preserving translation (#83): the German translation keeps
+    // every name, so it must still count as a translation — the shipped
+    // token-overlap rule dropped this turn (codes settled) or committed it
+    // as a RIGHT/home bubble (codes unsettled).
+    "en_entities": [ExpectedBubble(isHome: false, translator: .de)],
     "en_long": [ExpectedBubble(isHome: false, translator: .de, minOriginalWords: 50)],
     "de_after_en": [ExpectedBubble(isHome: false, translator: .de),
                     ExpectedBubble(isHome: true, translator: .en)],
@@ -53,8 +58,8 @@ let expectations: [String: [ExpectedBubble]] = [
     "noise": [],
 ]
 
-let defaultOrder = ["en_short", "de_short", "es_short", "en_long",
-                    "de_after_en", "de_after_es", "silence", "noise"]
+let defaultOrder = ["en_short", "de_short", "es_short", "en_entities",
+                    "en_long", "de_after_en", "de_after_es", "silence", "noise"]
 
 // Plumbing (loadAPIKey, loadWAV, rms) lives in common.swift, shared with
 // the L2.6 expiry probe.
@@ -219,7 +224,12 @@ final class ReplayRunner {
             }
         case .inputLanguage(let code):
             inputLanguageCodes.append("\(lang.rawValue):\(code)@\(elapsed())")
-            turn.noteInputLanguage(code)
+            turn.noteInputLanguage(code, from: lang)
+            // The service re-derives direction after every code event —
+            // mirrored here so replays exercise the same streaming path
+            // (#84 review: the harness previously never called noteOutputs
+            // at all, so its results could not witness re-derivation).
+            turn.noteOutputs(outputs, inputs: inputs)
         case .inputTranscript(let text):
             trace("IN ", lang, text)
             inputs[lang, default: ""] += text
@@ -230,6 +240,10 @@ final class ReplayRunner {
         case .outputTranscript(let text):
             trace("OUT", lang, text)
             outputs[lang, default: ""] += text
+            // Mirrors the service's streaming call at its outputTranscript
+            // site — direction resolves as output arrives, exactly as in
+            // production, rather than only at commit.
+            turn.noteOutputs(outputs, inputs: inputs)
             lastContentAt = Date()
             lastOutputAt = Date()
         case .turnComplete:

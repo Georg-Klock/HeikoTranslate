@@ -18,11 +18,11 @@ import Network
 /// watchdog spin up all six languages.
 ///
 /// The model is a continuous interpreter (each session streams 24kHz audio
-/// nonstop), so playback is energy-gated and streamed live. The app runs
-/// full-duplex: the mic keeps forwarding while a translation plays, and the
-/// hardware voice-processing unit's echo cancellation (see `startAudioIO`)
-/// stops the app from re-hearing its own output. Each completed turn is
-/// reported via `onUtterance`.
+/// nonstop), so output PCM is held until `TurnLogic.commit` makes the
+/// translator irrevocable. The app then plays only that committed session's
+/// audio; the hardware voice-processing unit's echo cancellation (see
+/// `startAudioIO`) stops the app from re-hearing its own output. Each
+/// completed turn is reported via `onUtterance`.
 @MainActor
 final class GeminiLiveTranslationService: ObservableObject {
     @Published private(set) var isRunning = false
@@ -174,11 +174,10 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// garbage — `TurnLogic.bestTranscript` picks the trustworthy one.
     private var inputs: [Lang: String] = [:]
     private var outputs: [Lang: String] = [:]
-    /// Translated audio, held until the speaker actually stops. The model is
-    /// a *simultaneous* interpreter — it starts translating mid-sentence — so
-    /// playing chunks as they arrive talks over the person and, because
-    /// playback starts the end-of-turn timer, chops one sentence into several
-    /// bubbles. SPEC §3.3: speak the translation when they stop.
+    /// Translated audio, held until a turn has committed. The model is a
+    /// *simultaneous* interpreter, but a provisional direction can still be
+    /// invalidated by later codes or transcripts. Playing early is
+    /// irreversible and can speak the other person's words as Heiko's.
     private var pendingOutput: [Lang: [Data]] = [:]
     private var directionRecheckTimer: Timer?
     /// After a commit, the translator's late audio chunks (text can arrive
@@ -216,7 +215,9 @@ final class GeminiLiveTranslationService: ObservableObject {
             && now.timeIntervalSince(lastOutputAt) >= outputQuietPause
     }
 
-    /// Half-duplex gate: while a translation plays, the mic isn't forwarded.
+    /// Minimum input quiet time before a turn may commit. Kept separate from
+    /// `outputQuietPause`: both the speaker and translation stream must be
+    /// quiet before held PCM is released.
     private var isPlayingOutput = false
     private var outputActivityTimer: Timer?
     private let outputTailTimeout: TimeInterval = 0.45
@@ -622,7 +623,14 @@ final class GeminiLiveTranslationService: ObservableObject {
             lastServerEventAt = Date()
             handleAudioChunk(data, from: lang)
         case .inputLanguage(let code):
-            noteInputLanguage(code)
+            noteInputLanguage(code, from: lang)
+            // Codes are crossed-direction evidence now, so a
+            // code event must re-derive like an output event does — a late
+            // foreign settle has to clear a provisional homeSpoken BEFORE
+            // the release flushes audio for it, and late crossed votes have
+            // to be able to correct the translator (#84 review).
+            turn.noteOutputs(outputs, inputs: inputs)
+            reportDirectionIfChanged()
         case .outputLanguage:
             break
         case .inputTranscript(let text):
@@ -639,9 +647,6 @@ final class GeminiLiveTranslationService: ObservableObject {
             // the German session really translates only non-German input.
             turn.noteOutputs(outputs, inputs: inputs)
             reportDirectionIfChanged()
-            // If they'd already stopped and we were only waiting to learn
-            // which session translates, speak now.
-            if speakerHasStopped, let t = turn.translator { flushPendingOutput(for: t) }
         case .turnComplete:
             break
         case .usage(let usage):
@@ -782,17 +787,21 @@ final class GeminiLiveTranslationService: ObservableObject {
         diag("session", "[\(lang.rawValue)] reconnected")
     }
 
-    private func noteInputLanguage(_ code: String) {
+    private func noteInputLanguage(_ code: String, from session: Lang) {
         // Codes that arrive while the mic has heard nothing this turn are
         // stragglers from the previous turn by construction — one device
         // run showed them settling the NEXT turn's language during 8s of
         // silence, vetoing the German that followed (2026-07-29 15:03).
         guard speechHeardThisTurn else {
-            diag("turn", "language code \(code) (ignored: no speech this turn)")
+            diag("turn", "language code \(code) [\(session.rawValue)] (ignored: no speech this turn)")
             return
         }
-        diag("turn", "language code \(code)")
-        if turn.noteInputLanguage(code) != nil {
+        // The reporting session is in the log line because it is now part of
+        // the decision (the per-session crossed evidence) — a device log that
+        // shows only the code cannot distinguish the crossed mis-hearing
+        // pattern from an ordinary settle (#83, and #81's spirit).
+        diag("turn", "language code \(code) [\(session.rawValue)]")
+        if turn.noteInputLanguage(code, from: session) != nil {
             setActivity(.understanding)
         }
     }
@@ -814,10 +823,13 @@ final class GeminiLiveTranslationService: ObservableObject {
         // the rest of the sentence.
         if rms > speechRMSThreshold { lastOutputAt = Date() }
 
-        // German audio corroborates the transcript signal, but only once the
-        // transcript itself is substantial — a false start must not flip the
-        // turn's direction.
-        if lang == .de, rms > speechRMSThreshold {
+        // Home-session audio corroborates the transcript signal, but only
+        // once the transcript itself is substantial — a false start must not
+        // flip the turn's direction. (`turn.home`, not `.de` — the hardcode
+        // predated configurable pairs and silently disabled this
+        // corroboration for any non-German home; latent until now because
+        // Heiko's home is German, same class as #38.)
+        if lang == turn.home, rms > speechRMSThreshold {
             turn.noteOutputs(outputs, inputs: inputs)
             reportDirectionIfChanged()
         }
@@ -836,35 +848,28 @@ final class GeminiLiveTranslationService: ObservableObject {
             }
         }
 
-        // Hold everything while the speaker is still going, or while we don't
-        // yet know whose translation to play.
-        guard speakerHasStopped, let t = turn.translator else {
-            if pendingOutput[lang, default: []].count < maxPendingOutputChunks {
-                pendingOutput[lang, default: []].append(data)
-            }
-            return
-        }
-
-        flushPendingOutput(for: t)
-        // Play only the translating session's speech; drop the rest.
-        // Energy-gated so near-silence doesn't hold the turn open.
-        guard rms > speechRMSThreshold else { return }
-        if lang == t {
-            play(pcm24kChunk: data)
-            markOutputActive()
+        // Every current-turn chunk stays recoverable until commit. A
+        // provisional translator is not permission to speak: late language
+        // evidence can still clear or change it, and PCM handed to `play()`
+        // cannot be recalled. `finalizeTurn` releases only
+        // `turn.committedTranslator`.
+        if pendingOutput[lang, default: []].count < maxPendingOutputChunks {
+            pendingOutput[lang, default: []].append(data)
         }
     }
 
-    /// Speak everything the translating session produced while the person was
-    /// still talking, then drop the other sessions' audio for this turn.
-    private func flushPendingOutput(for translator: Lang) {
-        guard !pendingOutput.isEmpty else { return }
+    /// Release queued PCM only after `TurnLogic.commit` has made the side
+    /// immutable. This is intentionally the sole current-turn path to
+    /// `play()`: the linger path above belongs to an already committed turn.
+    private func releaseCommittedOutput(for translator: Lang) {
+        guard turn.committedTranslator == translator else { return }
         let queued = pendingOutput[translator] ?? []
         pendingOutput = [:]
+        guard !queued.isEmpty else { return }
+        diag("turn", "releasing \(queued.count) held translation chunks at commit")
         for chunk in queued where Self.rms(of: chunk) > speechRMSThreshold {
             play(pcm24kChunk: chunk)
         }
-        if !queued.isEmpty { markOutputActive() }
     }
 
     /// Called whenever the person's speech progresses. Restarts the clock
@@ -943,18 +948,14 @@ final class GeminiLiveTranslationService: ObservableObject {
     private func speakerStopped() {
         guard isRunning, !speakerHasStopped else { return }
         speakerHasStopped = true
-        diag("turn", "speaker stopped — releasing translation audio")
+        diag("turn", "speaker stopped — waiting for committed translation audio")
         // Re-evaluate first: the home-silence confirm is time-based, and on a
         // laggy connection the whole translation can arrive in one burst
         // shorter than the confirm window — no later event ever re-checks,
         // and the held audio never plays (measured 2026-07-29, turn 1).
         turn.noteOutputs(outputs, inputs: inputs)
         reportDirectionIfChanged()
-        if let t = turn.translator {
-            flushPendingOutput(for: t)
-        } else {
-            startDirectionRecheck()
-        }
+        startDirectionRecheck()
     }
 
     /// While translated audio sits in `pendingOutput` waiting for a
@@ -971,8 +972,7 @@ final class GeminiLiveTranslationService: ObservableObject {
                 }
                 self.turn.noteOutputs(self.outputs, inputs: self.inputs)
                 self.reportDirectionIfChanged()
-                if let t = self.turn.translator {
-                    self.flushPendingOutput(for: t)
+                if self.turn.direction != nil {
                     self.stopDirectionRecheck()
                 }
             }
@@ -1027,29 +1027,33 @@ final class GeminiLiveTranslationService: ObservableObject {
         inputIdleTimer = nil
         deferralTimer?.invalidate()
         deferralTimer = nil
+        // A committed turn stays alive until its output tail is quiet. The
+        // timer below comes back through here to perform the actual reset;
+        // calling `commit` a second time would turn a successful turn into an
+        // "already committed" rejection and lose its state.
+        if turn.hasCommitted {
+            resetForNextUtterance()
+            onPartialInput?("")
+            reportDirectionIfChanged()
+            setActivity(.idle)
+            return
+        }
         emitUtterance()
         // The commit itself can be what resolves the direction (its home
         // branch needs no confirm window). Any audio still held for that
-        // turn must play NOW — the reset below would silently drop it.
-        // Played inline rather than via flushPendingOutput: markOutputActive
-        // inside finalize would re-arm the finalize timer against an
-        // already-empty turn.
-        if turn.hasCommitted, let t = turn.translator {
+        // turn may play NOW — but only through the committed-translator
+        // gate, never a provisional direction.
+        if let t = turn.committedTranslator {
             reportDirectionIfChanged()
-            let queued = pendingOutput[t] ?? []
-            pendingOutput = [:]
-            if !queued.isEmpty {
-                diag("turn", "releasing \(queued.count) held translation chunks at commit")
-                for chunk in queued where Self.rms(of: chunk) > speechRMSThreshold {
-                    play(pcm24kChunk: chunk)
-                }
-            }
+            releaseCommittedOutput(for: t)
             // On a starved uplink the translation TEXT can commit whole
             // seconds before its audio arrives. Let the translator's late
             // chunks play straight through for a grace window instead of
             // misfiling them into the next turn's buffers.
             lingeringTranslator = t
             lingerUntil = Date().addingTimeInterval(2.5)
+            markOutputActive()
+            return
         }
         // The decision itself lives in FinalizePolicy so the L3 harness runs
         // THIS rule rather than its own copy — the harness had no deferral at
@@ -1083,6 +1087,10 @@ final class GeminiLiveTranslationService: ObservableObject {
         setActivity(.idle)
     }
 
+    /// A committed translation may finish playing only after both the input
+    /// and output streams are quiet. This timer never releases PCM; it merely
+    /// preserves the committed turn long enough for its tail, then returns to
+    /// `finalizeTurn` for cleanup.
     private func markOutputActive() {
         isPlayingOutput = true
         setActivity(.translating)
@@ -1090,9 +1098,6 @@ final class GeminiLiveTranslationService: ObservableObject {
         outputActivityTimer = Timer.scheduledTimer(withTimeInterval: outputTailTimeout, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                // A pause is not the end of the turn: neither a breath while
-                // the speaker is still going, nor a gap while the translation
-                // is still streaming in. Wait for both sides to settle.
                 if !self.turnMayFinalize {
                     self.markOutputActive()
                     return
