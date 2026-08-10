@@ -14,6 +14,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# The project file is generated and gitignored, so it does not follow the
+# checkout: after a branch switch it can reference files that no longer exist,
+# or silently omit ones newly added — and a gate that tests a stale project
+# proves nothing about the code it claims to gate. Regenerating here also
+# means a fresh clone can reach the gate at all, and release.sh/deploy.sh
+# inherit the guarantee through this script. Idempotent, well under a second.
+# GitHub #17.
+xcodegen generate >/dev/null
+
 DEST=${L1_DESTINATION:-'platform=iOS Simulator,name=iPhone 17 Pro'}
 OUT=$(mktemp -t l1out)
 trap 'rm -f "$OUT"' EXIT
