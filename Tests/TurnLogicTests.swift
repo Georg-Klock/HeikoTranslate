@@ -1,0 +1,816 @@
+import XCTest
+@testable import HeikoTranslate
+
+/// L1 logic tests (TESTING.md) — pure decision-making, no audio, no network.
+///
+/// These exercise the REAL `TurnLogic` type the app runs, never a mirror
+/// copy. Since the language-pair settings (2026-07-28) the machine is
+/// pair-based: HOME (right side, large type, default German) and PARTNER
+/// (left side, default English). Direction comes from which session
+/// translated; codes only veto. Test IDs match TESTING.md §L1.
+final class TurnLogicTests: XCTestCase {
+
+    private let t0 = Date(timeIntervalSinceReferenceDate: 1_000_000)
+    private func t(_ seconds: TimeInterval) -> Date { t0.addingTimeInterval(seconds) }
+
+    /// Feeds one code repeatedly across the settle window, the way live
+    /// sessions repeating the code every ~1s do, so the plurality settles.
+    private func settle(_ logic: inout TurnLogic, _ code: String, at date: Date? = nil) {
+        let base = date ?? t(100)
+        logic.noteInputLanguage(code, at: base)
+        logic.noteInputLanguage(code, at: base.addingTimeInterval(0.5))
+        logic.noteInputLanguage(code, at: base.addingTimeInterval(TurnLogic.settleWindow + 0.1))
+    }
+
+    // L1.1 — partner language spoken → home session translates, LEFT (R2)
+    func testL1_1_partnerSpokenLandsLeft() {
+        var l = TurnLogic()   // de↔en default
+        let bubble = l.commit(inputs: [.de: "Hello, Heiko."],
+                              outputs: [.de: "Hallo, Heiko.", .en: "Hello, Heiko."])
+        XCTAssertEqual(bubble?.isHome, false)
+        XCTAssertEqual(bubble?.translation, "Hallo, Heiko.")
+        XCTAssertEqual(l.translator, .de)
+    }
+
+    // L1.2 — home language spoken → partner session translates, RIGHT (R2)
+    func testL1_2_homeSpokenLandsRight() {
+        var l = TurnLogic()
+        let bubble = l.commit(inputs: [.en: "Mir geht es gut."],
+                              outputs: [.en: "I'm doing well."])
+        XCTAssertEqual(bubble?.isHome, true)
+        XCTAssertEqual(bubble?.translation, "I'm doing well.")
+        XCTAssertEqual(l.translator, .en)
+    }
+
+    // L1.3 — every verified pair works both ways (the point of settings)
+    func testL1_3_allPairsBothDirections() {
+        for partner in TurnLogic.Lang.allCases where partner != .de {
+            var foreign = TurnLogic(home: .de, partner: partner)
+            let left = foreign.commit(inputs: [.de: "spoken partner text"],
+                                      outputs: [.de: "deutsche Übersetzung", partner: "echo"])
+            XCTAssertEqual(left?.isHome, false, "\(partner) → de failed")
+            XCTAssertEqual(left?.translation, "deutsche Übersetzung")
+
+            var home = TurnLogic(home: .de, partner: partner)
+            let right = home.commit(inputs: [partner: "Mir geht es gut."],
+                                    outputs: [partner: "partner translation"])
+            XCTAssertEqual(right?.isHome, true, "de → \(partner) failed")
+            XCTAssertEqual(right?.translation, "partner translation")
+        }
+        // …and a non-German home works too (English↔Spanish, once forbidden).
+        var enEs = TurnLogic(home: .en, partner: .es)
+        let bubble = enEs.commit(inputs: [.en: "¿Dónde está la estación?"],
+                                 outputs: [.en: "Where is the station?", .es: "echo"])
+        XCTAssertEqual(bubble?.isHome, false)
+        XCTAssertEqual(bubble?.translation, "Where is the station?")
+    }
+
+    // L1.4 — a THIRD language (neither side) is translated by the home
+    // session like any foreign speech: LEFT, home-language translation.
+    // The home reader is always served.
+    func testL1_4_thirdLanguageLandsLeftWithHomeTranslation() {
+        var l = TurnLogic()   // de↔en; French walks up
+        let bubble = l.commit(inputs: [.de: "Où est la gare?"],
+                              outputs: [.de: "Wo ist der Bahnhof?", .en: "Where is the station?"])
+        XCTAssertEqual(bubble?.isHome, false)
+        XCTAssertEqual(bubble?.translation, "Wo ist der Bahnhof?")
+    }
+
+    // L1.7 — THE DUPLICATE BUG: two finalize paths → exactly ONE bubble (R1)
+    func testL1_7_doubleCommitEmitsOneBubble() {
+        var l = TurnLogic()
+        let inputs: [TurnLogic.Lang: String] = [.en: "Mir geht es gut"]
+        let outputs: [TurnLogic.Lang: String] = [.en: "I'm doing well"]
+        XCTAssertNotNil(l.commit(inputs: inputs, outputs: outputs))
+        XCTAssertNil(l.commit(inputs: inputs, outputs: outputs))
+    }
+
+    // L1.8 — nothing translated → NO bubble, and the R1 latch stays open so
+    // the turn can still commit when the translation arrives (R3)
+    func testL1_8_noTranslationNoBubbleNoLatch() {
+        var l = TurnLogic()
+        XCTAssertNil(l.commit(inputs: [.en: "Hallo"], outputs: [:]))
+        XCTAssertNil(l.commit(inputs: [.en: "Hallo"], outputs: [.en: "  \n"]))
+        XCTAssertNotNil(l.commit(inputs: [.en: "Hallo"], outputs: [.en: "Hello"]))
+    }
+
+    // L1.8c — nothing said → NO bubble
+    func testL1_8c_emptyOriginalNoBubble() {
+        var l = TurnLogic()
+        XCTAssertNil(l.commit(inputs: [.de: "   "], outputs: [.de: "Hallo", .en: "echo"]))
+    }
+
+    // L1.9 — endTurn clears all per-turn state
+    func testL1_9_endTurnClearsState() {
+        var l = TurnLogic()
+        settle(&l, "es-MX")
+        _ = l.commit(inputs: [.de: "Hola"], outputs: [.de: "Hallo", .en: "echo"])
+        l.endTurn()
+        XCTAssertNil(l.spokenLang)
+        XCTAssertNil(l.translator)
+        XCTAssertNil(l.direction)
+        XCTAssertFalse(l.hasCommitted)
+    }
+
+    // L1.12 — unrecognized language codes are noise (live: "ja" for English)
+    func testL1_12_unknownCodesIgnored() {
+        var l = TurnLogic()
+        settle(&l, "ja-JP")
+        XCTAssertNil(l.spokenLang)
+        settle(&l, "de-DE")
+        XCTAssertEqual(l.spokenLang, .de)
+    }
+
+    // L1.13 — THE CODES-VETO: codes settled on the partner language but the
+    // home session never translated ⇒ there is nothing legal to show; the
+    // utterance is dropped rather than committed to a guessed side.
+    func testL1_13_codesVetoBlocksGuessedSide() {
+        var l = TurnLogic()
+        settle(&l, "en-US")
+        XCTAssertNil(l.commit(inputs: [.en: "Do you want sauce?"],
+                              outputs: [.en: "echo of English"]))
+        XCTAssertTrue(l.lastRejectReason?.contains("codes-veto") ?? false)
+    }
+
+    // L1.14 — commit output is trimmed
+    func testL1_14_commitTrims() {
+        var l = TurnLogic()
+        let bubble = l.commit(inputs: [.de: "  Hello \n"],
+                              outputs: [.de: " Hallo ", .en: "echo"])
+        XCTAssertEqual(bubble?.original, "Hello")
+        XCTAssertEqual(bubble?.translation, "Hallo")
+    }
+
+    // L1.15 — stragglers: codes re-announcing the previous turn's language
+    // ≤2.5s after it ended are ignored; a different language counts (R4).
+    func testL1_15_stragglerGraceFiltersOnlyPreviousLanguage() {
+        var l = TurnLogic()
+        settle(&l, "en-US", at: t(0))
+        _ = l.commit(inputs: [.de: "Hello"], outputs: [.de: "Hallo", .en: "echo"])
+        l.endTurn(at: t(6))
+        XCTAssertNil(l.noteInputLanguage("en-US", at: t(8.1)))   // straggler
+        XCTAssertNil(l.spokenLang)
+        l.noteInputLanguage("de-DE", at: t(6.5))
+        l.noteInputLanguage("de-DE", at: t(7.0))
+        l.noteInputLanguage("de-DE", at: t(8.2))
+        XCTAssertEqual(l.spokenLang, .de)
+    }
+
+    // L1.15b — a virgin endTurn starts no grace window
+    func testL1_15b_virginEndTurnNoGrace() {
+        var l = TurnLogic()
+        l.endTurn(at: t(0))
+        settle(&l, "en-US", at: t(0.1))
+        XCTAssertEqual(l.spokenLang, .en)
+    }
+
+    // L1.16 — THE KATAKANA BUG: the committed original prefers the
+    // translator session's transcript over first-responder garbage, even
+    // when the garbage is longest.
+    func testL1_16_originalPrefersTranslatorTranscript() {
+        var l = TurnLogic()
+        let inputs: [TurnLogic.Lang: String] = [
+            .en: "ハロー、ハイコ。お元気ですか。今日はどうですか。元気ですか?",
+            .de: "Hello, Heiko. How are you?",
+        ]
+        let bubble = l.commit(inputs: inputs,
+                              outputs: [.de: "Hallo, Heiko. Wie geht's?", .en: "echo echo"])
+        XCTAssertEqual(bubble?.original, "Hello, Heiko. How are you?")
+    }
+
+    // L1.17 — THE SETTLING RULE: a unanimously wrong opening burst loses to
+    // the corrected plurality.
+    func testL1_17_unanimousOpeningBurstLosesToPlurality() {
+        var l = TurnLogic()
+        XCTAssertNil(l.noteInputLanguage("es-ES", at: t(0)))
+        XCTAssertNil(l.noteInputLanguage("es-ES", at: t(0)))
+        XCTAssertNil(l.noteInputLanguage("es-ES", at: t(0.1)))
+        XCTAssertNil(l.noteInputLanguage("de-DE", at: t(1.1)))
+        XCTAssertNil(l.noteInputLanguage("de-DE", at: t(1.2)))
+        XCTAssertNil(l.noteInputLanguage("de-DE", at: t(1.3)))
+        XCTAssertEqual(l.noteInputLanguage("de-DE", at: t(2.1)), .de)
+        XCTAssertEqual(l.spokenLang, .de)
+    }
+
+    // L1.19 — a stray old vote must not pre-expire the settle window
+    func testL1_19_staleVotesExpire() {
+        var l = TurnLogic()
+        XCTAssertNil(l.noteInputLanguage("de-DE", at: t(0)))
+        XCTAssertNil(l.noteInputLanguage("en-US", at: t(60)))
+        XCTAssertNil(l.spokenLang)
+        l.noteInputLanguage("en-US", at: t(60.5))
+        l.noteInputLanguage("en-US", at: t(61.6))
+        XCTAssertEqual(l.spokenLang, .en)
+    }
+
+    // L1.20 — session behavior beats lying codes: codes said HOME but the
+    // home session substantially translated ⇒ the speech was foreign.
+    func testL1_20_homeTranslationBeatsLyingCodes() {
+        var l = TurnLogic(home: .de, partner: .es)
+        settle(&l, "de-DE")   // codes lie: "German"
+        let bubble = l.commit(
+            inputs: [.de: "Do you want caramel sauce?"],
+            outputs: [.de: "Möchten Sie Karamellsauce?", .es: "¿Quieres salsa de caramelo?"]
+        )
+        XCTAssertEqual(bubble?.isHome, false)
+        XCTAssertEqual(bubble?.translation, "Möchten Sie Karamellsauce?")
+    }
+
+    // L1.22 — a home-session false start ("Ich", 3 chars vs 95) is not a
+    // translation; the turn commits as home speech.
+    func testL1_22_homeFalseStartIsNotATranslation() {
+        var l = TurnLogic(home: .de, partner: .es)
+        l.noteOutputs([.de: "Ich", .es: "Me siento muy bien. ¿Y cómo está usted hoy?"], inputs: [:], at: t(0))
+        XCTAssertNotEqual(l.translator, .de)
+        let bubble = l.commit(
+            inputs: [.es: "Mir geht es sehr gut."],
+            outputs: [.de: "Ich", .es: "Me siento muy bien. ¿Y cómo está usted hoy?"]
+        )
+        XCTAssertEqual(bubble?.isHome, true)
+        XCTAssertEqual(bubble?.translation, "Me siento muy bien. ¿Y cómo está usted hoy?")
+    }
+
+    // L1.22b — a short but genuine home translation still counts
+    func testL1_22b_shortRealHomeTranslationCounts() {
+        var l = TurnLogic()
+        let bubble = l.commit(
+            inputs: [.de: "¿Dónde está la estación de tren, por favor?"],
+            outputs: [.de: "wo der Bahnhof ist, bitte.", .en: "where the train station is, please."]
+        )
+        XCTAssertEqual(bubble?.isHome, false)
+        XCTAssertEqual(bubble?.translation, "wo der Bahnhof ist, bitte.")
+    }
+
+    // L1.23 — THE FLOP: partner output alone proves nothing (English echoes
+    // English); only sustained home silence (1.2s) concludes home speech.
+    func testL1_23_partnerOutputAloneDoesNotDecide() {
+        var l = TurnLogic()
+        l.noteOutputs([.en: "Do you want caramel sauce?"], inputs: [:], at: t(0))
+        XCTAssertNil(l.direction, "partner output alone must not conclude home speech")
+        l.noteOutputs([.en: "Do you want caramel sauce?",
+                       .de: "Möchten Sie Karamellsauce?"], inputs: [:], at: t(0.6))
+        XCTAssertEqual(l.direction, .foreignSpoken)
+        XCTAssertEqual(l.translator, .de)
+    }
+
+    func testL1_23b_sustainedHomeSilenceMeansHomeSpoken() {
+        var l = TurnLogic()
+        l.noteOutputs([.en: "I'm doing well"], inputs: [:], at: t(0))
+        XCTAssertNil(l.direction)
+        l.noteOutputs([.en: "I'm doing well, thank you"], inputs: [:], at: t(1.4))
+        XCTAssertEqual(l.direction, .homeSpoken)
+        XCTAssertEqual(l.translator, .en)
+    }
+
+    // L1.24 — noteOutputs applies the codes-veto: codes settled on a
+    // non-home language mean the partner output is an ECHO of foreign
+    // speech (measured 2026-07-29: English input → en session echoed the
+    // English, de session silent). Home silence must not resolve homeSpoken,
+    // or the echo audio plays as if it were a translation.
+    func testL1_24_codesVetoBlocksHomeSilenceResolution() {
+        var l = TurnLogic()
+        settle(&l, "en", at: t(0))
+        // Real transcripts, not [:] — the veto now YIELDS to a partner output
+        // that demonstrably translated (#75), so this test must show the
+        // echo case still held: the en output IS the input, token for token.
+        let heard: [TurnLogic.Lang: String] = [.de: "How much is such an item?"]
+        l.noteOutputs([.en: "How much is such an item?"], inputs: heard, at: t(2))
+        l.noteOutputs([.en: "How much is such an item?"], inputs: heard, at: t(4))
+        XCTAssertNil(l.direction, "settled foreign codes must veto homeSpoken")
+        XCTAssertNil(l.translator)
+        XCTAssertNil(l.commit(inputs: [.de: "How much is such an item?"],
+                              outputs: [.en: "How much is such an item?"]))
+    }
+
+    // L1.25 — the device-log cascade of 2026-07-29 15:03: stragglers settle
+    // "en" before the speech begins, then the REAL German speech sends
+    // unanimous de codes. Three consecutive contradictions overturn the
+    // poisoned settle, so the veto lifts and the turn commits.
+    func testL1_25_consecutiveContradictionsOverturnPoisonedSettle() {
+        var l = TurnLogic()
+        settle(&l, "en", at: t(0))
+        XCTAssertEqual(l.spokenLang, .en)
+        l.noteInputLanguage("de", at: t(8))
+        l.noteInputLanguage("de", at: t(9))
+        XCTAssertEqual(l.spokenLang, .en, "two contradictions must not overturn")
+        l.noteInputLanguage("de", at: t(10))
+        XCTAssertEqual(l.spokenLang, .de, "third consecutive contradiction re-settles")
+        l.noteOutputs([.en: "I have the feeling I'm not understood."], inputs: [:], at: t(10))
+        l.noteOutputs([.en: "I have the feeling I'm not understood."], inputs: [:], at: t(11.5))
+        XCTAssertEqual(l.direction, .homeSpoken)
+        XCTAssertNotNil(l.commit(inputs: [.de: "Ich habe das Gefühl."],
+                                 outputs: [.en: "I have the feeling I'm not understood."]))
+    }
+
+    // L1.25b — the NORMAL lying-code noise during speech (en,de,en,de from
+    // the two sessions, ~1/s each) alternates, so it never reaches three
+    // consecutive votes and the settle holds.
+    func testL1_25b_alternatingLiesDoNotOverturn() {
+        var l = TurnLogic()
+        settle(&l, "en", at: t(0))
+        for i in 0..<6 {
+            l.noteInputLanguage("de", at: t(2 + Double(i)))
+            l.noteInputLanguage("en", at: t(2.5 + Double(i)))
+        }
+        XCTAssertEqual(l.spokenLang, .en, "alternating contradictions must not overturn")
+    }
+
+    // L1.26 — the spoken-number turn (device log 2026-07-29 15:27): "14
+    // Euro" is 7 chars, under the 8-char false-start floor, but the codes
+    // settled en — foreign speech confirmed, so the tiny translation is
+    // real and the turn commits LEFT.
+    func testL1_26_settledForeignCodesWaiveTheAbsoluteFloor() {
+        var l = TurnLogic()
+        settle(&l, "en", at: t(0))
+        l.noteOutputs([.de: "14 Euro"], inputs: [:], at: t(3))
+        XCTAssertEqual(l.direction, .foreignSpoken)
+        XCTAssertEqual(l.translator, .de)
+        let bubble = l.commit(inputs: [.en: "Fourteen euros"], outputs: [.de: "14 Euro"])
+        XCTAssertEqual(bubble?.isHome, false)
+        XCTAssertEqual(bubble?.translation, "14 Euro")
+    }
+
+    // L1.26b — without settled foreign codes the floor holds: a tiny home
+    // output alone must not decide the turn (the false-start guard).
+    func testL1_26b_floorHoldsWhileCodesAreUnsettled() {
+        var l = TurnLogic()
+        l.noteOutputs([.de: "Ich"], inputs: [:], at: t(0))
+        XCTAssertNil(l.direction, "3 chars with no code corroboration is a false start")
+        var settledHome = TurnLogic()
+        settle(&settledHome, "de", at: t(0))
+        settledHome.noteOutputs([.de: "Ich"], inputs: [:], at: t(3))
+        XCTAssertNil(settledHome.direction, "home codes never waive the floor")
+    }
+
+    // L1.31 — settled foreign codes rescue a SHORT home translation even when
+    // the partner session echoed. Before GitHub #23 the ratio branch returned
+    // early whenever an echo was present, so the corroboration bypass added in
+    // L1.26 was unreachable in the common case — a short but genuine
+    // translation next to a long echo was swallowed.
+    func testL1_31_settledCodesRescueShortHomeOutputDespiteEcho() {
+        var l = TurnLogic()
+        settle(&l, "en", at: t(0))
+        let echo = "Fourteen euros please, and a receipt."   // 37 chars
+        l.noteOutputs([.de: "14 Euro bitte", .en: echo], inputs: [:], at: t(3))
+        XCTAssertEqual(l.direction, .foreignSpoken,
+                       "13/37 = 0.35 is below the 0.4 ratio floor, but the codes settled foreign")
+        XCTAssertEqual(l.translator, .de)
+        let bubble = l.commit(inputs: [.en: "Fourteen euros please"],
+                              outputs: [.de: "14 Euro bitte", .en: echo])
+        XCTAssertEqual(bubble?.isHome, false)
+        XCTAssertEqual(bubble?.translation, "14 Euro bitte")
+    }
+
+    // L1.31b — the rescue must NOT readmit a false start. Same shape as L1.22
+    // (3-char home output beside a full echo) but with the codes settled
+    // foreign: the absolute floor still rejects it.
+    func testL1_31b_corroborationDoesNotRescueAFalseStart() {
+        var l = TurnLogic()
+        settle(&l, "en", at: t(0))
+        l.noteOutputs([.de: "Ich", .en: "I am doing very well today, thank you."], inputs: [:], at: t(3))
+        XCTAssertNotEqual(l.translator, .de,
+                          "3 chars is a false start whatever the codes say")
+    }
+
+    // L1.41 — the case GitHub #23 was actually filed for: "14 Euro" is SEVEN
+    // characters, and the fix that closed #23 kept the 8-char uncorroborated
+    // floor in the echo branch, so the measured failure survived its own fix.
+    // L1.31 passed only because its example ("14 Euro bitte") is 13.
+    func testL1_41_theMeasuredSevenCharTranslationSurvivesAnEcho() {
+        var l = TurnLogic()
+        settle(&l, "en", at: t(0))
+        let echo = "That'll be fourteen euros."          // 26 chars
+        l.noteOutputs([.de: "14 Euro", .en: echo], inputs: [:], at: t(3))   // 7/26 = 0.27, under the ratio floor
+        XCTAssertEqual(l.direction, .foreignSpoken,
+                       "corroborated codes rescue it; only the ratio failed")
+        let bubble = l.commit(inputs: [.en: "That'll be fourteen euros"],
+                              outputs: [.de: "14 Euro", .en: echo])
+        XCTAssertEqual(bubble?.isHome, false)
+        XCTAssertEqual(bubble?.translation, "14 Euro")
+    }
+
+    // L1.41b — the corroborated floor is confined to the ECHO branch, and that
+    // asymmetry is deliberate. With nothing to weigh the home output against,
+    // the codes are the only evidence there is, so any non-empty output is
+    // accepted — as it always has been. A floor there would swallow the
+    // shortest real answers in the language, which is the failure the whole
+    // area exists to prevent.
+    //
+    // Guards against "tidying" the two branches into one rule.
+    func testL1_41b_theCorroboratedFloorAppliesOnlyBesideAnEcho() {
+        // Below the 5-char floor, no echo: accepted. These are answers, not
+        // false starts, and rejecting them is a silently swallowed turn.
+        for answer in ["Ja", "Nein", "Vier"] {
+            var l = TurnLogic()
+            settle(&l, "en", at: t(0))
+            l.noteOutputs([.de: answer], inputs: [:], at: t(3))
+            XCTAssertEqual(l.direction, .foreignSpoken,
+                           "\"\(answer)\" (\(answer.count)) is a real answer with no echo to judge it by")
+        }
+
+        // The same lengths BESIDE an echo: the floor applies, because now
+        // there is something to tell a false start from a translation.
+        var withEcho = TurnLogic()
+        settle(&withEcho, "en", at: t(0))
+        withEcho.noteOutputs([.de: "Ich", .en: "I am doing very well today, thank you."], inputs: [:], at: t(3))
+        XCTAssertNil(withEcho.direction, "3 chars beside a full echo is a false start")
+
+        // And the boundary itself, so the constant cannot drift unnoticed:
+        // 5 clears, 4 does not, both beside the same echo.
+        let echo = "That'll be fourteen euros."
+        var atFloor = TurnLogic()
+        settle(&atFloor, "en", at: t(0))
+        atFloor.noteOutputs([.de: "12345", .en: echo], inputs: [:], at: t(3))
+        XCTAssertEqual(atFloor.direction, .foreignSpoken, "5 chars is at the floor and clears it")
+
+        var belowFloor = TurnLogic()
+        settle(&belowFloor, "en", at: t(0))
+        belowFloor.noteOutputs([.de: "1234", .en: echo], inputs: [:], at: t(3))
+        XCTAssertNil(belowFloor.direction, "4 chars is under it")
+    }
+
+    // MARK: - GitHub #26 — state-machine edge cases
+
+    // L1.34 — a tied plurality must not be broken by enum declaration order.
+    // `for lang in Lang.allCases { if count > best }` settles a 2-2 vote on
+    // whichever language happens to enumerate first (de, en, es, …), and that
+    // arbitrary settle then arms the commit veto. A tie means "the codes do not
+    // agree yet", which is exactly the state `spokenLang == nil` exists to
+    // represent, so nothing settles until the tie breaks.
+    func testL1_34_aTiedVoteDoesNotSettle() {
+        var l = TurnLogic()
+        l.noteInputLanguage("en", at: t(0))
+        l.noteInputLanguage("es", at: t(0.2))
+        l.noteInputLanguage("en", at: t(0.4))
+        l.noteInputLanguage("es", at: t(TurnLogic.settleWindow + 0.2))   // 2-2, window elapsed
+
+        XCTAssertNil(l.spokenLang,
+                     "a 2-2 tie must not settle on whichever language enumerates first")
+
+        // And it settles the moment the tie actually breaks.
+        l.noteInputLanguage("es", at: t(TurnLogic.settleWindow + 0.4))
+        XCTAssertEqual(l.spokenLang, .es)
+    }
+
+    // L1.35 — a turn that produced only partner output still ends a turn.
+    // `endTurn`'s "did this turn contain anything" guard checks spokenLang,
+    // direction, hasCommitted and votes — but not `firstPartnerOutputAt`, which
+    // it nevertheless clears. So an echo-only turn (partner session echoes
+    // foreign speech, no codes, no commit) never stamps `lastTurnEnd`, the next
+    // turn's straggler grace is never armed, and that echo's late codes are
+    // admitted as fresh votes for the following turn.
+    func testL1_35_anEchoOnlyTurnStillArmsTheStragglerGrace() {
+        var l = TurnLogic()
+        l.noteOutputs([.en: "I am doing very well, thank you."], inputs: [:], at: t(0))
+        l.endTurn(at: t(1))
+
+        XCTAssertEqual(l.lastTurnEnd, t(1),
+                       "a turn with partner output in it is not an empty turn")
+    }
+
+    // L1.36 — a commit that returns nil must not leave a direction behind.
+    // `direction` is assigned before the empty-original/empty-translation
+    // guards, so a rejected commit still reports a side for a turn that
+    // produced no bubble — and `translator` follows `direction`, which is what
+    // the service uses to decide whose held audio to play.
+    func testL1_36_aRejectedCommitLeavesNoDirection() {
+        var l = TurnLogic()
+        // Home output is decisive (11 chars, no partner output), so the foreign
+        // branch is taken — then rejected, because no transcript ever arrived.
+        let bubble = l.commit(inputs: [:], outputs: [.de: "Hallo Heiko"])
+
+        XCTAssertNil(bubble)
+        XCTAssertEqual(l.lastRejectReason, "foreign branch: empty original")
+        XCTAssertNil(l.direction, "no bubble means no side was decided")
+        XCTAssertNil(l.translator, "and nothing to play")
+    }
+
+    // L1.36b — the same, reached the way the service actually reaches it:
+    // output streams in first, so `noteOutputs` has ALREADY set a provisional
+    // direction before `commit` runs. The first version of this fix saved that
+    // value and put it back on rejection, which restored the ghost instead of
+    // removing it — and L1.36 could not see the difference, because a fresh
+    // turn has nothing to restore. Caught in review of #26.
+    func testL1_36b_aRejectedCommitClearsADirectionSetByStreaming() {
+        var l = TurnLogic()
+        l.noteOutputs([.de: "Hallo Heiko"], inputs: [:], at: t(0))
+        XCTAssertEqual(l.direction, .foreignSpoken, "streaming set it, as it should")
+        XCTAssertEqual(l.translator, .de)
+
+        let bubble = l.commit(inputs: [:], outputs: [.de: "Hallo Heiko"])
+
+        XCTAssertNil(bubble)
+        XCTAssertNil(l.direction, "the rejection must clear it, not put it back")
+        XCTAssertNil(l.translator, "so the service has no session to hand held audio to")
+    }
+
+    // L1.36c — the home branch, same shape: partner output established the
+    // side before the commit rejected for a missing transcript.
+    func testL1_36c_theHomeBranchAlsoClearsOnRejection() {
+        var l = TurnLogic()
+        l.noteOutputs([.en: "I'm doing well."], inputs: [:], at: t(0))
+        l.noteOutputs([.en: "I'm doing well."], inputs: [:], at: t(TurnLogic.homeSilenceConfirmDelay + 0.1))
+        XCTAssertEqual(l.direction, .homeSpoken)
+
+        let bubble = l.commit(inputs: [:], outputs: [.en: "I'm doing well."])
+
+        XCTAssertNil(bubble)
+        XCTAssertEqual(l.lastRejectReason, "home branch: empty original")
+        XCTAssertNil(l.direction)
+        XCTAssertNil(l.translator)
+    }
+
+    // L1.37 — output arriving after the commit must not move the bubble.
+    // R1: a turn commits once. `noteOutputs` had no `hasCommitted` guard, so a
+    // late home-session transcript could flip `direction` from homeSpoken to
+    // foreignSpoken *after* the bubble was emitted — changing `translator`
+    // while the service is flushing held audio for the old one.
+    func testL1_37_lateOutputCannotFlipACommittedTurn() {
+        var l = TurnLogic()
+        let bubble = l.commit(inputs: [.en: "Mir geht es gut."],
+                              outputs: [.en: "I'm doing well."])
+        XCTAssertEqual(bubble?.isHome, true)
+        XCTAssertEqual(l.direction, .homeSpoken)
+        XCTAssertEqual(l.translator, .en)
+
+        // A late, substantial home-session transcript for the same turn.
+        l.noteOutputs([.de: "Mir geht es wirklich gut.", .en: "I'm doing well."], inputs: [:], at: t(3))
+
+        XCTAssertEqual(l.direction, .homeSpoken, "the committed side is final")
+        XCTAssertEqual(l.translator, .en, "so the audio still goes to the session that translated")
+    }
+
+    // L1.38 — INTENDED, not a defect: `staleCodeGrace` (2.5s) is longer than
+    // `settleWindow` (1.5s), so a tally can settle entirely inside the grace
+    // window that follows a turn. That is the documented meaning of the grace —
+    // it filters stragglers *of the previous turn's language only*; a code for a
+    // different language is a fast reply and counts immediately. Pinned here
+    // because the asymmetry looks like a bug until you know that, and because
+    // the service's mic-energy gate (`speechHeardThisTurn`) is a second line of
+    // defence that must not be mistaken for this one.
+    func testL1_38_aDifferentLanguageSettlesInsideTheStragglerGrace() {
+        var l = TurnLogic()
+        settle(&l, "en", at: t(0))
+        XCTAssertEqual(l.spokenLang, .en)
+        l.endTurn(at: t(2))                       // grace runs to t(4.5)
+
+        // The previous turn's language, still inside the grace: ignored.
+        XCTAssertNil(l.noteInputLanguage("en", at: t(2.5)))
+        XCTAssertNil(l.spokenLang)
+
+        // A different language, same window: counts, and settles.
+        l.noteInputLanguage("es", at: t(2.6))
+        l.noteInputLanguage("es", at: t(3.0))
+        l.noteInputLanguage("es", at: t(4.2))     // still inside the 2.5s grace
+        XCTAssertEqual(l.spokenLang, .es,
+                       "a reply in another language is not a straggler")
+    }
+
+    // L1.24b — codes settled on the HOME language do not veto; the confirm
+    // window may elapse with no new event in between (time-based, re-checked
+    // by the service's recheck clock).
+    func testL1_24b_homeCodesAllowLateHomeResolution() {
+        var l = TurnLogic()
+        settle(&l, "de", at: t(0))
+        l.noteOutputs([.en: "Hi, I'm Heiko, how are you?"], inputs: [:], at: t(2))
+        XCTAssertNil(l.direction, "confirm window hasn't elapsed yet")
+        // No new server event — the recheck clock just asks again later.
+        l.noteOutputs([.en: "Hi, I'm Heiko, how are you?"], inputs: [:], at: t(3.5))
+        XCTAssertEqual(l.direction, .homeSpoken)
+        XCTAssertEqual(l.translator, .en)
+    }
+
+    // MARK: - Round-trip echoes (#75, #45)
+
+    // The measured failing replay of 2026-08-07 (baseline run 6), verbatim.
+    // German spoken after Spanish; the de session mis-heard the opening as
+    // Spanish ("Me va muy bien,"), translated that misreading back into
+    // German, then repeated the rest word for word — a full-length output
+    // (ratio 1.1, every size floor passed) built from the input's own words
+    // (echo-share 0.85). Meanwhile its language codes voted "es" all turn
+    // and settled the guess on the PARTNER language, so before #75 this
+    // turn either committed LEFT (the ratio path) or was swallowed by the
+    // codes-veto once the ratio path was closed. It must commit RIGHT via
+    // the es session, whose Spanish output shares nothing with the German
+    // heard (echo-share 0.16) and is therefore a real translation.
+    private static let run6Inputs: [TurnLogic.Lang: String] = [
+        .de: " Me va muy bien, vielen Dank für die Nachfrage. Und wie geht es Ihnen heute bei diesem schönen Wetter?",
+        .es: " Um, mir geht es sehr gut. Vielen Dank für die Nachfrage. Und wie geht es Ihnen heute bei diesem schönen Wetter?",
+    ]
+    private static let run6Outputs: [TurnLogic.Lang: String] = [
+        .de: "Ich komme sehr gut zurecht, vielen Dank für die Nachfrage. Und wie geht es Ihnen heute bei diesem schönen Wetter?",
+        .es: "Este, me siento muy bien. Muchas gracias por preguntar. ¿Y cómo está usted hoy con este clima tan bonito?",
+    ]
+
+    // L1.47 — the round-trip echo lands RIGHT despite codes settled on the
+    // partner: the home output is disqualified as an echo, and the veto
+    // yields to the partner session's demonstrable translation.
+    func testL1_47_roundTripEchoWithPartnerSettledCodesLandsRight() {
+        var l = TurnLogic(home: .de, partner: .es)
+        settle(&l, "es", at: t(0))   // the mis-hearing de session's votes won
+        let bubble = l.commit(inputs: Self.run6Inputs, outputs: Self.run6Outputs)
+        XCTAssertEqual(bubble?.isHome, true,
+                       "a full-length round-trip echo must not count as a home translation")
+        XCTAssertEqual(bubble?.translation,
+                       "Este, me siento muy bien. Muchas gracias por preguntar. ¿Y cómo está usted hoy con este clima tan bonito?")
+        XCTAssertEqual(l.translator, .es)
+    }
+
+    // L1.47b — same turn shape with the codes settled on HOME (the pattern
+    // the referee-session experiment logged: every session voting de,
+    // correctly). Here the old ratio path was the whole failure.
+    func testL1_47b_roundTripEchoWithHomeSettledCodesLandsRight() {
+        var l = TurnLogic(home: .de, partner: .es)
+        settle(&l, "de", at: t(0))
+        let bubble = l.commit(inputs: Self.run6Inputs, outputs: Self.run6Outputs)
+        XCTAssertEqual(bubble?.isHome, true)
+        XCTAssertEqual(l.translator, .es)
+    }
+
+    // L1.47c — #45's danger table: a SHORT identical output is a cognate,
+    // number, or name surviving translation, not an echo. Below the token
+    // floor the echo rule must stay out of it, and the turn stays LEFT.
+    func testL1_47c_shortIdenticalOutputIsStillATranslation() {
+        var l = TurnLogic()   // de↔en
+        let bubble = l.commit(
+            inputs: [.de: "Navigator", .en: "Navigator"],
+            outputs: [.de: "Navigator", .en: "Navigator"])
+        XCTAssertEqual(bubble?.isHome, false,
+                       "one token of overlap is a proper noun, not a round trip")
+        XCTAssertEqual(l.translator, .de)
+    }
+
+    // L1.47d — a third language walking up produces long outputs in BOTH
+    // sessions, but they are real translations: almost no token survives
+    // from the French heard. The echo rule must not touch them (L1.4's
+    // semantics at full length).
+    func testL1_47d_thirdLanguageLongTranslationsStayLeft() {
+        var l = TurnLogic(home: .de, partner: .es)
+        let bubble = l.commit(
+            inputs: [.de: " Pourriez-vous me dire où se trouve la gare, s'il vous plaît?",
+                     .es: " Pourriez-vous me dire où se trouve la gare, s'il vous plaît?"],
+            outputs: [.de: "Könnten Sie mir bitte sagen, wo der Bahnhof ist?",
+                      .es: "¿Podría decirme dónde está la estación, por favor?"])
+        XCTAssertEqual(bubble?.isHome, false)
+        XCTAssertEqual(bubble?.translation, "Könnten Sie mir bitte sagen, wo der Bahnhof ist?")
+        XCTAssertEqual(l.translator, .de)
+    }
+
+    // L1.47e — the veto yields ONLY to the partner language. Codes settled
+    // on a language that is NEITHER side mean no session translated into
+    // the home reader's language, so there is still nothing legal to show
+    // — the turn is rejected, exactly as before #75.
+    func testL1_47e_neitherSideSettleStillVetoes() {
+        var l = TurnLogic(home: .de, partner: .es)
+        settle(&l, "fr", at: t(0))
+        let bubble = l.commit(
+            inputs: [.es: " Um, mir geht es sehr gut. Vielen Dank für die Nachfrage."],
+            outputs: [.es: "Este, me siento muy bien. Muchas gracias por preguntar."])
+        XCTAssertNil(bubble, "a neither-side settle has no translation to trust")
+        XCTAssertEqual(l.lastRejectReason,
+                       "codes-veto: settled fr, home session never translated")
+    }
+
+    // L1.47f — the yield needs POSITIVE evidence of translation. A partner
+    // output that is itself the echo (L1.24's shape, judged against what
+    // that session heard), or one with no heard input to judge against,
+    // keeps the veto in force.
+    func testL1_47f_vetoYieldNeedsAProvenTranslation() {
+        var echoed = TurnLogic(home: .de, partner: .es)
+        settle(&echoed, "es", at: t(0))
+        XCTAssertNil(echoed.commit(
+            inputs: [.de: " ¿Dónde está la estación de tren?",
+                     .es: " ¿Dónde está la estación de tren?"],
+            outputs: [.es: "¿Dónde está la estación de tren?"]),
+            "a partner echo of foreign speech must stay vetoed")
+
+        var unheard = TurnLogic(home: .de, partner: .es)
+        settle(&unheard, "es", at: t(0))
+        XCTAssertNil(unheard.commit(
+            inputs: [:],
+            outputs: [.es: "Este, me siento muy bien. Muchas gracias por preguntar."]),
+            "no transcript to compare against is no evidence of translation")
+    }
+
+    // L1.47h — the crossed misreading (after-run 1, 2026-08-07, verbatim):
+    // BOTH sessions misread half the German, complementarily. The de
+    // session's transcript converged on near-Spanish — nearly the same
+    // Spanish the es session legitimately translated into — and its German
+    // output lives in the ES transcript, not its own. So the home echo is
+    // only visible against the UNION of transcripts, while the partner's
+    // translation proves itself only against the partner's OWN transcript;
+    // with both comparisons pointed correctly the turn commits RIGHT. The
+    // first cut of #75 compared both against the union and swallowed it;
+    // the pre-#75 code committed it LEFT. Both were wrong.
+    func testL1_47h_crossedMisreadingStillLandsRight() {
+        var l = TurnLogic(home: .de, partner: .es)
+        settle(&l, "es", at: t(0))
+        let bubble = l.commit(
+            inputs: [.de: " Me va muy bien. Muchas gracias por la pregunta. ¿Y cómo está usted hoy en este bonito tiempo?",
+                     .es: " Me geht es sehr gut. Vielen Dank für die Nachfrage. Und wie geht es Ihnen heute bei diesem schönen Wetter?"],
+            outputs: [.de: " Ich mir geht es sehr gut. Vielen Dank für die Frage. Und wie geht es Ihnen heute an diesem schönen Wetter?",
+                      .es: "Me va muy bien. Muchas gracias por preguntar. ¿Y cómo está usted hoy con este clima tan bonito?"])
+        XCTAssertEqual(bubble?.isHome, true,
+                       "the home output is an echo in the ES transcript; the es output is a translation of what ES heard")
+        XCTAssertEqual(l.translator, .es)
+    }
+
+    // L1.47g — the live path (noteOutputs) reaches the same verdict as
+    // commit: with the codes settled on the partner and the partner output
+    // proving itself a translation, home-session noise that is only an echo
+    // does not block the home-silence confirmation.
+    func testL1_47g_noteOutputsResolvesHomeSpokenThroughTheYield() {
+        var l = TurnLogic(home: .de, partner: .es)
+        settle(&l, "es", at: t(0))
+        l.noteOutputs(Self.run6Outputs, inputs: Self.run6Inputs, at: t(2))
+        XCTAssertNil(l.direction, "confirm window hasn't elapsed yet")
+        l.noteOutputs(Self.run6Outputs, inputs: Self.run6Inputs,
+                      at: t(2 + TurnLogic.homeSilenceConfirmDelay + 0.1))
+        XCTAssertEqual(l.direction, .homeSpoken)
+        XCTAssertEqual(l.translator, .es)
+    }
+}
+
+/// Filler-word stripping — unchanged semantics, still German/English/Spanish
+/// only. Languages without a studied list are left byte-identical.
+final class FillerWordTests: XCTestCase {
+
+    func testStripsEnglishHesitationAndRecapitalises() {
+        XCTAssertEqual(FillerWords.strip("Um, so sorry, we're out of pickles.", isGerman: false),
+                       "So sorry, we're out of pickles.")
+    }
+
+    func testStripsGermanHesitation() {
+        XCTAssertEqual(FillerWords.strip("Ähm, ich hätte gerne einen Kaffee.", isGerman: true),
+                       "Ich hätte gerne einen Kaffee.")
+        XCTAssertEqual(FillerWords.strip("Ich hätte gerne äh acht Menüs davon", isGerman: true),
+                       "Ich hätte gerne acht Menüs davon")
+    }
+
+    func testSentenceAfterRemovedFillerIsRecapitalised() {
+        XCTAssertEqual(FillerWords.strip("Oh, das ist wunderbar. Ähm, das hätte ich gerne.", isGerman: true),
+                       "Oh, das ist wunderbar. Das hätte ich gerne.")
+    }
+
+    func testTrailingFillerKeepsPunctuation() {
+        XCTAssertEqual(FillerWords.strip("Das hätte ich gerne ähm.", isGerman: true),
+                       "Das hätte ich gerne.")
+        XCTAssertEqual(FillerWords.strip("I'd like that, um.", isGerman: false),
+                       "I'd like that.")
+    }
+
+    func testPureFillerBecomesEmpty() {
+        XCTAssertEqual(FillerWords.strip("Um, uh, umm", isGerman: false), "")
+        XCTAssertEqual(FillerWords.strip("Ähm.", isGerman: true), "")
+    }
+
+    // The seven false positives from the 2026-07-28 adversarial review stay
+    // impossible: real words survive.
+    func testRealWordsSurvive() {
+        XCTAssertEqual(FillerWords.strip("Die Schraube ist 6 mm lang.", isGerman: true),
+                       "Die Schraube ist 6 mm lang.")
+        XCTAssertEqual(FillerWords.strip("Mhm.", isGerman: true), "Mhm.")
+        XCTAssertEqual(FillerWords.strip("Hm, ja.", isGerman: true), "Hm, ja.")
+        XCTAssertEqual(FillerWords.strip("Cuesta 500 pesos, ¿eh?", isGerman: false),
+                       "Cuesta 500 pesos, ¿eh?")
+        XCTAssertEqual(FillerWords.strip("Er ist schon da.", isGerman: true), "Er ist schon da.")
+        XCTAssertEqual(FillerWords.strip("Take me to the ER.", isGerman: false),
+                       "Take me to the ER.")
+        XCTAssertEqual(FillerWords.strip("We should err on the side of caution.", isGerman: false),
+                       "We should err on the side of caution.")
+    }
+
+    // Clean text comes back byte-identical (no re-capitalisation drift).
+    func testCleanTextByteIdentical() {
+        for (text, isGerman) in [("Ich komme am 3. oder 4. Mai.", true),
+                                 ("Das ist gut. iPhone ist teuer.", true),
+                                 ("Meet me at 5 p.m. tomorrow", false)] {
+            XCTAssertEqual(FillerWords.strip(text, isGerman: isGerman), text)
+        }
+    }
+
+    // Unstudied languages are never touched, even when they contain tokens
+    // that happen to look like English fillers.
+    func testUnstudiedLanguagesUntouched() {
+        XCTAssertEqual(FillerWords.strip("Um, je voudrais un café.", for: .fr),
+                       "Um, je voudrais un café.")
+        XCTAssertEqual(FillerWords.strip("음, 커피 주세요.", for: .ko), "음, 커피 주세요.")
+        XCTAssertEqual(FillerWords.strip("嗯，我要一杯咖啡。", for: .zh), "嗯，我要一杯咖啡。")
+    }
+
+    // The pair-based commit cleans both lines with each line's own rules.
+    func testCommitCleansBothLines() {
+        var l = TurnLogic()
+        let bubble = l.commit(
+            inputs: [.de: "Um, so sorry, we're out of pickles."],
+            outputs: [.de: "Ähm, tut mir leid, wir haben keine Gurken.", .en: "echo"]
+        )
+        XCTAssertEqual(bubble?.original, "So sorry, we're out of pickles.")
+        XCTAssertEqual(bubble?.translation, "Tut mir leid, wir haben keine Gurken.")
+    }
+
+    func testCommitDropsPureFillerTurn() {
+        var l = TurnLogic()
+        XCTAssertNil(l.commit(inputs: [.de: "Um, uh"], outputs: [.de: "Ähm, äh", .en: "Uh"]))
+    }
+}

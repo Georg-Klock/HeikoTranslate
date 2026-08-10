@@ -1,0 +1,131 @@
+name: L1
+
+# There is deliberately no L3 job. L3 talks to the live Gemini API, so it would
+# need the key as a repository secret — one more place it lives. It is also
+# known-flaky by design (TESTING.md §L3: one rerun is expected, twice in a row
+# is a real regression), and a check that goes red on healthy code teaches you
+# to ignore red checks. L3 stays a deliberate, human-judged step before a
+# release.
+#
+# On MERGES to main, not on every pull request.
+#
+# Measured 2026-08-08: 33 runs, zero failures, ~1,811 of 2,000 included minutes
+# for the month, at the macOS 10x billing multiplier.
+#
+# An earlier version of this comment justified the change by claiming both
+# deploy.sh and release.sh already refuse to proceed without L1. That was only
+# true of release.sh — deploy.sh ran no tests at all, so the local gate this
+# reasoning leaned on did not exist on the path actually used a dozen times a
+# day. Fixed rather than reworded: deploy.sh now runs Tools/l1.sh before it
+# bumps, and the rule for pull requests is written down in CLAUDE.md.
+#
+# What local gates genuinely CANNOT cover is the merge commit: nobody ever runs
+# the tests on the merged result, and a conflict resolved in Swift rather than
+# in Markdown could land broken on the branch releases are cut from. That is
+# the gap this now guards, at roughly a third of the runs.
+#
+# The trade, stated plainly: a broken merge is caught minutes AFTER it lands
+# rather than before. On a one-person repo where main is not deployed
+# automatically, that is the cheaper side of the trade.
+on:
+  push:
+    branches: [main]
+    # Documentation cannot break a build. A large share of this project's
+    # changes are TESTING.md, docs/ and findings notes.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'design/**'
+      - 'logs/**'
+      - '.gitignore'
+  # Kept so a risky branch can be checked before merging, on request.
+  workflow_dispatch:
+
+# A rapid series of merges supersedes earlier runs rather than paying for both.
+concurrency:
+  group: l1-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  l1:
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # HOMEBREW_NO_AUTO_UPDATE is the saving here: `brew install` otherwise
+      # refreshes the whole formula index first, which costs more wall-clock
+      # than installing xcodegen does — and every wall-clock minute bills as
+      # ten.
+      - name: Install xcodegen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+        run: brew install xcodegen
+
+      # Secrets.plist is gitignored, so CI never has one. L1 does not need a
+      # key — AppConfig.geminiAPIKey is only read by start()/reconnect(), which
+      # no L1 test reaches — but the placeholder mirrors the documented local
+      # setup and stops a future test that instantiates more of the app from
+      # tripping AppConfig's fatalError with a confusing CI-only failure.
+      # The example's values are literally "REPLACE-ME", so nothing can call out.
+      - name: Placeholder Secrets.plist
+        run: cp HeikoTranslate/Resources/Secrets.plist.example HeikoTranslate/Resources/Secrets.plist
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      # Never hardcode a device name. Runner images retire simulators without
+      # warning, and a pinned "iPhone 17 Pro" eventually turns into a red check
+      # that has nothing to do with the code — the worst kind, because it
+      # trains you to ignore the signal.
+      - name: Pick a simulator
+        id: sim
+        run: |
+          NAME=$(xcrun simctl list devices available -j | jq -r '
+            .devices
+            | to_entries
+            | map(select(.key | test("SimRuntime.iOS")))
+            | sort_by(.key)
+            | last
+            | .value
+            | map(select(.name | startswith("iPhone")))
+            | last
+            | .name // empty
+          ')
+          if [[ -z "$NAME" ]]; then
+            echo "No iPhone simulator available on this runner image:" >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Using simulator: $NAME"
+
+      # Deliberately NOT -quiet. It suppresses the "Executed N tests" summary
+      # entirely, so a green check would prove only that xcodebuild exited 0 —
+      # indistinguishable from a run where the bundle loaded and executed
+      # nothing. A gate that cannot tell "43 passed" from "0 ran" is the same
+      # failure as a test that greps source for a string and calls it coverage.
+      # The explicit assertion below is what makes the check mean something.
+      - name: L1 logic tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project HeikoTranslate.xcodeproj \
+            -scheme HeikoTranslate \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            | tee /tmp/l1.log
+
+          if ! grep -qE "Executed [1-9][0-9]* tests?, with 0 failures" /tmp/l1.log; then
+            echo "::error::xcodebuild exited 0 but no passing-test summary was found — nothing proves the suite actually ran."
+            grep -E "Executed [0-9]+ tests?" /tmp/l1.log || true
+            exit 1
+          fi
+          grep -E "Executed [0-9]+ tests?, with 0 failures" /tmp/l1.log | tail -1

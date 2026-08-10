@@ -1,0 +1,391 @@
+import Foundation
+
+/// One WebSocket connection to the Gemini Live Translate API
+/// (`gemini-3.5-live-translate-preview`), fixed to a single target
+/// language with automatic source-language detection. Three of these run
+/// concurrently in `GeminiLiveTranslationService` (targets "de", "en" and
+/// "es") to reproduce the app's asymmetric translation rules, because the
+/// API itself only supports one fixed target per session.
+///
+/// The wire format below was verified against the live API directly (a
+/// standalone script, outside the app) on 2026-07-19: setup, streaming
+/// audio in, and receiving transcripts + translated audio back all
+/// confirmed working. One documented shape was wrong and got fixed —
+/// `inputAudioTranscription`/`outputAudioTranscription` must be siblings
+/// of `generationConfig`, not nested inside it.
+///
+/// Also confirmed: this preview model does **not** reliably send
+/// `serverContent.turnComplete`, even minutes into a normal response —
+/// contrary to the general Live API docs. `GeminiLiveTranslationService`
+/// ignores it entirely and resolves turns by idle-timeout; it is still
+/// parsed and surfaced as an event in case a future orchestrator wants it.
+/// Every unrecognized server message is surfaced via `.raw(...)` instead
+/// of being silently dropped, so any further mismatch is visible in logs.
+final class GeminiLiveSession: NSObject {
+    enum Event {
+        case setupComplete
+        /// WebSocket handshake succeeded — the socket can carry audio now.
+        case opened
+        /// Raw 16-bit PCM, 24kHz, mono, little-endian.
+        case audioChunk(Data)
+        /// Detected language of the user's speech (BCP-47), streamed as a
+        /// preamble. Lets the orchestrator tell the translating session from
+        /// the echoing one.
+        case inputLanguage(String)
+        /// Language of this session's spoken output (BCP-47).
+        case outputLanguage(String)
+        case inputTranscript(String)
+        case outputTranscript(String)
+        case turnComplete
+        /// Token accounting for this session, as sent by the server.
+        case usage([String: Any])
+        case raw(String)
+        case error(String)
+        /// The session ended on its own. Not a user error — the orchestrator
+        /// should reconnect to keep going.
+        ///
+        /// `expected` is true only when the server announced it first with
+        /// `goAway` (Live sessions have a bounded duration). False means the
+        /// transport dropped abruptly after a successful handshake — a
+        /// flapping network rather than a planned end. The two deserve
+        /// different reconnect urgency, and reporting both identically let a
+        /// flapping connection reconnect with no cooldown at all. GitHub #3.
+        case closed(expected: Bool)
+        /// Non-error diagnostic detail (HTTP status, close code, etc.) —
+        /// separate from `.error` so it's easy to filter in logs.
+        case debug(String)
+    }
+
+    private static let endpoint = URL(
+        string: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+    )!
+
+    private let targetLanguageCode: String
+    private let apiKey: String
+    private let onEvent: (Event) -> Void
+
+    private var urlSession: URLSession!
+    private var task: URLSessionWebSocketTask?
+
+    /// True once the WebSocket handshake succeeded. After this point, a
+    /// transport failure or close is a normal session end (Gemini Live
+    /// sessions have a bounded duration and close themselves), NOT a
+    /// connection error the user should see. Before it, a failure is a real
+    /// "couldn't connect / auth rejected" problem worth surfacing.
+    private var hasOpened = false
+
+    /// True once we've asked to close, or the server has closed / sent
+    /// goAway. Suppresses the flurry of follow-on send/receive failures that
+    /// a closing socket produces so they don't surface as errors.
+    private var isClosing = false
+
+    /// True only when the orchestrator explicitly closed this session (mute /
+    /// stop). Distinguishes an intentional close (don't reconnect) from a
+    /// server-initiated one (do reconnect).
+    private var intentionalClose = false
+
+    /// Set when the server announced the end with `goAway`, so the close that
+    /// follows can be reported as planned rather than as a network drop.
+    /// GitHub #3.
+    private var sawGoAway = false
+
+    init(targetLanguageCode: String, apiKey: String, onEvent: @escaping (Event) -> Void) {
+        self.targetLanguageCode = targetLanguageCode
+        self.apiKey = apiKey
+        self.onEvent = onEvent
+        super.init()
+        // A delegate-backed session (rather than the default shared-style
+        // session) is what lets us see *why* a connection died — HTTP
+        // status from a rejected handshake, or a proper WebSocket close
+        // code — instead of just a generic "socket not connected" error.
+        self.urlSession = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+    }
+
+    func connect() {
+        diag("session", "[\(targetLanguageCode)] connecting")
+        var components = URLComponents(url: Self.endpoint, resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
+        let task = urlSession.webSocketTask(with: components.url!)
+        self.task = task
+        task.resume()
+        receiveLoop()
+        sendSetup()
+    }
+
+    /// Orchestrator-requested close (mute / stop). Marks the close as
+    /// intentional so no reconnect is attempted.
+    func close() {
+        intentionalClose = true
+        closeTransport()
+        // A URLSession strongly retains its delegate until invalidated, and
+        // this class IS its URLSession's delegate — so without this line every
+        // GeminiLiveSession ever constructed was immortal, along with whatever
+        // transport state it still held. With goAway ending sessions every ~9
+        // minutes, an afternoon of use leaked dozens of them. GitHub #19.
+        // (invalidateAndCancel fires one final didCompleteWithError; the
+        // intentionalClose flag above keeps that path quiet.)
+        urlSession.invalidateAndCancel()
+    }
+
+    /// Close our side WITHOUT marking it intentional — used for goAway, so
+    /// `didCompleteWithError` still emits `.closed` and the orchestrator
+    /// reconnects (SPEC R7). Marking goAway closes as intentional was a real
+    /// bug: the session died permanently after its bounded duration.
+    private func closeTransport() {
+        isClosing = true
+        task?.cancel(with: .goingAway, reason: nil)
+        task = nil
+    }
+
+    /// Whether a transport error at this moment is a benign session-end
+    /// rather than a real connection failure.
+    private var closeIsExpected: Bool { isClosing || hasOpened }
+
+    /// Streams one chunk of mic audio. Must already be raw 16-bit PCM,
+    /// 16kHz, mono, little-endian.
+    func sendAudio(_ pcm16kData: Data) {
+        send(json: [
+            "realtimeInput": [
+                "audio": [
+                    "data": pcm16kData.base64EncodedString(),
+                    "mimeType": "audio/pcm;rate=16000"
+                ]
+            ]
+        ])
+    }
+
+    // MARK: - Outgoing
+
+    private func sendSetup() {
+        send(json: [
+            "setup": [
+                "model": "models/gemini-3.5-live-translate-preview",
+                "generationConfig": [
+                    "responseModalities": ["AUDIO"],
+                    "translationConfig": [
+                        "targetLanguageCode": targetLanguageCode,
+                        "echoTargetLanguage": false
+                    ]
+                ],
+                // Confirmed via a direct WebSocket protocol test (bypassing
+                // the app entirely) that these must be siblings of
+                // generationConfig, not nested inside it — the server
+                // rejects the nested form with "Unknown name
+                // 'inputAudioTranscription' at 'setup.generation_config'".
+                "inputAudioTranscription": [String: Any](),
+                "outputAudioTranscription": [String: Any]()
+            ]
+        ])
+    }
+
+    private func send(json: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: json),
+              let text = String(data: data, encoding: .utf8)
+        else { return }
+        task?.send(.string(text)) { [weak self] error in
+            guard let self, let error else { return }
+            if self.closeIsExpected {
+                self.onEvent(.debug("send after close (ignored): \(error.localizedDescription)"))
+            } else {
+                self.onEvent(.error("send failed: \(error.localizedDescription)"))
+            }
+        }
+    }
+
+    // MARK: - Incoming
+
+    private func receiveLoop() {
+        task?.receive { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure(let error):
+                if self.closeIsExpected {
+                    self.onEvent(.debug("receive ended after close (ignored): \(error.localizedDescription)"))
+                } else {
+                    self.onEvent(.error("receive failed: \(error.localizedDescription)"))
+                }
+            case .success(let message):
+                switch message {
+                case .string(let text):
+                    self.handleServerMessage(text)
+                case .data(let data):
+                    self.handleServerMessage(String(data: data, encoding: .utf8) ?? "")
+                @unknown default:
+                    break
+                }
+                self.receiveLoop()
+            }
+        }
+    }
+
+    /// serverContent sub-keys we understand. Anything outside this set is
+    /// worth surfacing via `.raw` (it might be the audio in an unexpected
+    /// shape). Keys inside it that we simply don't act on — like the
+    /// `languageCode`-only transcription preambles the model streams before
+    /// real text, or `interrupted` — are known-benign and stay quiet.
+    private static let knownServerContentKeys: Set<String> = [
+        "modelTurn", "inputTranscription", "outputTranscription",
+        "turnComplete", "generationComplete", "interrupted"
+    ]
+
+    private func handleServerMessage(_ text: String) {
+        guard let data = text.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            onEvent(.raw(text))
+            return
+        }
+
+        if object["setupComplete"] != nil {
+            diag("session", "[\(targetLanguageCode)] setupComplete")
+            onEvent(.setupComplete)
+            return
+        }
+
+        if let errorObject = object["error"] {
+            diag("session", "[\(targetLanguageCode)] server error: \(errorObject)")
+            onEvent(.error("\(errorObject)"))
+            return
+        }
+
+        // Token accounting, streamed continuously while a session is open.
+        if let usage = object["usageMetadata"] as? [String: Any] {
+            onEvent(.usage(usage))
+            return
+        }
+        // Benign keepalive frames, acknowledged and ignored so they don't
+        // bury the real content in "unrecognized message" spam.
+        if object["sessionResumptionUpdate"] != nil {
+            return
+        }
+        if object["goAway"] != nil {
+            // The server is about to close this session (Live sessions have a
+            // bounded duration). It expects us to close promptly — if we
+            // don't, it force-closes with a 1008 policy-violation code. So
+            // close our side now; the resulting transport failures are then
+            // treated as expected (closeIsExpected) and stay quiet.
+            diag("session", "[\(targetLanguageCode)] goAway — closing our side")
+            onEvent(.debug("server goAway (closing our side): \(text)"))
+            sawGoAway = true
+            closeTransport()
+            return
+        }
+
+        guard let serverContent = object["serverContent"] as? [String: Any] else {
+            onEvent(.raw(text))
+            return
+        }
+
+        if let modelTurn = serverContent["modelTurn"] as? [String: Any],
+           let parts = modelTurn["parts"] as? [[String: Any]] {
+            for part in parts {
+                if let inlineData = part["inlineData"] as? [String: Any],
+                   let base64 = inlineData["data"] as? String,
+                   let audio = Data(base64Encoded: base64) {
+                    onEvent(.audioChunk(audio))
+                }
+            }
+        }
+
+        if let inputTranscription = serverContent["inputTranscription"] as? [String: Any] {
+            // The model streams the detected input language as a preamble
+            // (before/without text). It's what tells us which of the two
+            // sessions is doing a real translation vs echoing the source.
+            if let lang = inputTranscription["languageCode"] as? String {
+                onEvent(.inputLanguage(lang))
+            }
+            if let text = inputTranscription["text"] as? String, !text.isEmpty {
+                onEvent(.inputTranscript(text))
+            }
+        }
+
+        if let outputTranscription = serverContent["outputTranscription"] as? [String: Any] {
+            if let lang = outputTranscription["languageCode"] as? String {
+                onEvent(.outputLanguage(lang))
+            }
+            if let text = outputTranscription["text"] as? String, !text.isEmpty {
+                onEvent(.outputTranscript(text))
+            }
+        }
+
+        // Both are end-of-response signals in the Live API. This preview
+        // model doesn't reliably send either, so the orchestrator ignores
+        // the event and resolves turns by idle timeout; it's still surfaced
+        // here for logging and future use.
+        if (serverContent["turnComplete"] as? Bool) == true
+            || (serverContent["generationComplete"] as? Bool) == true {
+            onEvent(.turnComplete)
+        }
+
+        // Surface only genuinely unfamiliar serverContent shapes — an empty
+        // frame or a languageCode-only preamble is normal and stays quiet.
+        let unknownKeys = Set(serverContent.keys).subtracting(Self.knownServerContentKeys)
+        if !unknownKeys.isEmpty {
+            diag("session", "[\(targetLanguageCode)] unrecognized keys \(unknownKeys.sorted()): \(text.prefix(300))")
+            onEvent(.raw(text))
+        }
+    }
+}
+
+// MARK: - URLSessionWebSocketDelegate
+
+extension GeminiLiveSession: URLSessionWebSocketDelegate {
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        hasOpened = true
+        diag("session", "[\(targetLanguageCode)] websocket open")
+        onEvent(.opened)
+        onEvent(.debug("WebSocket handshake succeeded (protocol: \(`protocol` ?? "none"))"))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+        reason: Data?
+    ) {
+        isClosing = true
+        let reasonText = reason.flatMap { String(data: $0, encoding: .utf8) } ?? "(no reason given)"
+        onEvent(.debug("WebSocket closed by server. closeCode=\(closeCode.rawValue) reason=\(reasonText)"))
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        var detail = "URLSession task completed."
+        if let httpResponse = task.response as? HTTPURLResponse {
+            detail += " HTTP status: \(httpResponse.statusCode)."
+            if !httpResponse.allHeaderFields.isEmpty {
+                detail += " Headers: \(httpResponse.allHeaderFields)."
+            }
+        }
+        if let error {
+            let nsError = error as NSError
+            detail += " Error: \(nsError.domain) code=\(nsError.code) — \(nsError.localizedDescription)."
+        }
+        onEvent(.debug(detail))
+
+        // A close we didn't ask for, on a session that had connected, means
+        // the server ended it (duration limit / goAway). Ask to reconnect.
+        // A failure before the socket ever opened is a real connection/auth
+        // problem — surface it instead of looping reconnects.
+        if !intentionalClose {
+            if hasOpened {
+                let planned = sawGoAway
+                diag("session", "[\(targetLanguageCode)] closed by server (\(planned ? "goAway" : "abrupt drop")) — will reconnect")
+                onEvent(.closed(expected: planned))
+            } else {
+                diag("session", "[\(targetLanguageCode)] FAILED before handshake: \(detail)")
+                onEvent(.error("connection failed before handshake"))
+            }
+        }
+        // The task is finished either way, so the URLSession has done its job.
+        // Self-invalidate here as the belt to close()'s braces: a session torn
+        // down by the SERVER (goAway, abrupt drop) may sit in the orchestrator's
+        // map for a while before reconnect() replaces-and-closes it, and until
+        // then the retain cycle would hold. Invalidating twice is a no-op, so
+        // both paths can safely do it. GitHub #19.
+        session.finishTasksAndInvalidate()
+    }
+}

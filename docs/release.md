@@ -1,0 +1,91 @@
+# Cutting a TestFlight release
+
+The stable runbook. It deliberately contains **no status for any particular
+release**: a status table for one submission goes stale the moment the next one
+happens, and a runbook that carries one drifts out of date without anyone
+noticing. The procedure lives here; the status of a specific submission is
+tracked outside this repository.
+
+## One command
+
+```bash
+Tools/release.sh
+```
+
+Tests → bump the build number → archive → export → upload to TestFlight. It
+refuses to run on a dirty tree or from a non-`main` branch, because a build
+you cannot identify from a commit is a build you cannot debug later.
+
+Flags: `--no-tests` skips the L1+L3 gate (don't), `--no-l3` runs only L1 when
+you have already run L3 this session, `--dry-run` archives and then restores
+the build number, so a dry run leaves the tree exactly as it found it.
+
+It also **refuses to release while `DIAGNOSTIC_UPLOAD_URL` is set** — see the
+last section. `ALLOW_UPLOAD_URL=1` overrides, for a build going nowhere near
+the public link.
+
+After a successful upload it commits the build-number bump to `main`. That is
+the one commit exempt from the branch-and-PR rule (`CLAUDE.md`), because it
+records which build number went to Apple.
+
+No App Store Connect API key is needed. `Tools/ExportUpload.plist` sets
+`destination: upload`, which uploads through the account already signed into
+Xcode — the same one automatic signing uses. An API key is only worth creating
+for unattended CI.
+
+## When to bump the marketing version
+
+`CFBundleVersion` (the build number) is bumped by the script on every release.
+It always moves; nothing to decide.
+
+`CFBundleShortVersionString` is the decision, and it is a real one. Apple:
+
+> A review is only required for the first build of a version. Subsequent
+> builds may not need a full review.
+
+So the first build of a **new** marketing version waits for Beta App Review —
+about a day, sometimes longer. Every later build of the **same** marketing
+version reaches external testers in minutes.
+
+**The test: would the beta description have to change for it to stay true?**
+
+| Change | Bump? |
+|---|---|
+| A new language in the picker | **Yes** — the description lists them |
+| A new control, or a visibly different interaction | **Yes** |
+| Behaviour a tester would describe differently | **Yes** |
+| Bug fix, crash fix, timing tune | No |
+| Reconnect/backoff behaviour, logging, diagnostics | No |
+| Docs, tests, tooling | No |
+
+**The travelling exception overrides the table.** While Heiko is abroad and
+depending on the app, do not bump the marketing version for anything that could
+ship without it. A day of review is a day he has no working translator, and
+that cost is far larger than a tidy version number. Ship the fix on the current
+version; bump when he is home.
+
+## After the upload
+
+1. Wait for processing (5–15 min), then the build appears under TestFlight.
+2. If the marketing version is unchanged and its first build was already
+   approved, the new build reaches the external group without a full review.
+3. If it is a new marketing version, it goes to Beta App Review and you wait.
+4. Builds expire **90 days** after upload. Cut the build Heiko actually travels
+   with close to the trip, not months ahead.
+
+## Things that have bitten
+
+- **A locked iPhone reports as "unavailable"** to `devicectl`, which looks
+  exactly like "not plugged in". Only relevant to `deploy.sh`, but it has cost
+  this project more time than any bug in the app.
+- **The version shown in the app** is `CFBundleShortVersionString` +
+  `CFBundleVersion` joined, e.g. `2.3.35`. The build number is the part that
+  moves; that is why "did my phone update?" stays answerable without touching
+  the marketing version.
+- **`DIAGNOSTIC_UPLOAD_URL` and the public TestFlight link must never both be
+  live.** The log contains conversation transcripts — Heiko's and his
+  counterpart's. With a public link, those are strangers' conversations
+  landing in Georg's bucket. `release.sh` refuses to build while that key is
+  present in `HeikoTranslate/Resources/Secrets.plist`; `ALLOW_UPLOAD_URL=1`
+  overrides it. This used to be a line in a document asking a human to
+  remember, which is not a control.
