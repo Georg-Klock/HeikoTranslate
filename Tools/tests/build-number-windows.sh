@@ -41,8 +41,17 @@ targets:
         CFBundleShortVersionString: "2.3"
         CFBundleVersion: "40"
 YML
-  cp "$REPO/Tools/deploy.sh" "$REPO/Tools/release.sh" "$REPO_DIR/Tools/"
-  printf '#!/bin/bash\nexit 0\n' > "$REPO_DIR/Tools/pull_logs.sh"
+  cp "$REPO/Tools/deploy.sh" "$REPO/Tools/release.sh" "$REPO/Tools/pull_logs.sh" \
+    "$REPO/Tools/ios_device.sh" "$REPO_DIR/Tools/"
+  cp "$REPO/Tools/ExportOptions.plist.example" "$REPO/Tools/ExportUpload.plist.example" \
+    "$REPO_DIR/Tools/"
+  printf 'Tools/local.env\n' > "$REPO_DIR/.gitignore"
+  printf 'DEVICE_UUID="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"\nDEVELOPMENT_TEAM="EXAMPLETEAM"\n' \
+    > "$REPO_DIR/Tools/local.env"
+  # Exercise the scripts' L1 call without copying the simulator-specific gate
+  # into this deterministic shell harness. The xcodebuild stub below controls
+  # whether this step succeeds or fails.
+  printf '#!/bin/bash\nxcodebuild test\n' > "$REPO_DIR/Tools/l1.sh"
   printf '#!/bin/bash\nexit 0\n' > "$REPO_DIR/Tools/l3replay.sh"
   chmod +x "$REPO_DIR"/Tools/*.sh
   git -C "$REPO_DIR" init -q -b main
@@ -76,11 +85,89 @@ SH
 # devicectl: list / install / info
 case " $* " in
   *"list devices"*)
-    [[ "${FAIL_AT:-}" == "nophone" ]] && { echo "no devices"; exit 0; }
-    echo "iPhone  connected"; exit 0 ;;
+    json_path=""
+    filter=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --filter) filter="${2:-}"; shift 2 ;;
+        --json-output) json_path="${2:-}"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+
+    # The production helper intentionally uses devicectl's documented JSON
+    # interface. These fixtures make the fake command obey its exact filter:
+    # `UUID|state|name|type` per line. A state is reachable only when its
+    # explicit predicate appears in the requested filter; names and UUIDs
+    # must match their respective literal filters too. That makes a
+    # text-parsing regression fail this test rather than merely exercise the
+    # happy path.
+    fixtures="${DEVICE_FIXTURE:-AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|connected|Example iPhone|iPhone}"
+    if [[ -z "$json_path" ]]; then
+      if [[ -n "${DEVICE_LISTING:-}" ]]; then
+        printf '%s\n' "$DEVICE_LISTING"
+      elif [[ "${FAIL_AT:-}" == "nophone" ]]; then
+        echo "no devices"
+      else
+        while IFS='|' read -r fixture_uuid fixture_state fixture_name fixture_type; do
+          printf '%s  %s  %s\n' "$fixture_name" "$fixture_uuid" "$fixture_state"
+        done <<< "$fixtures"
+      fi
+      exit 0
+    fi
+
+    printf '%s\n' "$filter" >> "$SANDBOX_MARK/device-filters"
+    printf '{\n  "result": {"devices": [\n' > "$json_path"
+    first=1
+    if [[ "${FAIL_AT:-}" != "nophone" ]]; then
+      while IFS='|' read -r fixture_uuid fixture_state fixture_name fixture_type; do
+        # Every query in production constrains the device class. Keep the
+        # fixture honest about that too, so a future broad query cannot pass.
+        fixture_type="${fixture_type:-iPhone}"
+        [[ "$filter" == *"hardwareProperties.deviceType == '$fixture_type'"* ]] || continue
+        if [[ "$filter" == *"identifier == '"* ]]; then
+          filter_upper=$(printf '%s' "$filter" | tr '[:lower:]' '[:upper:]')
+          fixture_uuid_upper=$(printf '%s' "$fixture_uuid" | tr '[:lower:]' '[:upper:]')
+          [[ "$filter_upper" == *"IDENTIFIER == '$fixture_uuid_upper'"* ]] || continue
+        fi
+        if [[ "$filter" == *"deviceProperties.name == '"* ]] \
+          && [[ "$filter" != *"deviceProperties.name == '$fixture_name'"* ]]; then
+          continue
+        fi
+        # Without a State predicate devicectl would return every state. If
+        # one is present, return only its exact matches. This makes both a
+        # broadening to `unavailable` and an accidental removal of the state
+        # filter make the negative deploy tests fail.
+        if [[ "$filter" == *"State == '"* ]]; then
+          [[ "$filter" == *"State == '$fixture_state'"* ]] || continue
+        fi
+        [[ "$first" == "1" ]] || printf ',\n' >> "$json_path"
+        printf '    {"identifier":"%s","deviceProperties":{"name":"%s"}}' \
+          "$fixture_uuid" "$fixture_name" >> "$json_path"
+        first=0
+      done <<< "$fixtures"
+    fi
+    printf '\n  ]}}\n' >> "$json_path"
+    exit 0 ;;
   *"install app"*)
     [[ "${FAIL_AT:-}" == "install" ]] && exit 1
+    while [[ $# -gt 0 ]]; do
+      if [[ "$1" == "--device" ]]; then
+        printf '%s' "$2" > "$SANDBOX_MARK/installed-device"
+        break
+      fi
+      shift
+    done
     touch "$SANDBOX_MARK/installed"; exit 0 ;;
+  *"copy from"*)
+    while [[ $# -gt 0 ]]; do
+      if [[ "$1" == "--device" ]]; then
+        printf '%s' "$2" > "$SANDBOX_MARK/copied-device"
+        break
+      fi
+      shift
+    done
+    exit 0 ;;
   *"info apps"*)
     # The #22.1 window: this used to be a fatal pipeline AFTER the install.
     [[ "${FAIL_AT:-}" == "install_info" ]] && exit 0   # prints nothing -> grep fails
@@ -91,6 +178,34 @@ case " $* " in
     echo "com.klock.heikotranslate  HeikoTranslate"; exit 0 ;;
 esac
 exit 0
+SH
+  # The helper consumes only two JSON fields. Stub plutil as well so this
+  # release-safety harness remains self-contained and checks the structured
+  # contract rather than relying on the host macOS implementation.
+  cat > "$SANDBOX/bin/plutil" <<'SH'
+#!/bin/bash
+[[ "$1" == "-extract" ]] || exit 1
+field="$2"
+json_path=""
+for arg in "$@"; do json_path="$arg"; done
+
+case "$field" in
+  result.devices.*.identifier|result.devices.*.deviceProperties.name) ;;
+  *) exit 1 ;;
+esac
+index_part="${field#result.devices.}"
+index="${index_part%%.*}"
+[[ "$index" =~ ^[0-9]+$ ]] || exit 1
+line_number=$((index + 3))
+device_line=$(sed -n "${line_number}p" "$json_path")
+
+if [[ "$field" == *.identifier ]]; then
+  [[ "$device_line" =~ \"identifier\":\"([^\"]+)\" ]] || exit 1
+  printf '%s\n' "${BASH_REMATCH[1]}"
+else
+  [[ "$device_line" =~ \"name\":\"([^\"]*)\" ]] || exit 1
+  printf '%s\n' "${BASH_REMATCH[1]}"
+fi
 SH
   chmod +x "$SANDBOX"/bin/*
 }
@@ -122,13 +237,15 @@ run() { # run <script> [args...]   — with stubs and FAIL_AT in effect
   local script="$1"; shift
   ( cd "$REPO_DIR" \
     && SANDBOX_MARK="$SANDBOX" PATH="$SANDBOX/bin:$PATH" \
+       DEVICE_LISTING="${DEVICE_LISTING:-}" \
+       DEVICE_FIXTURE="${DEVICE_FIXTURE:-}" \
        HOME="$SANDBOX" GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t \
        GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
        "./Tools/$script" "$@" ) >"$SANDBOX/out" 2>&1
   echo $?
 }
 
-case_start() { echo; echo "--- $1"; new_repo; write_stubs; }
+case_start() { echo; echo "--- $1"; unset DEVICE_LISTING DEVICE_FIXTURE; new_repo; write_stubs; }
 case_end()   { [[ "$KEEP" == "1" ]] || rm -rf "$SANDBOX"; }
 
 # --- deploy.sh -------------------------------------------------------------
@@ -138,6 +255,7 @@ case_start "deploy: happy path commits the number it installed"
   check "exit"          0             "$status"
   check "build number"  41            "$(build_number)"
   check "head"          "Build 2.3.41 (device)" "$(head_subject)"
+  check "installed device" "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" "$(cat "$SANDBOX/installed-device")"
   check "tree"          clean         "$(is_dirty)"
 case_end
 
@@ -150,10 +268,124 @@ case_start "deploy: build fails before install -> number goes back"
 case_end
 
 case_start "deploy: phone never appears -> number goes back"
-  status=$(FAIL_AT=nophone run deploy.sh --wait 1)
+  status=$(FAIL_AT=nophone run deploy.sh --wait -1)
   check "exit"          1             "$status"
   check "build number"  40            "$(build_number)"
   check "tree"          clean         "$(is_dirty)"
+case_end
+
+# #54 — `unavailable` contains `available`, so the old predicate left the
+# wait loop and marked the install as attempted. That burned a build number
+# for a phone that could not possibly have received it.
+case_start "deploy: unavailable target is not treated as reachable"
+  # A misleading display name would fool a substring check for `available`.
+  DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|unavailable|Available iPhone"
+  status=$(FAIL_AT= run deploy.sh --wait -1)
+  check "exit"          1             "$status"
+  check "installed"     no            "$([[ -e "$SANDBOX/installed" ]] && echo yes || echo no)"
+  check "build number"  40            "$(build_number)"
+  check "head"          base          "$(head_subject)"
+  check "tree"          clean         "$(is_dirty)"
+case_end
+
+# The installer always targets DEVICE_UUID. A different reachable phone must
+# not let it leave the wait loop while that configured target is unavailable.
+case_start "deploy: another reachable phone cannot stand in for the unavailable target"
+  # A UUID in a *different device's name* must not be mistaken for the target
+  # identifier. Only the real target is unavailable here.
+  DEVICE_FIXTURE=$'11111111-1111-1111-1111-111111111111|connected|AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE\nAAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|unavailable|Target iPhone'
+  status=$(FAIL_AT= run deploy.sh --wait -1)
+  check "exit"          1             "$status"
+  check "installed"     no            "$([[ -e "$SANDBOX/installed" ]] && echo yes || echo no)"
+  check "build number"  40            "$(build_number)"
+  check "head"          base          "$(head_subject)"
+case_end
+
+# Wi-Fi paired devices remain valid deploy targets.
+case_start "deploy: paired available target is reachable"
+  DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|available (paired)|Example iPhone"
+  status=$(FAIL_AT= run deploy.sh)
+  check "exit"          0             "$status"
+  check "installed"     yes           "$([[ -e "$SANDBOX/installed" ]] && echo yes || echo no)"
+  check "build number"  41            "$(build_number)"
+  check "head"          "Build 2.3.41 (device)" "$(head_subject)"
+case_end
+
+case_start "deploy: a lowercase devicectl UUID is canonicalized before install"
+  DEVICE_FIXTURE="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee|connected|Example iPhone"
+  status=$(FAIL_AT= run deploy.sh)
+  check "exit"          0             "$status"
+  check "installed device" "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" "$(cat "$SANDBOX/installed-device")"
+  check "build number"  41            "$(build_number)"
+case_end
+
+# pull_logs chooses only a row the same helper marks reachable; an unavailable
+# device must never be handed to `devicectl copy`.
+case_start "pull logs: skip unavailable rows and use a paired reachable phone"
+  DEVICE_FIXTURE=$'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|unavailable|Locked iPhone\n11111111-1111-1111-1111-111111111111|available (paired)|Reachable iPhone'
+  status=$(FAIL_AT= run pull_logs.sh)
+  check "exit"          0             "$status"
+  check "copied device" "11111111-1111-1111-1111-111111111111" "$(cat "$SANDBOX/copied-device")"
+case_end
+
+case_start "pull logs: disconnected rows are rejected without a copy"
+  DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|disconnected|Example iPhone"
+  status=$(FAIL_AT= run pull_logs.sh)
+  check "exit"          1             "$status"
+  check "copy attempted" no           "$([[ -e "$SANDBOX/copied-device" ]] && echo yes || echo no)"
+case_end
+
+# `not connected` contains the old accepted substring. It must remain
+# unreachable even if its name says otherwise.
+case_start "deploy: not connected target does not consume a build number"
+  DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|not connected|Available target"
+  status=$(FAIL_AT= run deploy.sh --wait -1)
+  check "exit"          1             "$status"
+  check "installed"     no            "$([[ -e "$SANDBOX/installed" ]] && echo yes || echo no)"
+  check "build number"  40            "$(build_number)"
+  check "head"          base          "$(head_subject)"
+case_end
+
+case_start "pull logs: explicit unavailable UUID cannot bypass reachability"
+  DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|unavailable|Example iPhone"
+  status=$(FAIL_AT= run pull_logs.sh "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")
+  check "exit"          1             "$status"
+  check "copy attempted" no           "$([[ -e "$SANDBOX/copied-device" ]] && echo yes || echo no)"
+case_end
+
+case_start "pull logs: explicit lowercase UUID resolves to its reachable device"
+  DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|connected|Example iPhone"
+  status=$(FAIL_AT= run pull_logs.sh "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+  check "exit"          0             "$status"
+  check "copied device" "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" "$(cat "$SANDBOX/copied-device")"
+case_end
+
+case_start "pull logs: paired named device with an apostrophe resolves safely"
+  DEVICE_FIXTURE=$'11111111-1111-1111-1111-111111111111|connected|Other iPhone|iPhone\nAAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|available (paired)|Georg\'s iPhone|iPhone'
+  status=$(FAIL_AT= run pull_logs.sh "Georg's iPhone")
+  check "exit"          0             "$status"
+  check "copied device" "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" "$(cat "$SANDBOX/copied-device")"
+case_end
+
+case_start "pull logs: explicit unavailable named device cannot bypass reachability"
+  DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|unavailable|Georg's iPhone|iPhone"
+  status=$(FAIL_AT= run pull_logs.sh "Georg's iPhone")
+  check "exit"          1             "$status"
+  check "copy attempted" no           "$([[ -e "$SANDBOX/copied-device" ]] && echo yes || echo no)"
+case_end
+
+case_start "pull logs: connected iPad remains a supported automatic target"
+  DEVICE_FIXTURE="22222222-2222-2222-2222-222222222222|connected|Example iPad|iPad"
+  status=$(FAIL_AT= run pull_logs.sh)
+  check "exit"          0             "$status"
+  check "copied device" "22222222-2222-2222-2222-222222222222" "$(cat "$SANDBOX/copied-device")"
+case_end
+
+case_start "pull logs: malformed JSON identifier is rejected without a copy"
+  DEVICE_FIXTURE="not-a-uuid|connected|Example iPhone"
+  status=$(FAIL_AT= run pull_logs.sh)
+  check "exit"          1             "$status"
+  check "copy attempted" no           "$([[ -e "$SANDBOX/copied-device" ]] && echo yes || echo no)"
 case_end
 
 # #22.1 — the regression this issue was filed for.
