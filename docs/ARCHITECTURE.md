@@ -214,6 +214,15 @@ continuously while the mic is open and has **no offline mode**.
 
 ## Failure handling
 
+- **Audio startup is a transaction, and the player is wired once.** A
+  failure partway through `startAudioIO` (engine start, converter creation)
+  unwinds through the same teardown a normal stop uses, so no tap, running
+  engine or activated audio session survives a failed attempt — the next
+  try starts from zero. The player node is attached and connected exactly
+  once per engine lifetime; every start used to repeat the pair, which
+  nothing documents as safe, on every mute/unmute and watchdog rebuild.
+  The hardware touchpoints sit behind `AudioGraphControlling` so all of
+  this is pinned at L1 (GitHub #16).
 - **The microphone can come up dead on the first start of a process.**
   Measured on device 2026-07-27, when three sessions still ran: all of them
   reached

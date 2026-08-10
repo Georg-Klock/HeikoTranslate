@@ -35,6 +35,84 @@ protocol LiveTranslationSocket: AnyObject {
 
 extension GeminiLiveSession: LiveTranslationSocket {}
 
+/// The hardware touchpoints of the audio path, extracted so the startup
+/// choreography — the order, the once-only player wiring, the rollback on a
+/// partial failure — is testable without an AVAudioEngine (GitHub #16). The
+/// real implementation is a mechanical pass-through; every decision stays in
+/// the service.
+protocol AudioGraphControlling: AnyObject {
+    func activateSession() throws
+    func enableVoiceProcessing() throws
+    /// Attach the player node and connect it to the mixer. The service calls
+    /// this at most once per engine lifetime — that guard is the service's,
+    /// deliberately not the implementation's, so a test can see it.
+    func wirePlayer()
+    func startEngine() throws
+    func inputFormat() -> AVAudioFormat
+    func installTap(_ block: @escaping (AVAudioPCMBuffer, AVAudioTime) -> Void)
+    func removeTap()
+    func startPlayback()
+    func stopPlaybackAndEngine()
+    func deactivateSession()
+}
+
+final class RealAudioGraph: AudioGraphControlling {
+    private let engine: AVAudioEngine
+    private let player: AVAudioPlayerNode
+    private let playbackFormat: AVAudioFormat
+
+    init(engine: AVAudioEngine, player: AVAudioPlayerNode, playbackFormat: AVAudioFormat) {
+        self.engine = engine
+        self.player = player
+        self.playbackFormat = playbackFormat
+    }
+
+    func activateSession() throws {
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
+        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+    }
+
+    func enableVoiceProcessing() throws {
+        try engine.inputNode.setVoiceProcessingEnabled(true)
+    }
+
+    func wirePlayer() {
+        engine.attach(player)
+        engine.connect(player, to: engine.mainMixerNode, format: playbackFormat)
+    }
+
+    func startEngine() throws {
+        engine.prepare()
+        try engine.start()
+    }
+
+    func inputFormat() -> AVAudioFormat {
+        engine.inputNode.outputFormat(forBus: 0)
+    }
+
+    func installTap(_ block: @escaping (AVAudioPCMBuffer, AVAudioTime) -> Void) {
+        engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil, block: block)
+    }
+
+    func removeTap() {
+        engine.inputNode.removeTap(onBus: 0)
+    }
+
+    func startPlayback() {
+        player.play()
+    }
+
+    func stopPlaybackAndEngine() {
+        player.stop()
+        engine.stop()
+    }
+
+    func deactivateSession() {
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+}
+
 @MainActor
 final class GeminiLiveTranslationService: ObservableObject {
     @Published private(set) var isRunning = false
@@ -112,6 +190,28 @@ final class GeminiLiveTranslationService: ObservableObject {
 
     private let audioEngine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
+
+    /// True once the player node has been attached and connected — exactly
+    /// once per engine lifetime. Every start used to repeat the pair, so the
+    /// watchdog's rebuild and every mute/unmute re-attached an
+    /// already-attached node, which nothing documents as safe. GitHub #16.
+    private var playerWired = false
+
+    #if DEBUG
+    /// Test seam (GitHub #16): stand in for the audio hardware so the startup
+    /// choreography — ordering, the once-only wiring, rollback on partial
+    /// failure — runs as deterministic L1 cases. `nil` (the shipping state)
+    /// means the real engine.
+    var audioGraphForTesting: (any AudioGraphControlling)?
+    #endif
+    private lazy var realAudioGraph = RealAudioGraph(
+        engine: audioEngine, player: playerNode, playbackFormat: playbackFormat)
+    private var audioGraph: any AudioGraphControlling {
+        #if DEBUG
+        if let graph = audioGraphForTesting { return graph }
+        #endif
+        return realAudioGraph
+    }
     private let playbackFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 24000, channels: 1, interleaved: false)!
     /// Mic converter state, deliberately NOT a stored property of this
     /// `@MainActor` type. See `MicConverterBox`. GitHub #2.
@@ -489,34 +589,45 @@ final class GeminiLiveTranslationService: ObservableObject {
     // MARK: - Audio I/O
 
     private func startAudioIO() throws {
-        let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
-        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        // Transactional: any throw below unwinds through the same teardown a
+        // normal stop uses, so a failed start leaves no installed tap, no
+        // half-running engine and no activated audio session behind — the
+        // next attempt starts from zero instead of inheriting a partial
+        // graph. GitHub #16.
+        var succeeded = false
+        defer { if !succeeded { stopAudioIO() } }
 
-        let inputNode = audioEngine.inputNode
+        try audioGraph.activateSession()
+
         // Engage the hardware voice-processing I/O unit — real acoustic echo
         // cancellation. `.voiceChat` mode alone does NOT turn this on for an
         // AVAudioEngine; with it we can run full-duplex (listen while
         // speaking) like the native voice agents, instead of muting the mic
         // during playback.
         do {
-            try inputNode.setVoiceProcessingEnabled(true)
+            try audioGraph.enableVoiceProcessing()
         } catch {
             diag("audio", "AEC could NOT be enabled: \(error)")
         }
 
-        audioEngine.attach(playerNode)
-        audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: playbackFormat)
+        // Attach and connect exactly once for the engine's lifetime. Every
+        // start used to repeat the pair — nothing documents re-attaching an
+        // attached node as safe, and the watchdog's rebuild plus every
+        // mute/unmute did it. The node stays wired across stop/start; only
+        // the engine's running state and the tap cycle. GitHub #16.
+        if !playerWired {
+            audioGraph.wirePlayer()
+            playerWired = true
+        }
 
         // Start the engine BEFORE reading the input format or installing the
         // tap. Enabling voice processing re-negotiates the input hardware, and
         // on a cold launch the node reports a placeholder format until the
         // engine is actually running — a tap installed against that format
         // receives nothing, which is the "had to mute and unmute" symptom.
-        audioEngine.prepare()
-        try audioEngine.start()
+        try audioGraph.startEngine()
 
-        let inputFormat = inputNode.outputFormat(forBus: 0)
+        let inputFormat = audioGraph.inputFormat()
         let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
         guard inputFormat.sampleRate > 0, let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
             throw NSError(domain: "GeminiLiveTranslationService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not create audio converter (input format \(inputFormat))"])
@@ -530,7 +641,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         // then fails conversion, which is exactly the "spoke at launch, nothing
         // happened until I muted and unmuted" bug (R4). The converter is
         // rebuilt below whenever a buffer's real format doesn't match it.
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
+        audioGraph.installTap { [weak self] buffer, _ in
             guard let self else { return }
             // This block runs on the real-time audio render thread, NOT the
             // main actor — `installTap` stores it and AVAudioEngine calls it
@@ -587,8 +698,9 @@ final class GeminiLiveTranslationService: ObservableObject {
             }
         }
         tapInstalled = true
-        playerNode.play()
+        audioGraph.startPlayback()
         diag("audio", "engine started, input format \(inputFormat)")
+        succeeded = true
     }
 
     // MARK: - Startup watchdogs
@@ -673,14 +785,18 @@ final class GeminiLiveTranslationService: ObservableObject {
         }
     }
 
+    /// The one teardown, shared by the normal stop, the watchdog rebuild and
+    /// a failed start's rollback. It never assumes every setup stage ran: the
+    /// tap is removed only if installed, and stopping an engine that never
+    /// started is harmless. The player node deliberately stays wired —
+    /// `playerWired` is per engine lifetime, not per start. GitHub #16.
     private func stopAudioIO() {
         if tapInstalled {
-            audioEngine.inputNode.removeTap(onBus: 0)
+            audioGraph.removeTap()
             tapInstalled = false
         }
-        playerNode.stop()
-        audioEngine.stop()
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        audioGraph.stopPlaybackAndEngine()
+        audioGraph.deactivateSession()
     }
 
     private static func convert(buffer: AVAudioPCMBuffer, using converter: AVAudioConverter, targetFormat: AVAudioFormat) -> Data? {
