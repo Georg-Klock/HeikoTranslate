@@ -317,4 +317,10 @@ xcrun devicectl device info apps --device "$DEVICE_UUID" 2>/dev/null | grep -i h
 if [[ "$BUMPED" == "1" ]]; then commit_build_number; fi
 
 echo "==> Pulling logs"
-./Tools/pull_logs.sh || true
+# Name the device rather than letting pull_logs pick the first reachable one.
+# The install above is explicit about DEVICE_UUID, so with a second phone
+# attached the two could disagree: install to the target, then read the log off
+# whatever else happened to be plugged in. Measured 2026-08-10 with two paired
+# iPhones — it happened to pick the right one, which is exactly the kind of
+# luck that stops being lucky while you are reading the wrong log.
+./Tools/pull_logs.sh "$DEVICE_UUID" || true

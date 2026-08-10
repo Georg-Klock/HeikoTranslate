@@ -259,6 +259,19 @@ case_start "deploy: happy path commits the number it installed"
   check "tree"          clean         "$(is_dirty)"
 case_end
 
+# deploy installs to DEVICE_UUID explicitly but used to pull logs from
+# whichever phone answered first. With a second iPhone attached that is a
+# silent mismatch: the log you then read belongs to a device that never got
+# the build. The target is listed SECOND here so first-reachable is the wrong
+# answer, which is the only arrangement that can fail.
+case_start "deploy: logs come from the phone that was installed to"
+  DEVICE_FIXTURE=$'11111111-1111-1111-1111-111111111111|connected|Other iPhone|iPhone\nAAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|connected|Target iPhone|iPhone'
+  status=$(FAIL_AT= run deploy.sh)
+  check "exit"          0             "$status"
+  check "installed device" "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" "$(cat "$SANDBOX/installed-device")"
+  check "copied device"    "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" "$(cat "$SANDBOX/copied-device")"
+case_end
+
 case_start "deploy: build fails before install -> number goes back"
   status=$(FAIL_AT=build run deploy.sh)
   check "exit"          65            "$status"
