@@ -459,7 +459,11 @@ final class LanguagePairTests: XCTestCase {
     /// moved. R-invariant behind the swap: two identical sessions would both
     /// claim every turn.
     func testL1_29e_pairIsAlwaysTwoDistinctLanguages() {
-        for lang in [TurnLogic.Lang.de, .en, .es, .fr] {
+        // allCases, not a hand-written list: the old one stopped at fr, so
+        // ko and zh — selectable on the real wheels — were claimed covered
+        // and weren't. A future Lang case joins this invariant on the day
+        // it is added, not when someone remembers. GitHub #22.
+        for lang in TurnLogic.Lang.allCases {
             let (vm, _) = makeViewModel()
             vm.partnerLang = lang
             XCTAssertNotEqual(vm.homeLang, vm.partnerLang,
