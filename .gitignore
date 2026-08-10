@@ -44,3 +44,4 @@ design/*.jpg
 design/*.jpeg
 Tools/ExportUpload.plist
 Tools/ExportOptions.plist
+__pycache__/

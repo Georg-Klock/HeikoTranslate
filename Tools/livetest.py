@@ -67,6 +67,7 @@ async def run(pcm: bytes, target: str, realtime: bool, quiet_tail: float, speak_
 
     url = f"{ENDPOINT}?key={load_api_key()}"
     result = {
+        "setup_complete": False,
         "input_transcript": "",
         "output_transcript": "",
         "input_langs": set(),
@@ -108,6 +109,9 @@ async def run(pcm: bytes, target: str, realtime: bool, quiet_tail: float, speak_
                         continue
                     if "error" in msg:
                         result["errors"].append(msg["error"])
+                        continue
+                    if "setupComplete" in msg:
+                        result["setup_complete"] = True
                         continue
                     if "goAway" in msg:
                         result["closed"] = "goAway"
@@ -169,6 +173,28 @@ async def run(pcm: bytes, target: str, realtime: bool, quiet_tail: float, speak_
     return result
 
 
+def validation_error(result: dict) -> str | None:
+    """Why this probe result is NOT a pass — or None if it is one.
+
+    The probe used to print everything it collected and exit 0 regardless, so
+    a server error, a rejected setup or a completely empty response all looked
+    green to a script or a person checking `$?` (GitHub #20). Pure, so
+    `Tools/tests/livetest-validation.py` holds it against fake results without
+    the network.
+    """
+    if result["errors"]:
+        return f"server errors: {result['errors']}"
+    if not result.get("setup_complete"):
+        return "setup was never acknowledged (no setupComplete)"
+    if not result["input_transcript"].strip():
+        return "empty input transcript — the audio was not understood"
+    if not result["output_transcript"].strip():
+        return "no output transcript — nothing was translated"
+    if result["audio_bytes"] == 0:
+        return "no translated audio came back"
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--text", help="text to synthesize as the spoken input")
@@ -210,6 +236,12 @@ def main():
         said_words = len(args.text.split())
         print(f"\ninput words spoken={said_words} transcribed={in_words}"
               f" ({in_words / max(said_words,1):.0%} captured)")
+
+    problem = validation_error(res)
+    if problem:
+        print(f"\nL2 FAILED: {problem}", file=sys.stderr)
+        raise SystemExit(1)
+    print("\nL2 OK")
 
 
 if __name__ == "__main__":
