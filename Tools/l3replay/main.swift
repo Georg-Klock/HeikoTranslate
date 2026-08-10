@@ -54,12 +54,23 @@ let expectations: [String: [ExpectedBubble]] = [
     // because the partner IS Spanish — no inference involved.
     "de_after_es": [ExpectedBubble(isHome: false, translator: .de),
                     ExpectedBubble(isHome: true, translator: .es)],
+    // One German utterance with an internal breath pause (#78): ONE bubble,
+    // both halves present (word floor), ONE release.
+    "de_pause": [ExpectedBubble(isHome: true, translator: .en, minOriginalWords: 10)],
     "silence": [],
     "noise": [],
 ]
 
 let defaultOrder = ["en_short", "de_short", "es_short", "en_entities",
-                    "en_long", "de_after_en", "de_after_es", "silence", "noise"]
+                    "en_long", "de_after_en", "de_after_es", "de_pause",
+                    "silence", "noise"]
+
+/// #78: expected count of "speaker stopped" releases, for cases that pin
+/// the release timing. `de_pause` holds one utterance with an internal
+/// breath pause — the pre-#78 rule released mid-pause (transcript-idle
+/// alone) and again after the second half: 2 releases, the app talking
+/// over the speaker. The mic-aware policy defers through the pause: 1.
+let expectedReleaseCounts: [String: Int] = ["de_pause": 1]
 
 // Plumbing (loadAPIKey, loadWAV, rms) lives in common.swift, shared with
 // the L2.6 expiry probe.
@@ -127,6 +138,20 @@ final class ReplayRunner {
     private var lastInputAt = Date.distantPast
     private var lastOutputAt = Date.distantPast
     private let outputQuietPause = 1.1   // service uses 0.9; widened for jitter
+
+    // #78: the release simulation. Same decision the service makes, through
+    // the same SpeechEndPolicy — the WAV chunks stand in for the mic, so
+    // `lastLoudMicAt` here is the harness's exact equivalent of the app's.
+    // 400 is the service's `micSpeechRMSFloor` (calibrated: speech 991–5263,
+    // silence 0–12).
+    private var lastLoudMicAt: Date?
+    private var speakerReleased = false
+    /// Armed only by a transcript event, exactly like the service's
+    /// `noteInputActivity` timer — a wiped turn must NOT re-attempt a
+    /// release off the previous turn's stale `lastInputAt`.
+    private var releaseArmed = false
+    private var releaseDeferredSince: Date?
+    private(set) var releaseCount = 0
     private var lastTranslatorAudioAt: Date?
     private var streamEndedAt: Date?
     /// Set while a finalize is waiting for a late translation — see
@@ -195,6 +220,10 @@ final class ReplayRunner {
         while offset < pcm.count {
             let end = min(offset + chunkBytes, pcm.count)
             let chunk = pcm.subdata(in: offset..<end)
+            if rms(chunk) > 400 {
+                let now = Date()
+                q.async { self.lastLoudMicAt = now }
+            }
             for s in sessionList { s.sendAudio(chunk) }
             offset = end
             Thread.sleep(forTimeInterval: 0.064)
@@ -235,6 +264,11 @@ final class ReplayRunner {
             inputs[lang, default: ""] += text
             lastContentAt = Date()
             lastInputAt = Date()
+            // Mirrors noteInputActivity: a fresh transcript re-arms the
+            // release (#78).
+            speakerReleased = false
+            releaseArmed = true
+            releaseDeferredSince = nil
         case .outputLanguage:
             break
         case .outputTranscript(let text):
@@ -288,6 +322,24 @@ final class ReplayRunner {
             }
             q.asyncAfter(deadline: .now() + 0.1) { self.tick() }
             return
+        }
+
+        // #78: the service's audio-release decision, through the same
+        // SpeechEndPolicy — armed by transcript idleness, vetoed by a loud
+        // "mic" (the WAV chunks). Recorded so pause cases can assert the
+        // app never starts talking over a speaker who is mid-breath.
+        if releaseArmed, !speakerReleased, lastInputAt != .distantPast,
+           now.timeIntervalSince(lastInputAt) >= SpeechEndPolicy.transcriptIdleThreshold {
+            if SpeechEndPolicy.mayRelease(now: now, lastLoudMicAt: lastLoudMicAt,
+                                          deferredSince: releaseDeferredSince) {
+                speakerReleased = true
+                releaseDeferredSince = nil
+                releaseCount += 1
+                print("    release \(releaseCount) (speaker stopped) at \(elapsed())")
+            } else if releaseDeferredSince == nil {
+                releaseDeferredSince = now
+                print("    (release deferred — mic still hears speech) at \(elapsed())")
+            }
         }
 
         let outputQuiet = now.timeIntervalSince(lastOutputAt) > outputQuietPause
@@ -370,6 +422,9 @@ final class ReplayRunner {
         outputs = [:]
         lastOutputAt = .distantPast
         lastTranslatorAudioAt = nil
+        speakerReleased = false
+        releaseArmed = false
+        releaseDeferredSince = nil
     }
 }
 
@@ -398,6 +453,10 @@ func runCase(name: String, apiKey: String) {
     check(runner.errors.isEmpty, "no session errors" + (runner.errors.isEmpty ? "" : ": \(runner.errors.joined(separator: "; "))"))
     check(runner.bubbles.count == expected.count,
           "exactly \(expected.count) bubble(s) — got \(runner.bubbles.count) (R1)")
+    if let wantReleases = expectedReleaseCounts[name] {
+        check(runner.releaseCount == wantReleases,
+              "exactly \(wantReleases) speaker-stop release(s) — got \(runner.releaseCount) (#78)")
+    }
     if runner.bubbles.count != expected.count {
         print("    (debug) uncommitted leftovers: \(runner.leftoversDescription)")
     }
