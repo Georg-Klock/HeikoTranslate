@@ -283,6 +283,16 @@ continuously while the mic is open and has **no offline mode**.
   failed handshake can't hold the app in "Verbinde…" forever.
 - **Session expiry** (`goAway`, observed ~9 min) surfaces as `.closed` and
   reconnects silently (SPEC R7) — verified live by `Tools/l2expiry.sh`.
+- **A replacement session hears nothing until its own `setupComplete`.**
+  The connect path always guarded against premature audio; the renewal path
+  did not — the sending loops selected on "not dead" and `reconnect` never
+  cleared readiness, so every goAway renewal fed the fresh WebSocket
+  `realtimeInput` mid-handshake (GitHub #15). Readiness is now cleared at
+  `.closed` and in `reconnect`, sending selects on readiness, and speech
+  during the window is held per language — a rolling ~3.2s of newest chunks,
+  delivered once after the new setup, so a renewal mid-sentence loses
+  nothing (R4) while a slow reconnect can't flush stale history into a
+  fresh turn. A session error drops its held audio instead.
 - **Audio interruptions and backgrounding** (phone call, Siri, app switch):
   the view model stops the sessions and resumes listening by itself when
   the app is active again — the user never has to know.
