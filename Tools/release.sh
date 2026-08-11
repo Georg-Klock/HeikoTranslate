@@ -69,6 +69,22 @@ if [[ "$BRANCH" != "main" ]]; then
   exit 2
 fi
 
+# L3's diagnostic switches must never reach a release. L3_ALLOW_RAW=1
+# downgrades protocol drift from a failure back to a warning, and
+# L3_INJECT_RAW=1 seeds a synthetic failing frame — both exist for
+# investigating a drift in a scratch shell, and a shell that still has one
+# exported is exactly the shell most likely to cut the next release. Refuse
+# loudly rather than silently unsetting: the environment was armed, and the
+# human should know. Fires even with --no-l3, which means "L3 already ran
+# this session" — a session with these set proves nothing. GitHub #19.
+if [[ -n "${L3_ALLOW_RAW:-}" || -n "${L3_INJECT_RAW:-}" ]]; then
+  echo "!!  L3_ALLOW_RAW/L3_INJECT_RAW is set in this shell. These are" >&2
+  echo "!!  diagnostic switches for investigating protocol drift; an L3 run" >&2
+  echo "!!  under them proves nothing about the release. Unset them first:" >&2
+  echo "!!    unset L3_ALLOW_RAW L3_INJECT_RAW" >&2
+  exit 2
+fi
+
 # The log holds full conversation transcripts — Heiko's and whoever he is
 # talking to. With DIAGNOSTIC_UPLOAD_URL set, the app POSTs it on every
 # backgrounding. A TestFlight build can reach the public link, where those
