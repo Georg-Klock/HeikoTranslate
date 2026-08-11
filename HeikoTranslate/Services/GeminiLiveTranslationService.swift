@@ -419,6 +419,11 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Skips the AVAudioEngine setup so `start()` runs without audio
     /// hardware; tests drive `forward(_:)` directly instead of the mic tap.
     var skipAudioIOForTesting = false
+    /// Stands in for a loud mic buffer (GitHub #39): with the tap skipped,
+    /// nothing sets `speechHeardThisTurn`, and the straggler gates treat
+    /// every event as post-turn noise. A test marks speech exactly where the
+    /// real tap would have.
+    func markSpeechHeardForTesting() { speechHeardThisTurn = true }
     #endif
 
     func requestPermissions() async -> Bool {
@@ -890,11 +895,33 @@ final class GeminiLiveTranslationService: ObservableObject {
         case .inputTranscript(let text):
             lastServerEventAt = Date()
             noteServerRecovered()
+            // The straggler rule the codes gate has had since 2026-07-29,
+            // extended to the transcript itself: a fragment arriving while
+            // the mic has heard NO speech this turn cannot be new speech —
+            // it is the previous turn still echoing out of the server.
+            // These used to rebuild per-turn state after the commit's reset,
+            // and the idle timers finalized them into a second, partial
+            // bubble: same side, strict prefixes of the committed turn
+            // (GitHub #39). NOT a post-commit cooldown — a genuine instant
+            // reply arrives with mic energy, sets the flag, and passes.
+            guard speechHeardThisTurn else {
+                diag("turn", "[\(lang.rawValue)] input transcript ignored (no speech this turn): \(text.prefix(40))")
+                return
+            }
             inputs[lang, default: ""] += text
             noteInputActivity()
             onPartialInput?(turn.bestTranscript(from: inputs))
             resetInputIdleTimer()
         case .outputTranscript(let text):
+            // Same gate, output side: a model with no speech to translate
+            // this turn is repeating the LAST turn (the #39 repro's second
+            // bubble carried the previous translation verbatim). The
+            // committed translator's late AUDIO still plays through the
+            // linger window — that path is release-gated and unaffected.
+            guard speechHeardThisTurn else {
+                diag("turn", "[\(lang.rawValue)] output transcript ignored (no speech this turn): \(text.prefix(40))")
+                return
+            }
             outputs[lang, default: ""] += text
             lastOutputAt = Date()
             // A session translating is the authoritative direction signal —

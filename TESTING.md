@@ -238,6 +238,22 @@ the recording back in `handle()`, both late-frame cases fail.
 | L1.69 | A usage frame in flight when the run stops, or from a superseded instance | Counted — a mute or goAway renewal must not lose the frames it had in flight | **costs** |
 | L1.69b | A current session's usage frame | Counted exactly ONCE — the recording moved, it did not gain a second site | **costs** |
 
+Late fragments (#39, 2026-08-11). The straggler rule the codes gate has had
+since 2026-07-29 now covers the transcripts too: a fragment arriving while
+the mic has heard no speech this turn is the previous turn still echoing out
+of the server, and it must not rebuild per-turn state. Driven through the
+real service — event route, idle and finalize timers — with fake sockets;
+~8s of wall clock per case, paid for the production path on purpose.
+Verified fail-first: with the gates removed, the repro case commits a second
+bubble whose lines are strict prefixes of the first, the filed shape
+verbatim. Known residual, same as the codes gate: a room loud enough to
+cross the speech floor continuously makes the gate transparent.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.71 | A committed turn, then transcript fragments (prefixes of both lines) with no mic speech since the reset | Exactly ONE bubble — the stragglers rebuild nothing | **R1/R3** |
+| L1.71b | A genuine reply immediately after the commit, mic energy first | Commits normally — the gate is a straggler filter, NOT the cooldown the issue forbids | **R4/R6** |
+
 > Beyond the numbered rows: `FillerWordTests` / `FillerWordsFromDeviceTests` /
 > `FillerWordFalsePositiveTests` cover hesitation stripping (including the
 > seven real words an adversarial review caught the first version deleting),
@@ -663,7 +679,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 130 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy` and `GeminiLiveTranslationService` (2026-08-11) |
+| L1 | ✅ Built and passing — 132 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy` and `GeminiLiveTranslationService` (2026-08-11) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Needs a device re-run: fixes landed for the D2 root cause (mic now opens on setupComplete and flushes pre-connect audio), D3/D4 (settle-window + straggler grace + commit gates in `TurnLogic`), D5 (output-tail no longer finalizes while the speaker is still talking), D7/D8 (goAway closes are no longer treated as intentional, so sessions actually reconnect), and D10 (all three sessions now run, so German→Spanish is possible at all) — none re-verified on a phone yet |
