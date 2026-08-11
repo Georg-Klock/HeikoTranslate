@@ -553,7 +553,13 @@ format):
 3. Original text present in full — word-count floor (**R5**)
 4. Translation non-empty and produced by the RIGHT session, not the
    fallback (**R3**, §3.1)
-5. No session errors, and unrecognized server messages surfaced
+5. No session errors, and **no unrecognized server messages** — protocol
+   drift FAILS the run with a bounded sample of the frame (#19; it used to
+   print a warning and pass, which let the release gate stay green while
+   the parser discarded a new server shape). `L3_ALLOW_RAW=1` downgrades it
+   back to a warning for investigating a drift — never for a release run —
+   and `L3_INJECT_RAW=1` seeds one synthetic frame so the gate's teeth can
+   be demonstrated on demand.
 
 **Flakiness** (measured 2026-07-26, five full runs): expect an occasional
 single-assertion flake — 56/56, 56/56, 55/56, 55/56, 56/56. This is a

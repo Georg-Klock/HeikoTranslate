@@ -101,7 +101,12 @@ final class ReplayRunner {
 
     private(set) var bubbles: [CommittedBubble] = []
     private(set) var errors: [String] = []
-    private(set) var rawMessages: [String] = []
+    // L3_INJECT_RAW=1 seeds one synthetic frame, so the drift gate's teeth
+    // can be demonstrated on demand instead of waiting for real drift — the
+    // gate is only trustworthy if a raw frame provably fails a run. GitHub #19.
+    private(set) var rawMessages: [String] =
+        ProcessInfo.processInfo.environment["L3_INJECT_RAW"] == "1"
+            ? ["[synthetic] seeded by L3_INJECT_RAW — a run seeing this must fail"] : []
     private(set) var inputLanguageCodes: [String] = []
 
     /// What the sessions produced but the turn never committed — printed
@@ -474,8 +479,20 @@ func runCase(name: String, apiKey: String) {
         check(words >= exp.minOriginalWords, "bubble \(i + 1) original has ≥\(exp.minOriginalWords) words — got \(words) (R5)")
     }
 
-    if !runner.rawMessages.isEmpty {
-        print("  ⚠️ \(runner.rawMessages.count) unrecognized server message(s) — protocol drift? First: \(runner.rawMessages[0].prefix(200))")
+    // Protocol drift is a FAILURE, not a footnote. `.raw` exists so a new
+    // server shape is visible the day it appears; recording it and then
+    // exiting 0 let the release gate pass while the production parser was
+    // discarding frames (GitHub #19). L3_ALLOW_RAW=1 downgrades it back to
+    // the old warning — for investigating a drift, never for a release run.
+    if ProcessInfo.processInfo.environment["L3_ALLOW_RAW"] == "1" {
+        if !runner.rawMessages.isEmpty {
+            print("  ⚠️ \(runner.rawMessages.count) unrecognized server message(s) ALLOWED by L3_ALLOW_RAW. First: \(runner.rawMessages[0].prefix(200))")
+        }
+    } else {
+        check(runner.rawMessages.isEmpty,
+              "no unrecognized server messages (protocol drift)"
+              + (runner.rawMessages.isEmpty ? "" :
+                 " — \(runner.rawMessages.count) frame(s), first: \(runner.rawMessages[0].prefix(200))"))
     }
 }
 
