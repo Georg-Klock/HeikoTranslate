@@ -16,10 +16,11 @@ REAL_L1="$PWD/Tools/l1.sh"
 FAILURES=0
 
 run_case() {
-  local name=$1 xcodegen_exit=$2 expect_l1_exit=$3
-  local sandbox log
+  local name=$1 xcodegen_exit=$2 xcodebuild_exit=$3 expect_l1_exit=$4
+  local sandbox log out
   sandbox=$(mktemp -d -t l1gate)
   log="$sandbox/calls.log"
+  out="$sandbox/l1.out"
   mkdir -p "$sandbox/repo/Tools" "$sandbox/bin"
   cp "$REAL_L1" "$sandbox/repo/Tools/l1.sh"
 
@@ -34,12 +35,12 @@ echo "xcodebuild \$1" >> "$log"
 echo "Test Suite 'All tests' passed"
 echo "	 Executed 5 tests, with 0 failures (0 unexpected) in 0.1 (0.1) seconds"
 echo "** TEST SUCCEEDED **"
-exit 0
+exit $xcodebuild_exit
 SH
   chmod +x "$sandbox/bin/xcodegen" "$sandbox/bin/xcodebuild"
 
   local status=0
-  PATH="$sandbox/bin:$PATH" "$sandbox/repo/Tools/l1.sh" >/dev/null 2>&1 || status=$?
+  PATH="$sandbox/bin:$PATH" "$sandbox/repo/Tools/l1.sh" >"$out" 2>&1 || status=$?
 
   local ok=1
   if [[ "$expect_l1_exit" == "0" ]]; then
@@ -47,11 +48,18 @@ SH
     # The whole point: generation happened, and BEFORE the test run.
     [[ "$(head -1 "$log")" == xcodegen* ]] || ok=0
     grep -q "^xcodebuild test" "$log" || ok=0
-  else
+  elif [[ "$xcodegen_exit" != "0" ]]; then
     [[ $status -ne 0 ]] || ok=0
     # A failed generation must stop the gate — testing a stale project
     # after xcodegen failed is exactly the false green this guards against.
     if grep -q "^xcodebuild" "$log"; then ok=0; fi
+  else
+    # xcodebuild failed while printing a passing-looking summary. The gate
+    # must propagate that failure — the summary line alone is not a pass.
+    # This is the `|| true`-clobbers-PIPESTATUS regression: the gate read
+    # exit 0 off a failed build and printed "L1 passed" over it.
+    [[ $status -ne 0 ]] || ok=0
+    if grep -q "L1 passed" "$out"; then ok=0; fi
   fi
 
   if [[ $ok -eq 1 ]]; then
@@ -63,8 +71,9 @@ SH
   rm -rf "$sandbox"
 }
 
-run_case "regenerates the project, then tests" 0 0
-run_case "a failed generation stops the gate" 1 1
+run_case "regenerates the project, then tests" 0 0 0
+run_case "a failed generation stops the gate" 1 0 1
+run_case "a failing xcodebuild cannot pass on its summary line" 0 65 1
 
 if [[ $FAILURES -gt 0 ]]; then
   echo "==> l1-gate-regenerates: $FAILURES failure(s)"
