@@ -300,15 +300,24 @@ private struct LanguageColumn: View {
 private struct TextSizeSlider: View {
     @Binding var step: Int
     let label: String
+    /// The size the system is delivering right now — where the thumb sits
+    /// while the user has not chosen anything, so the first drag starts
+    /// from what they already see instead of jumping. Reading it is what
+    /// keeps "untouched" honest: the slider reflects the system until the
+    /// moment it is used, and only then writes an override. GitHub #12.
+    @Environment(\.dynamicTypeSize) private var systemSize
 
     private var count: Int { TextSize.steps.count }
+    private var displayedStep: Int {
+        step == TextSize.system ? TextSize.nearestStep(to: systemSize) : step
+    }
 
     var body: some View {
         HStack(spacing: 16) {
             Text("A").font(.system(size: 13))
             Slider(
                 value: Binding(
-                    get: { Double(step) },
+                    get: { Double(displayedStep) },
                     set: { step = min(max(Int($0.rounded()), 0), count - 1) }
                 ),
                 in: 0...Double(count - 1),
@@ -466,8 +475,9 @@ struct LanguageSettingsSheet: View {
         // A sheet is its own presentation context and does not inherit the
         // presenter's `dynamicTypeSize`, so the setting is applied here too —
         // otherwise the slider visibly scaled the app behind the sheet while
-        // the sheet it lives in stayed put.
-        .dynamicTypeSize(TextSize.dynamicType(textSizeStep))
+        // the sheet it lives in stayed put. Same modifier as the root: with
+        // no explicit choice, the system size flows through here as well.
+        .modifier(TextSizeOverride(step: textSizeStep))
         // Changing the home language rewrites every word on this sheet at
         // once. Crossfade it: a whole screen of text swapping instantly reads
         // as a glitch, and the wheels are still moving under the user's finger
