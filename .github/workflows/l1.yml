@@ -13,7 +13,8 @@ name: L1
 # failures, ~1,811 of 2,000 included minutes at the macOS 10x multiplier) and
 # restored on 2026-08-10: with several concurrent AI-assisted branches, "the
 # PR body states its L1 count" stopped being independently checkable, and a
-# gate a reviewer cannot verify is a gate. Doc-only changes still skip it,
+# gate a reviewer cannot verify is not a gate. Doc-only changes still skip
+# it,
 # and superseded pushes to the same PR cancel their older runs.
 #
 # `pull_request` events build the PREVIEW MERGE (refs/pull/N/merge), so this
