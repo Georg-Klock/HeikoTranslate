@@ -7,29 +7,36 @@ name: L1
 # to ignore red checks. L3 stays a deliberate, human-judged step before a
 # release.
 #
-# On MERGES to main, not on every pull request.
+# On pull requests AND on merges to main.
 #
-# Measured 2026-08-08: 33 runs, zero failures, ~1,811 of 2,000 included minutes
-# for the month, at the macOS 10x billing multiplier.
+# The per-PR trigger was dropped on 2026-08-08 over cost (33 runs, zero
+# failures, ~1,811 of 2,000 included minutes at the macOS 10x multiplier) and
+# restored on 2026-08-10: with several concurrent AI-assisted branches, "the
+# PR body states its L1 count" stopped being independently checkable, and a
+# gate a reviewer cannot verify is a gate. Doc-only changes still skip it,
+# and superseded pushes to the same PR cancel their older runs.
 #
-# An earlier version of this comment justified the change by claiming both
+# `pull_request` events build the PREVIEW MERGE (refs/pull/N/merge), so this
+# also tests the merged result before it lands, not after. The push trigger
+# stays: the preview goes stale if main moves after the last PR push, so the
+# post-merge run on main remains the authoritative check of what actually
+# landed.
+#
+# Safety, stated because it is the kind of thing that rots silently: this
+# workflow must stay safe to run on code from a fork, which means
+# `pull_request` (NEVER `pull_request_target` — that grants the base repo's
+# write token and secrets to untrusted code), `permissions: contents: read`,
+# and no step that reads `secrets.*`. The only plist it touches is the
+# committed REPLACE-ME example, so nothing here can call out.
+#
+# An earlier version of this comment justified main-only by claiming both
 # deploy.sh and release.sh already refuse to proceed without L1. That was only
 # true of release.sh — deploy.sh ran no tests at all, so the local gate this
 # reasoning leaned on did not exist on the path actually used a dozen times a
 # day. Fixed rather than reworded: deploy.sh now runs Tools/l1.sh before it
-# bumps, and the rule for pull requests is written down in CLAUDE.md.
-#
-# What local gates genuinely CANNOT cover is the merge commit: nobody ever runs
-# the tests on the merged result, and a conflict resolved in Swift rather than
-# in Markdown could land broken on the branch releases are cut from. That is
-# the gap this now guards, at roughly a third of the runs.
-#
-# The trade, stated plainly: a broken merge is caught minutes AFTER it lands
-# rather than before. On a one-person repo where main is not deployed
-# automatically, that is the cheaper side of the trade.
+# bumps.
 on:
-  push:
-    branches: [main]
+  pull_request:
     # Documentation cannot break a build. A large share of this project's
     # changes are TESTING.md, docs/ and findings notes.
     paths-ignore:
@@ -38,10 +45,20 @@ on:
       - 'design/**'
       - 'logs/**'
       - '.gitignore'
-  # Kept so a risky branch can be checked before merging, on request.
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'design/**'
+      - 'logs/**'
+      - '.gitignore'
+  # Kept so a risky branch can be checked without opening a PR.
   workflow_dispatch:
 
-# A rapid series of merges supersedes earlier runs rather than paying for both.
+# A newer push supersedes the run it obsoletes rather than paying for both —
+# per PR (github.ref is refs/pull/N/merge there) and likewise for a rapid
+# series of merges to main.
 concurrency:
   group: l1-${{ github.ref }}
   cancel-in-progress: true
