@@ -46,3 +46,19 @@ jobs:
         # Warning severity: the repo is clean at this level (made so in #3's
         # PR), and style-level chatter would teach people to ignore the job.
         run: git ls-files '*.sh' | xargs shellcheck --severity=warning
+
+  # The L0 failure-window suite (GitHub #18): deploy.sh and release.sh COMMIT
+  # to this repository, and the suite proves the build-number invariant
+  # survives failure at every point — by making each point fail. It stubs
+  # xcrun/xcodebuild/xcodegen, so ubuntu runs it fine now that the scripts'
+  # one BSD-ism (sed -i '') is gone; running it on Linux is itself the
+  # portability check that keeps them runnable under CI at the 1x multiplier.
+  l0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build-number failure windows
+        run: Tools/tests/build-number-windows.sh

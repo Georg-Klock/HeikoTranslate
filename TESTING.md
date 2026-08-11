@@ -552,7 +552,15 @@ Tools/tests/shell-syntax.sh
 ```
 
 Runs in a couple of seconds and needs nothing installed — it stubs `xcrun`,
-`xcodebuild` and `xcodegen`, so it is safe on any machine and in CI.
+`xcodebuild` and `xcodegen`, so it is safe on any machine and in CI. **CI
+runs it** (#18): the `l0` job in `.github/workflows/shell.yml`, on ubuntu at
+the 1× multiplier, triggered whenever a shell script changes. That became
+possible when the scripts' one BSD-ism went away: in-place `sed -i ''` is a
+spelling GNU sed rejects, so the CFBundleVersion swap now goes through
+`Tools/build_number.sh` — one shared, portable helper (temp file + `mv`,
+which also can't leave a backup file where the dirty-tree gates would trip
+on it). Verified both ways: the suite passes with GNU sed shadowing the
+system sed, and the old spelling demonstrably fails under GNU sed.
 
 `shell-syntax.sh` runs `bash -n` over every tracked `.sh` file (#3):
 `deploy.sh` and `release.sh` commit to this repository, and nothing so much

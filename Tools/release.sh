@@ -18,6 +18,7 @@ cd "$(dirname "$0")/.."
 # committed template at build time. Create it with:
 #   echo 'DEVELOPMENT_TEAM="<team-id>"' >> Tools/local.env
 # Find it in Xcode → Settings → Accounts → your team.
+source Tools/build_number.sh
 [ -f Tools/local.env ] && . Tools/local.env
 if [ -z "${DEVELOPMENT_TEAM:-}" ]; then
   echo "No DEVELOPMENT_TEAM. Find it in Xcode → Settings → Accounts, then:" >&2
@@ -167,7 +168,7 @@ on_signal() {
 # project.yml that `git checkout -- project.yml` would silently destroy.
 revert_build_number() {
   local now
-  sed -i '' "s/CFBundleVersion: \"$NEXT_BUILD\"/CFBundleVersion: \"$CURRENT_BUILD\"/" project.yml
+  set_build_number "$NEXT_BUILD" "$CURRENT_BUILD"
   now=$(grep 'CFBundleVersion:' project.yml | sed 's/.*"\(.*\)"/\1/')
   if [[ "$now" != "$CURRENT_BUILD" ]]; then
     echo "!!  Could not restore the build number: project.yml says '$now'," >&2
@@ -225,7 +226,7 @@ if ! [[ "$CURRENT_BUILD" =~ ^[0-9]+$ ]]; then
 fi
 NEXT_BUILD=$((CURRENT_BUILD + 1))
 VERSION=$(grep CFBundleShortVersionString project.yml | sed 's/.*"\(.*\)"/\1/')
-sed -i '' "s/CFBundleVersion: \"$CURRENT_BUILD\"/CFBundleVersion: \"$NEXT_BUILD\"/" project.yml
+set_build_number "$CURRENT_BUILD" "$NEXT_BUILD"
 BUMPED=1
 trap on_exit EXIT
 trap 'on_signal 2' INT
