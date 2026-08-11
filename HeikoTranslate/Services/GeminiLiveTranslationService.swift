@@ -824,21 +824,40 @@ final class GeminiLiveTranslationService: ObservableObject {
         audioGraph.deactivateSession()
     }
 
+    /// The one buffer the converter's input block may hand over, exactly once.
+    ///
+    /// The SDK marks `AVAudioConverterInputBlock` `@Sendable`, so under strict
+    /// concurrency a captured `AVAudioPCMBuffer` and a captured `var delivered`
+    /// both warn — but `convert(to:error:withInputFrom:)` runs the block
+    /// synchronously on the calling thread before it returns, so the capture
+    /// is safe in fact. This box states that deliberately, and ONLY for this
+    /// call — a file-wide `@preconcurrency import` would blanket every
+    /// AVFoundation Sendable diagnostic in the service, hiding real ones.
+    /// Taking the buffer out is also the delivered-once latch. Same idiom as
+    /// `MicConverterBox`. GitHub #1.
+    private final class SingleShotInput: @unchecked Sendable {
+        private var buffer: AVAudioPCMBuffer?
+        init(_ buffer: AVAudioPCMBuffer) { self.buffer = buffer }
+        func take() -> AVAudioPCMBuffer? {
+            defer { buffer = nil }
+            return buffer
+        }
+    }
+
     private static func convert(buffer: AVAudioPCMBuffer, using converter: AVAudioConverter, targetFormat: AVAudioFormat) -> Data? {
         let ratio = targetFormat.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
         guard let outBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return nil }
 
-        var delivered = false
+        let input = SingleShotInput(buffer)
         var conversionError: NSError?
         converter.convert(to: outBuffer, error: &conversionError) { _, inputStatus in
-            if delivered {
+            guard let next = input.take() else {
                 inputStatus.pointee = .noDataNow
                 return nil
             }
-            delivered = true
             inputStatus.pointee = .haveData
-            return buffer
+            return next
         }
         guard conversionError == nil, let channelData = outBuffer.int16ChannelData else { return nil }
         let frameLength = Int(outBuffer.frameLength)
