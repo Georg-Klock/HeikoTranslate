@@ -167,6 +167,49 @@ final class PendingStartTests: XCTestCase {
         XCTAssertEqual(vm.serviceStartCount, 0)
     }
 
+    // An audio interruption (call, Siri, alarm) beginning while the prompt
+    // is still up voids the pending start. The regression this pins: the
+    // listening guard in noteInterruptionBegan() returned early in exactly
+    // the pending state (isListening still false), so the grant arriving
+    // mid-interruption started the microphone and sockets while iOS owned
+    // the audio. This drives the REAL noteInterruptionBegan() with the app
+    // genuinely not listening — no hand-forced flags.
+    func testInterruptionBeganVoidsThePendingStart() async {
+        let prompt = HeldPrompt()
+        let vm = makeModel(prompt: prompt)
+
+        vm.toggleButton()
+        await drain()
+        XCTAssertTrue(vm.isLaunching, "the tap owns a pending start")
+
+        XCTAssertFalse(vm.noteInterruptionBegan(),
+                       "nothing was listening, so there is nothing to tear down")
+        XCTAssertFalse(vm.isLaunching, "interruption-began voids the pending start")
+        XCTAssertFalse(vm.resumeWhenActive,
+                       "a start that never happened earns no automatic resume")
+
+        prompt.resolve(true)       // the grant arrives mid-interruption
+        await drain()
+
+        XCTAssertEqual(vm.serviceStartCount, 0,
+                       "a grant during an interruption must start nothing")
+        XCTAssertFalse(vm.isListening)
+
+        // The interruption ending must not start anything either — no
+        // resume was armed for a session that never ran.
+        XCTAssertFalse(vm.noteInterruptionEnded(options: 0))
+        await drain()
+        XCTAssertEqual(vm.serviceStartCount, 0)
+
+        // A fresh tap afterwards works normally.
+        vm.toggleButton()
+        await drain()
+        prompt.resolve(true)
+        await drain()
+        XCTAssertEqual(vm.serviceStartCount, 1)
+        XCTAssertTrue(vm.isListening)
+    }
+
     // A manual mute while a start is somehow pending (mute reached through a
     // path other than the button) voids the start: a stale grant must not
     // restart what was just stopped.
