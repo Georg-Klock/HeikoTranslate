@@ -21,6 +21,80 @@ import Foundation
 /// parsed and surfaced as an event in case a future orchestrator wants it.
 /// Every unrecognized server message is surfaced via `.raw(...)` instead
 /// of being silently dropped, so any further mismatch is visible in logs.
+/// The session's lifecycle as ONE pure value: the flags the class used to
+/// keep as loose `Bool`s — written on the main thread by `close()`, written
+/// and read on URLSession's private delegate queue by the callbacks, with no
+/// synchronization between them (GitHub #1) — plus the exactly-once failure
+/// latch, with the decisions that read them as mutating functions.
+///
+/// Pure so L1 can drive the interleavings: an intentional close racing
+/// `didCompleteWithError` used to be able to misclassify our own close as
+/// server-initiated and trigger a reconnect nobody asked for, and a single
+/// pre-handshake failure reported `.error` from up to three sites, burning
+/// the orchestrator's whole retry budget on one transient refusal. The class
+/// guards one instance of this with a lock; the decisions live here.
+struct SessionLifecycle {
+    /// True once the WebSocket handshake succeeded. After this point, a
+    /// transport failure or close is a normal session end, NOT a connection
+    /// error the user should see.
+    var hasOpened = false
+    /// True once we've asked to close, or the server has closed / sent
+    /// goAway. Suppresses the flurry of follow-on send/receive failures a
+    /// closing socket produces.
+    var isClosing = false
+    /// True only when the orchestrator explicitly closed this session
+    /// (mute / stop) — an intentional close must never look server-initiated.
+    var intentionalClose = false
+    /// The server announced the end with `goAway`, so the close that follows
+    /// is planned rather than a network drop. GitHub #3.
+    var sawGoAway = false
+    /// The exactly-once latch: a session instance reports terminal failure
+    /// ONE time, however many transport callbacks observe it. GitHub #1.
+    private(set) var didReportFailure = false
+
+    var closeIsExpected: Bool { isClosing || hasOpened }
+
+    /// Claim the right to report a terminal failure. True exactly once.
+    mutating func claimFailure() -> Bool {
+        guard !didReportFailure else { return false }
+        didReportFailure = true
+        return true
+    }
+
+    enum TransportFailureDisposition: Equatable {
+        /// The socket is closing or the session ran — expected noise.
+        case ignoredAfterClose
+        /// The first observer of a real pre-handshake failure: report it.
+        case reportOnce
+        /// Another site already reported this session's failure: log only.
+        case suppressedDuplicate
+    }
+
+    /// A send or receive callback failed.
+    mutating func noteTransportFailure() -> TransportFailureDisposition {
+        if closeIsExpected { return .ignoredAfterClose }
+        return claimFailure() ? .reportOnce : .suppressedDuplicate
+    }
+
+    enum CompletionDisposition: Equatable {
+        /// We closed on purpose — nothing to report.
+        case quiet
+        /// The server ended a session that had opened — reconnect (R7);
+        /// `expected` says whether goAway announced it first.
+        case closed(expected: Bool)
+        /// Never opened, and this is the first report: a real connect/auth
+        /// failure worth surfacing.
+        case failure
+    }
+
+    /// The URLSession task completed (the final word on any transport).
+    mutating func noteTaskCompleted() -> CompletionDisposition {
+        guard !intentionalClose else { return .quiet }
+        if hasOpened { return .closed(expected: sawGoAway) }
+        return claimFailure() ? .failure : .quiet
+    }
+}
+
 final class GeminiLiveSession: NSObject {
     enum Event {
         case setupComplete
@@ -65,29 +139,34 @@ final class GeminiLiveSession: NSObject {
     private let onEvent: (Event) -> Void
 
     private var urlSession: URLSession!
+
+    /// The lifecycle flags and the task reference, guarded by one lock.
+    /// `close()` runs on the main thread; the URLSession callbacks and the
+    /// send/receive completions run on the session's private delegate queue;
+    /// the old loose properties were shared between them with nothing making
+    /// the writes visible or the read-modify-writes atomic. Every access now
+    /// goes through `withLifecycle` / the task accessors below. GitHub #1.
+    private let stateLock = NSLock()
+    private var lifecycle = SessionLifecycle()
     private var task: URLSessionWebSocketTask?
 
-    /// True once the WebSocket handshake succeeded. After this point, a
-    /// transport failure or close is a normal session end (Gemini Live
-    /// sessions have a bounded duration and close themselves), NOT a
-    /// connection error the user should see. Before it, a failure is a real
-    /// "couldn't connect / auth rejected" problem worth surfacing.
-    private var hasOpened = false
+    private func withLifecycle<T>(_ body: (inout SessionLifecycle) -> T) -> T {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return body(&lifecycle)
+    }
 
-    /// True once we've asked to close, or the server has closed / sent
-    /// goAway. Suppresses the flurry of follow-on send/receive failures that
-    /// a closing socket produces so they don't surface as errors.
-    private var isClosing = false
+    private func currentTask() -> URLSessionWebSocketTask? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return task
+    }
 
-    /// True only when the orchestrator explicitly closed this session (mute /
-    /// stop). Distinguishes an intentional close (don't reconnect) from a
-    /// server-initiated one (do reconnect).
-    private var intentionalClose = false
-
-    /// Set when the server announced the end with `goAway`, so the close that
-    /// follows can be reported as planned rather than as a network drop.
-    /// GitHub #3.
-    private var sawGoAway = false
+    private func storeTask(_ new: URLSessionWebSocketTask?) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        task = new
+    }
 
     init(targetLanguageCode: String, apiKey: String, onEvent: @escaping (Event) -> Void) {
         self.targetLanguageCode = targetLanguageCode
@@ -106,16 +185,20 @@ final class GeminiLiveSession: NSObject {
         var components = URLComponents(url: Self.endpoint, resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
         let task = urlSession.webSocketTask(with: components.url!)
-        self.task = task
+        storeTask(task)
         task.resume()
-        receiveLoop()
+        receiveLoop(task)
         sendSetup()
     }
 
     /// Orchestrator-requested close (mute / stop). Marks the close as
-    /// intentional so no reconnect is attempted.
+    /// intentional so no reconnect is attempted — and does so under the lock
+    /// BEFORE touching the transport, so the completion callback can never
+    /// observe the teardown without the intent (the misclassification race
+    /// in GitHub #1: our own close read as server-initiated, triggering a
+    /// reconnect nobody asked for).
     func close() {
-        intentionalClose = true
+        withLifecycle { $0.intentionalClose = true }
         closeTransport()
         // A URLSession strongly retains its delegate until invalidated, and
         // this class IS its URLSession's delegate — so without this line every
@@ -132,14 +215,13 @@ final class GeminiLiveSession: NSObject {
     /// reconnects (SPEC R7). Marking goAway closes as intentional was a real
     /// bug: the session died permanently after its bounded duration.
     private func closeTransport() {
-        isClosing = true
-        task?.cancel(with: .goingAway, reason: nil)
+        stateLock.lock()
+        lifecycle.isClosing = true
+        let closing = task
         task = nil
+        stateLock.unlock()
+        closing?.cancel(with: .goingAway, reason: nil)
     }
-
-    /// Whether a transport error at this moment is a benign session-end
-    /// rather than a real connection failure.
-    private var closeIsExpected: Bool { isClosing || hasOpened }
 
     /// Streams one chunk of mic audio. Must already be raw 16-bit PCM,
     /// 16kHz, mono, little-endian.
@@ -182,28 +264,38 @@ final class GeminiLiveSession: NSObject {
         guard let data = try? JSONSerialization.data(withJSONObject: json),
               let text = String(data: data, encoding: .utf8)
         else { return }
-        task?.send(.string(text)) { [weak self] error in
+        currentTask()?.send(.string(text)) { [weak self] error in
             guard let self, let error else { return }
-            if self.closeIsExpected {
-                self.onEvent(.debug("send after close (ignored): \(error.localizedDescription)"))
-            } else {
-                self.onEvent(.error("send failed: \(error.localizedDescription)"))
-            }
+            self.reportTransportFailure("send", error)
+        }
+    }
+
+    /// One reporting point for send and receive failures, behind the
+    /// exactly-once latch: a single dead socket fails every in-flight send
+    /// AND the receive loop, and each used to emit its own `.error` — the
+    /// orchestrator counted every one against its 3-attempt retry budget, so
+    /// one transient refusal could burn the lot instantly. GitHub #1.
+    private func reportTransportFailure(_ side: String, _ error: Error) {
+        switch withLifecycle({ $0.noteTransportFailure() }) {
+        case .ignoredAfterClose:
+            onEvent(.debug("\(side) ended after close (ignored): \(error.localizedDescription)"))
+        case .reportOnce:
+            onEvent(.error("\(side) failed: \(error.localizedDescription)"))
+        case .suppressedDuplicate:
+            onEvent(.debug("\(side) failed after the failure was already reported: \(error.localizedDescription)"))
         }
     }
 
     // MARK: - Incoming
 
-    private func receiveLoop() {
-        task?.receive { [weak self] result in
+    /// The loop holds the task it was armed for, rather than re-reading a
+    /// property another thread may have swapped or cleared mid-loop.
+    private func receiveLoop(_ task: URLSessionWebSocketTask) {
+        task.receive { [weak self] result in
             guard let self else { return }
             switch result {
             case .failure(let error):
-                if self.closeIsExpected {
-                    self.onEvent(.debug("receive ended after close (ignored): \(error.localizedDescription)"))
-                } else {
-                    self.onEvent(.error("receive failed: \(error.localizedDescription)"))
-                }
+                self.reportTransportFailure("receive", error)
             case .success(let message):
                 switch message {
                 case .string(let text):
@@ -213,7 +305,7 @@ final class GeminiLiveSession: NSObject {
                 @unknown default:
                     break
                 }
-                self.receiveLoop()
+                self.receiveLoop(task)
             }
         }
     }
@@ -266,7 +358,7 @@ final class GeminiLiveSession: NSObject {
             // treated as expected (closeIsExpected) and stay quiet.
             diag("session", "[\(targetLanguageCode)] goAway — closing our side")
             onEvent(.debug("server goAway (closing our side): \(text)"))
-            sawGoAway = true
+            withLifecycle { $0.sawGoAway = true }
             closeTransport()
             return
         }
@@ -335,7 +427,7 @@ extension GeminiLiveSession: URLSessionWebSocketDelegate {
         webSocketTask: URLSessionWebSocketTask,
         didOpenWithProtocol protocol: String?
     ) {
-        hasOpened = true
+        withLifecycle { $0.hasOpened = true }
         diag("session", "[\(targetLanguageCode)] websocket open")
         onEvent(.opened)
         onEvent(.debug("WebSocket handshake succeeded (protocol: \(`protocol` ?? "none"))"))
@@ -347,7 +439,7 @@ extension GeminiLiveSession: URLSessionWebSocketDelegate {
         didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
         reason: Data?
     ) {
-        isClosing = true
+        withLifecycle { $0.isClosing = true }
         let reasonText = reason.flatMap { String(data: $0, encoding: .utf8) } ?? "(no reason given)"
         onEvent(.debug("WebSocket closed by server. closeCode=\(closeCode.rawValue) reason=\(reasonText)"))
     }
@@ -369,16 +461,16 @@ extension GeminiLiveSession: URLSessionWebSocketDelegate {
         // A close we didn't ask for, on a session that had connected, means
         // the server ended it (duration limit / goAway). Ask to reconnect.
         // A failure before the socket ever opened is a real connection/auth
-        // problem — surface it instead of looping reconnects.
-        if !intentionalClose {
-            if hasOpened {
-                let planned = sawGoAway
-                diag("session", "[\(targetLanguageCode)] closed by server (\(planned ? "goAway" : "abrupt drop")) — will reconnect")
-                onEvent(.closed(expected: planned))
-            } else {
-                diag("session", "[\(targetLanguageCode)] FAILED before handshake: \(detail)")
-                onEvent(.error("connection failed before handshake"))
-            }
+        // problem — surfaced once, however many callbacks observed it.
+        switch withLifecycle({ $0.noteTaskCompleted() }) {
+        case .quiet:
+            break
+        case .closed(let planned):
+            diag("session", "[\(targetLanguageCode)] closed by server (\(planned ? "goAway" : "abrupt drop")) — will reconnect")
+            onEvent(.closed(expected: planned))
+        case .failure:
+            diag("session", "[\(targetLanguageCode)] FAILED before handshake: \(detail)")
+            onEvent(.error("connection failed before handshake"))
         }
         // The task is finished either way, so the URLSession has done its job.
         // Self-invalidate here as the belt to close()'s braces: a session torn
