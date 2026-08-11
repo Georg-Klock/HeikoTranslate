@@ -42,7 +42,7 @@ targets:
         CFBundleVersion: "40"
 YML
   cp "$REPO/Tools/deploy.sh" "$REPO/Tools/release.sh" "$REPO/Tools/pull_logs.sh" \
-    "$REPO/Tools/ios_device.sh" "$REPO_DIR/Tools/"
+    "$REPO/Tools/ios_device.sh" "$REPO/Tools/build_number.sh" "$REPO_DIR/Tools/"
   cp "$REPO/Tools/ExportOptions.plist.example" "$REPO/Tools/ExportUpload.plist.example" \
     "$REPO_DIR/Tools/"
   printf 'Tools/local.env\n' > "$REPO_DIR/.gitignore"

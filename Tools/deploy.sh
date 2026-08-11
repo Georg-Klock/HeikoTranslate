@@ -14,6 +14,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 source Tools/ios_device.sh
+source Tools/build_number.sh
 
 
 # The paired iPhone's UDID identifies a physical device, and the Apple
@@ -141,7 +142,7 @@ commit_build_number() {
 # progress), so a hand edit plus any failed deploy silently destroyed the edit.
 revert_build_number() {
   local now
-  sed -i '' "s/CFBundleVersion: \"$NEXT_BUILD\"/CFBundleVersion: \"$CURRENT_BUILD\"/" project.yml
+  set_build_number "$NEXT_BUILD" "$CURRENT_BUILD"
   now=$(grep 'CFBundleVersion:' project.yml | sed 's/.*"\(.*\)"/\1/')
   if [[ "$now" == "$CURRENT_BUILD" ]]; then
     echo "==> Deploy did not complete — build number left at $CURRENT_BUILD" >&2
@@ -229,7 +230,7 @@ if [[ "$BUILD" == "1" && "$BUMP" == "1" ]]; then
     exit 2
   fi
   NEXT_BUILD=$((CURRENT_BUILD + 1))
-  sed -i '' "s/CFBundleVersion: \"$CURRENT_BUILD\"/CFBundleVersion: \"$NEXT_BUILD\"/" project.yml
+  set_build_number "$CURRENT_BUILD" "$NEXT_BUILD"
   BUMPED=1
   # Nothing between here and the commit is guaranteed to succeed — the build
   # can fail, and the phone can simply never show up, which on this project is
