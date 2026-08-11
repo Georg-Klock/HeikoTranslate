@@ -92,10 +92,48 @@ enum TextSize {
     /// Seven notches, matching the tick marks in the design.
     static let steps: [DynamicTypeSize] = [.xSmall, .small, .medium, .large,
                                            .xLarge, .xxLarge, .xxxLarge]
-    /// `.large` — the iOS default, so an untouched install looks like stock.
-    static let defaultStep = 3
-    static func dynamicType(_ step: Int) -> DynamicTypeSize {
-        steps[min(max(step, 0), steps.count - 1)]
+    /// The untouched state: FOLLOW THE SYSTEM. The old default was step 3
+    /// ("`.large` — the iOS default, so an untouched install looks like
+    /// stock"), but forcing it at the root replaced the system Dynamic Type
+    /// environment for everyone — a user who had chosen an accessibility
+    /// text size in iOS was silently pushed back to `.large` until they
+    /// found the in-app slider. Stock-looking is what NOT overriding gives
+    /// you, for free, including the accessibility categories the slider's
+    /// seven notches cannot reach. GitHub #12.
+    ///
+    /// Existing installs migrate correctly on their own: `@AppStorage` only
+    /// persists on write, so a slider that was never touched left no stored
+    /// value, and those installs now follow the system; a deliberately set
+    /// size was written, and stays.
+    static let system = -1
+    static let defaultStep = system
+    /// The explicit override for a slider step, or nil when the system
+    /// environment should flow through untouched.
+    static func override(for step: Int) -> DynamicTypeSize? {
+        guard step != system else { return nil }
+        return steps[min(max(step, 0), steps.count - 1)]
+    }
+    /// Where the slider thumb sits while no override is set: the notch
+    /// nearest the CURRENT system size, so the first touch starts from what
+    /// the user already sees. Accessibility categories sit past the last
+    /// notch and clamp to it.
+    static func nearestStep(to size: DynamicTypeSize) -> Int {
+        if let exact = steps.firstIndex(of: size) { return exact }
+        return size < steps[0] ? 0 : steps.count - 1
+    }
+}
+
+/// Applies the user's explicit text-size choice, and only that: with no
+/// choice made, the modifier adds nothing and the system Dynamic Type
+/// environment reaches every descendant untouched. GitHub #12.
+struct TextSizeOverride: ViewModifier {
+    let step: Int
+    func body(content: Content) -> some View {
+        if let size = TextSize.override(for: step) {
+            content.dynamicTypeSize(size)
+        } else {
+            content
+        }
     }
 }
 

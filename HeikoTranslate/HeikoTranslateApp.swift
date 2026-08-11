@@ -27,7 +27,7 @@ struct HeikoTranslateApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .dynamicTypeSize(TextSize.dynamicType(textSizeStep))
+                .modifier(TextSizeOverride(step: textSizeStep))
         }
     }
 }

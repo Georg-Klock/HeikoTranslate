@@ -204,6 +204,22 @@ fails in all six orderings.
 | L1.70c | goAway close / abrupt drop / noise after close or after open | Planned close, unplanned close, and quiet respectively — the pre-#1 classifications, preserved and now atomic | **R7** |
 | L1.70d | A failure landing with intent recorded but the transport not yet marked closing | Expected-close noise — intent alone suffices, and the class records both under ONE lock acquisition | **R7/R8** |
 
+Text size (#12, 2026-08-11). The untouched state is the SYSTEM size: the
+old default forced `.large` at the app root, replacing the system Dynamic
+Type environment — including the accessibility categories the slider cannot
+express. `TextSize.override(for:)` is pure; the behavioural halves were
+verified on the simulator per the #43 precedent (fresh install of this
+build, `-UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXL`
+plus the demo transcript): the system size visibly reaches the transcript
+with no override, and an explicit `-settings.textSizeStep 0` renders the
+same transcript at xSmall despite the AX setting.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.72 | A fresh install (the sentinel default) | NO override — the system size, accessibility categories included, flows through | **§4.1/a11y** |
+| L1.72b | Every explicit slider notch, and out-of-range persisted values | The chosen override, clamped — a stored integer outlives notch-count changes | **§4.4** |
+| L1.72c | The thumb position while the system is in charge | The notch nearest the current system size; accessibility categories clamp to the last notch | **§4.4** |
+
 Commit diagnostics. Evidence only — these must never influence which
 transcript `TurnLogic` commits.
 
@@ -796,7 +812,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 159 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService`, `ConversationViewModel` and `BackgroundTaskLease` (2026-08-11) |
+| L1 | ✅ Built and passing — 162 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService`, `ConversationViewModel` and `BackgroundTaskLease` (2026-08-11) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Needs a device re-run: fixes landed for the D2 root cause (mic now opens on setupComplete and flushes pre-connect audio), D3/D4 (settle-window + straggler grace + commit gates in `TurnLogic`), D5 (output-tail no longer finalizes while the speaker is still talking), D7/D8 (goAway closes are no longer treated as intentional, so sessions actually reconnect), and D10 (all three sessions now run, so German→Spanish is possible at all) — none re-verified on a phone yet |
