@@ -124,15 +124,22 @@ enum TextSize {
 }
 
 /// Applies the user's explicit text-size choice, and only that: with no
-/// choice made, the modifier adds nothing and the system Dynamic Type
-/// environment reaches every descendant untouched. GitHub #12.
+/// choice made, the environment value is left exactly as the system set it,
+/// so Dynamic Type — accessibility categories included — reaches every
+/// descendant untouched. GitHub #12.
+///
+/// Written as ONE `transformEnvironment`, never an `if let` around the
+/// content: a conditional here is `_ConditionalContent`, and the branch flip
+/// on the user's FIRST slider touch would give the wrapped view a new
+/// structural identity — at the app root that view is `ContentView`, whose
+/// `@StateObject` is the live conversation, so the flip would silently
+/// restart the session and wipe the transcript mid-use. One modifier, one
+/// identity, in both states.
 struct TextSizeOverride: ViewModifier {
     let step: Int
     func body(content: Content) -> some View {
-        if let size = TextSize.override(for: step) {
-            content.dynamicTypeSize(size)
-        } else {
-            content
+        content.transformEnvironment(\.dynamicTypeSize) { size in
+            if let override = TextSize.override(for: step) { size = override }
         }
     }
 }

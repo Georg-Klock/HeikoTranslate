@@ -212,7 +212,14 @@ verified on the simulator per the #43 precedent (fresh install of this
 build, `-UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXL`
 plus the demo transcript): the system size visibly reaches the transcript
 with no override, and an explicit `-settings.textSizeStep 0` renders the
-same transcript at xSmall despite the AX setting.
+same transcript at xSmall despite the AX setting. The modifier is one
+`transformEnvironment`, deliberately not an `if let` around the content: the
+conditional's branch flip on the first slider touch would hand `ContentView`
+a new structural identity and recreate its `@StateObject` — the live
+conversation — mid-use (caught in review of the first draft). That
+one-identity property is SwiftUI structure, not reachable by a unit test;
+stated here rather than left implied, per the L1.43 precedent. Both
+simulator checks were re-taken after the rewrite.
 
 | ID | Given | Expect | Rule |
 |---|---|---|---|
