@@ -70,6 +70,14 @@ SH
   cat > "$SANDBOX/bin/xcodebuild" <<'SH'
 #!/bin/bash
 case " $* " in
+  # First, so the settings query can never trip the build-failure branches.
+  # Answers the shape deploy.sh parses (GitHub #3): the fake DerivedData the
+  # sandbox sets up, named exactly.
+  *"-showBuildSettings"*)
+    printf 'Build settings for action build and target HeikoTranslate:\n'
+    printf '    TARGET_BUILD_DIR = %s\n' "$HOME/Library/Developer/Xcode/DerivedData/HeikoTranslate-aaa/Build/Products/Debug-iphoneos"
+    printf '    FULL_PRODUCT_NAME = HeikoTranslate.app\n'
+    exit 0 ;;
   *" test "*)    [[ "${FAIL_AT:-}" == "l1"      ]] && exit 65 ;;
   *" archive "*) [[ "${FAIL_AT:-}" == "archive" ]] && exit 65 ;;
   *"-exportArchive"*)
@@ -151,12 +159,13 @@ case " $* " in
     exit 0 ;;
   *"install app"*)
     [[ "${FAIL_AT:-}" == "install" ]] && exit 1
-    while [[ $# -gt 0 ]]; do
-      if [[ "$1" == "--device" ]]; then
-        printf '%s' "$2" > "$SANDBOX_MARK/installed-device"
-        break
-      fi
-      shift
+    prev=""
+    for arg in "$@"; do
+      [[ "$prev" == "--device" ]] && printf '%s' "$arg" > "$SANDBOX_MARK/installed-device"
+      # The positional .app path — recorded so a case can assert WHICH build
+      # was installed, the invariant the DerivedData glob broke. GitHub #3.
+      [[ "$arg" == *.app ]] && printf '%s' "$arg" > "$SANDBOX_MARK/installed-app"
+      prev="$arg"
     done
     touch "$SANDBOX_MARK/installed"; exit 0 ;;
   *"copy from"*)
@@ -257,6 +266,19 @@ case_start "deploy: happy path commits the number it installed"
   check "head"          "Build 2.3.41 (device)" "$(head_subject)"
   check "installed device" "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" "$(cat "$SANDBOX/installed-device")"
   check "tree"          clean         "$(is_dirty)"
+case_end
+
+# GitHub #3: the app path used to come from `ls | head -1` over DerivedData —
+# alphabetical, so a stale hash directory sorting first got INSTALLED while
+# the fresh build number was committed. The path must come from the build
+# settings, whatever else is lying around.
+case_start "deploy: installs the app the build settings name, not the alphabetically first DerivedData"
+  mkdir -p "$SANDBOX/Library/Developer/Xcode/DerivedData/HeikoTranslate-000/Build/Products/Debug-iphoneos/Stale.app"
+  status=$(FAIL_AT= run deploy.sh)
+  check "exit" 0 "$status"
+  check "installed app" \
+    "$SANDBOX/Library/Developer/Xcode/DerivedData/HeikoTranslate-aaa/Build/Products/Debug-iphoneos/HeikoTranslate.app" \
+    "$(cat "$SANDBOX/installed-app")"
 case_end
 
 # deploy installs to DEVICE_UUID explicitly but used to pull logs from
