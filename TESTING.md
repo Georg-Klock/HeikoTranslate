@@ -285,6 +285,9 @@ depth, on purpose).
 | L1.66e | The prompt denied | Launch state cleared, Settings guidance raised — the gate must not change the denied path | **R8** |
 | L1.66f | A stop while a start is pending, then the grant | Nothing restarts — a grant from before the stop is void | **R8** |
 | L1.66g | An audio interruption begins while the prompt is up, then the grant | ZERO starts — the mic must not open while iOS owns the audio; no resume armed for a session that never ran; a fresh tap works | **R8** |
+| L1.66h | Backgrounding lands before the tapped start's first actor turn | The superseded task does NOTHING — no launch state, no permission request, no start — and a fresh tap works (cancellation is cooperative; the scheduling stamp is what kills it) | **R8** |
+| L1.66i | Background, or a new interruption, before a scheduled interruption-ended resume runs | The resume is voided through the owned path: no prompt, no start, no stale resume armed | **R8** |
+| L1.66j | An undisturbed interruption-ended resume | Still starts, exactly once — the voiding cases cannot pass by the resume path having been dropped | **R8** |
 
 > Beyond the numbered rows: `FillerWordTests` / `FillerWordsFromDeviceTests` /
 > `FillerWordFalsePositiveTests` cover hesitation stripping (including the
@@ -734,7 +737,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 152 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService`, `ConversationViewModel` and `BackgroundTaskLease` (2026-08-11) |
+| L1 | ✅ Built and passing — 156 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService`, `ConversationViewModel` and `BackgroundTaskLease` (2026-08-11) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Needs a device re-run: fixes landed for the D2 root cause (mic now opens on setupComplete and flushes pre-connect audio), D3/D4 (settle-window + straggler grace + commit gates in `TurnLogic`), D5 (output-tail no longer finalizes while the speaker is still talking), D7/D8 (goAway closes are no longer treated as intentional, so sessions actually reconnect), and D10 (all three sessions now run, so German→Spanish is possible at all) — none re-verified on a phone yet |

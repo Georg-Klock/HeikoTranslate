@@ -1,3 +1,4 @@
+import AVFAudio
 import SwiftUI
 import XCTest
 @testable import HeikoTranslate
@@ -38,6 +39,15 @@ final class PendingStartTests: XCTestCase {
     /// Let spawned main-actor tasks run up to their next suspension.
     private func drain() async {
         for _ in 0..<25 { await Task.yield() }
+    }
+
+    /// The real notification `handleAudioInterruption` parses, so tests can
+    /// drive the production interruption path end to end — including the
+    /// resume task `.ended` schedules, which the seam methods alone never
+    /// reach.
+    private static func interruption(_ type: AVAudioSession.InterruptionType) -> Notification {
+        Notification(name: AVAudioSession.interruptionNotification, object: nil,
+                     userInfo: [AVAudioSessionInterruptionTypeKey: type.rawValue])
     }
 
     // Two taps during a delayed permission response: exactly ONE service
@@ -208,6 +218,106 @@ final class PendingStartTests: XCTestCase {
         await drain()
         XCTAssertEqual(vm.serviceStartCount, 1)
         XCTAssertTrue(vm.isListening)
+    }
+
+    // The pre-scheduling race: cancellation is cooperative, so a task
+    // cancelled before its first actor turn still enters its body. Before
+    // the scheduling stamp, a tap immediately followed by backgrounding
+    // produced exactly that task — it set the launch state, minted a fresh
+    // generation (which made the stale-grant guard pass), and requested
+    // permission; its early return then left the UI launching forever, so
+    // every future tap hit the deliberate no-op branch.
+    func testBackgroundingBeforeTheQueuedStartRunsStartsNothing() async {
+        let prompt = HeldPrompt()
+        let vm = makeModel(prompt: prompt)
+
+        vm.toggleButton()                 // schedules the start …
+        vm.handleScenePhase(.background)  // … voided before its first actor turn
+        await drain()
+
+        XCTAssertTrue(prompt.pending.isEmpty,
+                      "a superseded start must not even request permission")
+        XCTAssertEqual(vm.serviceStartCount, 0)
+        XCTAssertFalse(vm.isLaunching,
+                       "no launch state may be left behind by a start that never was")
+        XCTAssertFalse(vm.isListening)
+        XCTAssertFalse(vm.resumeWhenActive)
+
+        // The UI is not wedged: a fresh tap works.
+        vm.toggleButton()
+        await drain()
+        prompt.resolve(true)
+        await drain()
+        XCTAssertEqual(vm.serviceStartCount, 1)
+        XCTAssertTrue(vm.isListening)
+    }
+
+    // The interruption-ended resume used to be a loose `Task` nothing owned:
+    // backgrounding before it ran could not void it, and it started audio
+    // later with the app off screen. Through the owned path, a background
+    // arriving first kills it before it requests anything.
+    func testBackgroundingVoidsAScheduledResume() async {
+        let prompt = HeldPrompt()
+        let vm = makeModel(prompt: prompt)
+
+        vm.simulateInterruptionBeganForTesting()          // arms the resume
+        XCTAssertTrue(vm.resumeWhenActive)
+
+        vm.handleAudioInterruption(Self.interruption(.ended))  // schedules it
+        XCTAssertFalse(vm.resumeWhenActive, "the scheduled task claims the resume")
+        vm.handleScenePhase(.background)                  // …voids it before it runs
+        await drain()
+
+        XCTAssertTrue(prompt.pending.isEmpty,
+                      "a voided resume must not even request permission")
+        XCTAssertEqual(vm.serviceStartCount, 0)
+        XCTAssertFalse(vm.isLaunching)
+        XCTAssertFalse(vm.isListening)
+        XCTAssertFalse(vm.resumeWhenActive, "no stale resume is left armed")
+
+        // A fresh tap afterwards works normally.
+        vm.toggleButton()
+        await drain()
+        prompt.resolve(true)
+        await drain()
+        XCTAssertEqual(vm.serviceStartCount, 1)
+        XCTAssertTrue(vm.isListening)
+    }
+
+    // Same shape, other trigger: the phone rings again before the scheduled
+    // resume gets its first actor turn. The new interruption-began voids it.
+    func testANewInterruptionVoidsAScheduledResume() async {
+        let prompt = HeldPrompt()
+        let vm = makeModel(prompt: prompt)
+
+        vm.simulateInterruptionBeganForTesting()
+        vm.handleAudioInterruption(Self.interruption(.ended))
+        vm.handleAudioInterruption(Self.interruption(.began))  // rings again
+        await drain()
+
+        XCTAssertTrue(prompt.pending.isEmpty)
+        XCTAssertEqual(vm.serviceStartCount, 0)
+        XCTAssertFalse(vm.isLaunching)
+        XCTAssertFalse(vm.isListening)
+        XCTAssertFalse(vm.resumeWhenActive)
+    }
+
+    // The positive half, so the two cases above cannot pass by the resume
+    // path having been dropped entirely: an undisturbed interruption-ended
+    // resume still starts, exactly once.
+    func testAnUndisturbedResumeStillStarts() async {
+        let prompt = HeldPrompt()
+        let vm = makeModel(prompt: prompt)
+
+        vm.simulateInterruptionBeganForTesting()
+        vm.handleAudioInterruption(Self.interruption(.ended))
+        await drain()
+        prompt.resolve(true)
+        await drain()
+
+        XCTAssertEqual(vm.serviceStartCount, 1)
+        XCTAssertTrue(vm.isListening)
+        XCTAssertEqual(vm.automaticResumeCount, 1)
     }
 
     // A manual mute while a start is somehow pending (mute reached through a

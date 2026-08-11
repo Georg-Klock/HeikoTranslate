@@ -243,6 +243,34 @@ final class ConversationViewModel: ObservableObject {
     private var startTask: Task<Void, Never>?
     private var startGeneration = 0
 
+    /// The ONE scheduling path for every spawned start trigger — the tap, the
+    /// scene-active resume, the interruption-ended resume. Stamps the task
+    /// with the generation current at scheduling time and re-checks it at the
+    /// task's first actor turn, because cancellation alone cannot be trusted
+    /// there: it is cooperative, and a task cancelled before it ever ran still
+    /// enters its body. Before this stamp, a tap immediately followed by
+    /// backgrounding produced exactly that task — it set `isLaunching`, minted
+    /// a fresh generation that made the stale-grant guard pass, requested
+    /// permission, and its post-await early return left the UI launching
+    /// forever, turning every future tap into the deliberate no-op branch.
+    /// A superseded start must instead do NOTHING: no launch state, no
+    /// generation, no prompt, no microphone. GitHub #13.
+    private func scheduleStart(resume: Bool = false) {
+        let stamp = startGeneration
+        startTask = Task { [weak self] in
+            guard let self else { return }
+            guard stamp == self.startGeneration, !Task.isCancelled else {
+                diag("app", "scheduled start superseded before it ran — not starting")
+                return
+            }
+            if resume {
+                await self.resumeAfterInterruption()
+            } else {
+                await self.beginListening()
+            }
+        }
+    }
+
     /// Counts calls that actually reached the service-start step. Exists so a
     /// test can prove two rapid taps produce exactly ONE start and a
     /// backgrounded prompt produces ZERO — the properties that broke in #13,
@@ -450,7 +478,7 @@ final class ConversationViewModel: ObservableObject {
             // GitHub #13.
             diag("ui", "tap while a start is pending — the pending start owns it")
         } else {
-            startTask = Task { [weak self] in await self?.beginListening() }
+            scheduleStart()
         }
     }
 
@@ -504,8 +532,17 @@ final class ConversationViewModel: ObservableObject {
         // of all it does not open the microphone with the app off screen —
         // and it must not touch `isLaunching`, which now belongs to whoever
         // is current. GitHub #13.
-        guard generation == startGeneration, !Task.isCancelled else {
+        guard generation == startGeneration else {
             diag("app", "pending start invalidated while awaiting permission — not starting")
+            return
+        }
+        // Generation intact but the task itself was cancelled: nobody
+        // invalidated (that always bumps the generation), so the launch state
+        // is still THIS start's to release — leaving it set turned every
+        // future tap into the no-op branch. GitHub #13.
+        guard !Task.isCancelled else {
+            diag("app", "pending start cancelled while awaiting permission — not starting")
+            isLaunching = false
             return
         }
         isLaunching = false
@@ -564,7 +601,7 @@ final class ConversationViewModel: ObservableObject {
             // prompt. GitHub #25.
             noteMicPermission(granted: AVAudioApplication.shared.recordPermission == .granted)
             if noteBecameActive() {
-                startTask = Task { [weak self] in await self?.beginListening() }
+                scheduleStart()
             }
         default:
             break
@@ -578,7 +615,10 @@ final class ConversationViewModel: ObservableObject {
     @discardableResult
     func noteBecameActive() -> Bool { claimPendingResume() }
 
-    private func handleAudioInterruption(_ note: Notification) {
+    /// Internal, not private, so a test can drive the FULL production
+    /// sequence — including the resume task this schedules on `.ended`, which
+    /// is exactly the piece a seam-only test cannot reach. GitHub #13.
+    func handleAudioInterruption(_ note: Notification) {
         guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         // Thin caller: every decision below is in the seam, so the whole
@@ -588,7 +628,10 @@ final class ConversationViewModel: ObservableObject {
             if noteInterruptionBegan() { stop() }
         case .ended:
             if noteInterruptionEnded(options: note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt) {
-                Task { await self.resumeAfterInterruption() }
+                // Through the owned path, not a loose Task: a background or a
+                // new interruption arriving before this resume gets its first
+                // actor turn must be able to void it. GitHub #13.
+                scheduleStart(resume: true)
             }
         @unknown default:
             break
