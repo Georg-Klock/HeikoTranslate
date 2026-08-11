@@ -548,10 +548,25 @@ that transient first second doesn't decide the turn.
 
 ```bash
 Tools/tests/build-number-windows.sh
+Tools/tests/shell-syntax.sh
 ```
 
 Runs in a couple of seconds and needs nothing installed — it stubs `xcrun`,
 `xcodebuild` and `xcodegen`, so it is safe on any machine and in CI.
+
+`shell-syntax.sh` runs `bash -n` over every tracked `.sh` file (#3):
+`deploy.sh` and `release.sh` commit to this repository, and nothing so much
+as parsed them before running. It refuses to pass on an empty file list, the
+same discipline `l1.sh` applies to its test count. `shellcheck` remains a
+separate decision — it needs installing, and putting it in CI is a spend
+question.
+
+The build-number suite also pins the app-path resolution (#3): `deploy.sh`
+resolves the built app from `xcodebuild -showBuildSettings`, never a glob
+over DerivedData — the old `ls | head -1` picked alphabetically, so a stale
+hash directory sorting first got *installed* while the fresh build number
+was committed. A decoy-directory case fails against the old resolution with
+exactly that symptom.
 
 The invariant under test is the one #16 established and #22 found holes in:
 **every build number that ever reaches a screen or Apple exists in exactly one

@@ -27,6 +27,12 @@ private/
 # identifies this particular Mac or phone rather than the project.
 Tools/local.env
 
+# Python tool dependencies (Tools/livetest.py). Newer Pythons write a
+# self-ignoring .gitignore inside the venv; older ones don't, and thousands
+# of untracked files would jam release.sh's clean-tree gate one confusing
+# morning. Ignored here, by the repo, on purpose. GitHub #3.
+Tools/.venv/
+
 # Heiko's likeness — the icon source art and the photograph it was drawn from.
 # Kept on Georg's disk, never uploaded. These are pictures of a real person who
 # did not ask to be in a git remote; the only one that ships is the app icon

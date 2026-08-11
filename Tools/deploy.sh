@@ -257,7 +257,21 @@ if [[ "$BUILD" == "1" ]]; then
     DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM"
 fi
 
-APP=$(ls -d ~/Library/Developer/Xcode/DerivedData/HeikoTranslate-*/Build/Products/Debug-iphoneos/*.app | head -1)
+# Resolve the app from the build settings — never a glob over DerivedData.
+# Xcode keeps one DerivedData directory per project identity, and the old
+# `ls | head -1` picked ALPHABETICALLY: with a second, stale hash directory
+# present (project-identity changes create them), an old build could be
+# installed while the fresh build number was committed — quietly breaking
+# the number↔code mapping everything else here protects. The settings name
+# the exact product the build above produced. GitHub #3.
+APP=$(xcodebuild -project HeikoTranslate.xcodeproj -scheme HeikoTranslate \
+  -destination 'generic/platform=iOS' -showBuildSettings 2>/dev/null \
+  | awk -F' = ' '/[[:space:]]TARGET_BUILD_DIR =/ {dir=$2} /[[:space:]]FULL_PRODUCT_NAME =/ {name=$2} END {if (dir != "" && name != "") print dir "/" name}')
+if [[ -z "$APP" || ! -d "$APP" ]]; then
+  echo "Could not resolve a built app from -showBuildSettings (got: '${APP:-}')." >&2
+  echo "Build first (drop --no-build), or check the scheme/destination." >&2
+  exit 1
+fi
 
 echo "==> Waiting up to ${WAIT_SECONDS}s for an unlocked, connected iPhone"
 deadline=$((SECONDS + WAIT_SECONDS))
