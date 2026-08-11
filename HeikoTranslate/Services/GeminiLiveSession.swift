@@ -31,7 +31,14 @@ struct SessionLifecycle {
     /// ONE time, however many transport callbacks observe it. GitHub #1.
     private(set) var didReportFailure = false
 
-    var closeIsExpected: Bool { isClosing || hasOpened }
+    /// Intent counts by itself: a user-requested close is expected from the
+    /// moment it is intended, not from the moment the transport is marked
+    /// closing. The first cut checked only `isClosing || hasOpened`, and a
+    /// pre-handshake failure landing between "intent recorded" and
+    /// "transport marked closing" claimed the failure latch for a stop the
+    /// user asked for (#59 review). The class also sets both under ONE lock
+    /// acquisition now — this is the belt to that buckle.
+    var closeIsExpected: Bool { isClosing || hasOpened || intentionalClose }
 
     /// Claim the right to report a terminal failure. True exactly once.
     mutating func claimFailure() -> Bool {
@@ -198,8 +205,7 @@ final class GeminiLiveSession: NSObject {
     /// in GitHub #1: our own close read as server-initiated, triggering a
     /// reconnect nobody asked for).
     func close() {
-        withLifecycle { $0.intentionalClose = true }
-        closeTransport()
+        beginTeardown(intentional: true)
         // A URLSession strongly retains its delegate until invalidated, and
         // this class IS its URLSession's delegate — so without this line every
         // GeminiLiveSession ever constructed was immortal, along with whatever
@@ -215,7 +221,19 @@ final class GeminiLiveSession: NSObject {
     /// reconnects (SPEC R7). Marking goAway closes as intentional was a real
     /// bug: the session died permanently after its bounded duration.
     private func closeTransport() {
+        beginTeardown(intentional: false)
+    }
+
+    /// One atomic step: record WHY the transport is going away, mark it
+    /// closing, and take ownership of the task — under a single lock
+    /// acquisition. close() used to record intent and mark closing in two
+    /// separate acquisitions, and a failure callback landing in the gap saw
+    /// intent without the closing state, claiming the failure latch for a
+    /// stop the user asked for (#59 review). No callback can observe a
+    /// half-recorded close now.
+    private func beginTeardown(intentional: Bool) {
         stateLock.lock()
+        if intentional { lifecycle.intentionalClose = true }
         lifecycle.isClosing = true
         let closing = task
         task = nil

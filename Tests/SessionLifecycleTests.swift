@@ -70,6 +70,22 @@ final class SessionLifecycleTests: XCTestCase {
         }
     }
 
+    // The gap the review caught: intent recorded, transport not yet marked
+    // closing — the interval close() used to leave between two separate lock
+    // acquisitions. Intent alone is an expected close; a failure landing
+    // there is teardown noise, not a reportable error, and must not claim
+    // the latch for a stop the user asked for.
+    func testIntentAloneIsAnExpectedClose() {
+        var state = SessionLifecycle()
+        state.intentionalClose = true   // isClosing deliberately NOT set
+
+        XCTAssertEqual(state.noteTransportFailure(), .ignoredAfterClose,
+                       "a user-requested close is expected from the moment it is intended")
+        XCTAssertFalse(state.didReportFailure,
+                       "teardown noise must not consume the failure report")
+        XCTAssertEqual(state.noteTaskCompleted(), .quiet)
+    }
+
     // The existing quiet paths stay quiet, and stay DISTINGUISHABLE from the
     // new suppression: noise after a close was never an error, and must not
     // start claiming the latch.
