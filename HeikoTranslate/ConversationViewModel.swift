@@ -601,6 +601,13 @@ final class ConversationViewModel: ObservableObject {
     @discardableResult
     func noteInterruptionBegan() -> Bool {
         diag("app", "audio interrupted (call/Siri/alarm)")
+        // A start still awaiting the permission prompt is voided outright: a
+        // grant arriving mid-interruption must not open the microphone and
+        // sockets while iOS owns the audio. Deliberately before the listening
+        // guard — the pending state is exactly the one where isListening is
+        // still false — and no resume is armed for it: a session that never
+        // started earns none. GitHub #13.
+        invalidatePendingStart()
         guard isListening else { return false }
         resumeWhenActive = true
         return true
