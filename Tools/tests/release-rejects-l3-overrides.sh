@@ -10,7 +10,7 @@
 # REAL release.sh (copied, not re-implemented) against stubs. No network,
 # no Xcode; finishes in a couple of seconds.
 set -uo pipefail
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../.." || exit 1
 REPO="$PWD"
 
 PASS=0
@@ -29,7 +29,7 @@ targets:
         CFBundleShortVersionString: "2.3"
         CFBundleVersion: "40"
 YML
-  cp "$REPO/Tools/release.sh" "$REPO_DIR/Tools/"
+  cp "$REPO/Tools/release.sh" "$REPO/Tools/build_number.sh" "$REPO_DIR/Tools/"
   cp "$REPO/Tools/ExportOptions.plist.example" "$REPO/Tools/ExportUpload.plist.example" \
     "$REPO_DIR/Tools/"
   printf 'Tools/local.env\n' > "$REPO_DIR/.gitignore"
