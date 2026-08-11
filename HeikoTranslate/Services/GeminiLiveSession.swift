@@ -1,26 +1,5 @@
 import Foundation
 
-/// One WebSocket connection to the Gemini Live Translate API
-/// (`gemini-3.5-live-translate-preview`), fixed to a single target
-/// language with automatic source-language detection. Three of these run
-/// concurrently in `GeminiLiveTranslationService` (targets "de", "en" and
-/// "es") to reproduce the app's asymmetric translation rules, because the
-/// API itself only supports one fixed target per session.
-///
-/// The wire format below was verified against the live API directly (a
-/// standalone script, outside the app) on 2026-07-19: setup, streaming
-/// audio in, and receiving transcripts + translated audio back all
-/// confirmed working. One documented shape was wrong and got fixed —
-/// `inputAudioTranscription`/`outputAudioTranscription` must be siblings
-/// of `generationConfig`, not nested inside it.
-///
-/// Also confirmed: this preview model does **not** reliably send
-/// `serverContent.turnComplete`, even minutes into a normal response —
-/// contrary to the general Live API docs. `GeminiLiveTranslationService`
-/// ignores it entirely and resolves turns by idle-timeout; it is still
-/// parsed and surfaced as an event in case a future orchestrator wants it.
-/// Every unrecognized server message is surfaced via `.raw(...)` instead
-/// of being silently dropped, so any further mismatch is visible in logs.
 /// The session's lifecycle as ONE pure value: the flags the class used to
 /// keep as loose `Bool`s — written on the main thread by `close()`, written
 /// and read on URLSession's private delegate queue by the callbacks, with no
@@ -95,6 +74,27 @@ struct SessionLifecycle {
     }
 }
 
+/// One WebSocket connection to the Gemini Live Translate API
+/// (`gemini-3.5-live-translate-preview`), fixed to a single target
+/// language with automatic source-language detection. Three of these run
+/// concurrently in `GeminiLiveTranslationService` (targets "de", "en" and
+/// "es") to reproduce the app's asymmetric translation rules, because the
+/// API itself only supports one fixed target per session.
+///
+/// The wire format below was verified against the live API directly (a
+/// standalone script, outside the app) on 2026-07-19: setup, streaming
+/// audio in, and receiving transcripts + translated audio back all
+/// confirmed working. One documented shape was wrong and got fixed —
+/// `inputAudioTranscription`/`outputAudioTranscription` must be siblings
+/// of `generationConfig`, not nested inside it.
+///
+/// Also confirmed: this preview model does **not** reliably send
+/// `serverContent.turnComplete`, even minutes into a normal response —
+/// contrary to the general Live API docs. `GeminiLiveTranslationService`
+/// ignores it entirely and resolves turns by idle-timeout; it is still
+/// parsed and surfaced as an event in case a future orchestrator wants it.
+/// Every unrecognized server message is surfaced via `.raw(...)` instead
+/// of being silently dropped, so any further mismatch is visible in logs.
 final class GeminiLiveSession: NSObject {
     enum Event {
         case setupComplete
