@@ -559,7 +559,10 @@ format):
    the parser discarded a new server shape). `L3_ALLOW_RAW=1` downgrades it
    back to a warning for investigating a drift — never for a release run —
    and `L3_INJECT_RAW=1` seeds one synthetic frame so the gate's teeth can
-   be demonstrated on demand.
+   be demonstrated on demand. "Never for a release run" is enforced, not
+   asked: `release.sh` refuses to run at all while either variable is set
+   to anything, before it tests, bumps, or builds
+   (`Tools/tests/release-rejects-l3-overrides.sh` pins the refusal).
 
 **Flakiness** (measured 2026-07-26, five full runs): expect an occasional
 single-assertion flake — 56/56, 56/56, 55/56, 55/56, 56/56. This is a
@@ -601,6 +604,7 @@ that transient first second doesn't decide the turn.
 Tools/tests/build-number-windows.sh
 Tools/tests/shell-syntax.sh
 Tools/tests/l1-gate-regenerates.sh
+Tools/tests/release-rejects-l3-overrides.sh
 ```
 
 Runs in a couple of seconds and needs nothing installed — it stubs `xcrun`,
@@ -644,6 +648,13 @@ nonzero, and `l1.sh` must exit nonzero without printing "L1 passed". The
 original construct appended `|| true` to the xcodebuild pipeline before
 reading `PIPESTATUS[0]`, which zeroed it — a failed build whose output
 still carried a passing summary line was reported as a pass.
+
+`release-rejects-l3-overrides.sh` pins the release side of the L3 drift gate
+(#19): a shell with `L3_ALLOW_RAW` or `L3_INJECT_RAW` exported — set to
+anything, not just `1` — cannot cut a release. `release.sh` refuses outright
+before testing, bumping, or building, and a clean environment sails past the
+guard to the test gate. Same idiom as the build-number cases: the REAL
+`release.sh` in a throwaway repo, no re-implementation.
 
 The invariant under test is the one #16 established and #22 found holes in:
 **every build number that ever reaches a screen or Apple exists in exactly one
