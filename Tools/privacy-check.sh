@@ -12,7 +12,7 @@
 #
 #   Tools/privacy-check.sh
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 PATTERNS=private/hold-back-patterns.txt
 ALLOW=private/privacy-allow.txt

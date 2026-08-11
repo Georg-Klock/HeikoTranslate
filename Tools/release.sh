@@ -38,7 +38,6 @@ BUMPED=0
 UPLOADED=0
 UPLOAD_ATTEMPTED=0
 COMMITTED=0
-SIGNALLED=0
 RELEASE_NOTE=""
 CURRENT_BUILD=""
 NEXT_BUILD=""
@@ -159,7 +158,6 @@ NOTE
 # conventional 128+signo so callers and CI still see a real interrupt.
 on_signal() {
   local signo=$1
-  SIGNALLED=$signo
   exit $((128 + signo))
 }
 

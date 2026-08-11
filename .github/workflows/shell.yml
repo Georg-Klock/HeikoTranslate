@@ -1,0 +1,48 @@
+name: Shell
+
+# deploy.sh and release.sh COMMIT to this repository, and until #3 nothing so
+# much as parsed them before running. This job is the per-PR gate the issue
+# asked for: `bash -n` over every tracked script (Tools/tests/shell-syntax.sh,
+# the same command a human runs locally) plus ShellCheck at warning severity.
+#
+# ubuntu, deliberately: it bills at the 1x multiplier and finishes in seconds,
+# so it does not reopen the macOS-minutes question that once removed per-PR CI
+# (see l1.yml's history note). Scripts here are plain bash — nothing needs
+# macOS to parse.
+#
+# Same fork-safety posture as l1.yml: `pull_request` (never
+# `pull_request_target`), read-only permissions, no secrets read.
+on:
+  pull_request:
+    paths:
+      - '**/*.sh'
+      - '.github/workflows/shell.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.sh'
+      - '.github/workflows/shell.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: shell-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse every tracked script (bash -n)
+        run: Tools/tests/shell-syntax.sh
+
+      - name: ShellCheck
+        # Warning severity: the repo is clean at this level (made so in #3's
+        # PR), and style-level chatter would teach people to ignore the job.
+        run: git ls-files '*.sh' | xargs shellcheck --severity=warning
