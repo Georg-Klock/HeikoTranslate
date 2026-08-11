@@ -23,6 +23,9 @@ import Foundation
 /// Every continuation captures the token current when it was created and
 /// checks it before acting. Superseding a session or ending a run makes all
 /// of its outstanding continuations inert, without having to find them.
+/// (One scoped exception lives in the service, documented at its `registry`
+/// property: `.usage` cost frames are recorded ahead of the check, because
+/// billing is not session state. GitHub #4.)
 struct SessionRegistry {
     private var tokens: [TurnLogic.Lang: UUID] = [:]
 
