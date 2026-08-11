@@ -263,6 +263,18 @@ final class ConversationViewModel: ObservableObject {
                 diag("app", "scheduled start superseded before it ran — not starting")
                 return
             }
+            // Scene eligibility at task entry: the scene can leave between
+            // scheduling and the first actor turn, and audio work must not
+            // start while the app is not active. A superseded automatic
+            // resume is handed BACK to the armed flag so `.active` performs
+            // it — dropping it left the app muted with nobody owed a start
+            // (R8). A superseded tap is dropped: the user left; a fresh tap
+            // owns the next start. GitHub #13.
+            guard self.sceneIsActive else {
+                diag("app", "scheduled start arrived while the scene is not active — \(resume ? "re-arming for .active" : "dropping")")
+                if resume { self.resumeWhenActive = true }
+                return
+            }
             if resume {
                 await self.resumeAfterInterruption()
             } else {
@@ -270,6 +282,15 @@ final class ConversationViewModel: ObservableObject {
             }
         }
     }
+
+    /// Whether the scene is `.active` — the eligibility every automatic
+    /// start checks at scheduling, at task entry, and after the permission
+    /// await. `.inactive` counts as not active: it is where the app sits
+    /// while the system permission alert is up, while the app switcher
+    /// peeks, and on the way to background. Starts are DEFERRED there, never
+    /// performed. Defaults to true because the view model is built for a
+    /// scene that is being brought to the foreground. GitHub #13.
+    private(set) var sceneIsActive = true
 
     /// Counts calls that actually reached the service-start step. Exists so a
     /// test can prove two rapid taps produce exactly ONE start and a
@@ -291,9 +312,11 @@ final class ConversationViewModel: ObservableObject {
     /// call, Siri) rather than by the user — so the app resumes by itself
     /// when it becomes active again instead of sitting muted (R8).
     ///
-    /// Set ONLY by the two automatic pause paths — backgrounding, and an audio
-    /// interruption — and cleared by exactly two things: consuming it, and a
-    /// manual tap in either direction.
+    /// Set by the two automatic pause paths — backgrounding, and an audio
+    /// interruption — and by the scene-eligibility deferrals, which hand a
+    /// start that may not perform while the scene is not active back to the
+    /// `.active` path (GitHub #13). Cleared by exactly two things: consuming
+    /// it, and a manual tap in either direction.
     ///
     /// The bug that made this an invariant worth writing down: an interruption
     /// armed it, the user started listening again by hand, and the flag was
@@ -478,6 +501,13 @@ final class ConversationViewModel: ObservableObject {
             // GitHub #13.
             diag("ui", "tap while a start is pending — the pending start owns it")
         } else {
+            // The tap owns the next start outright: an automatic resume that
+            // was QUEUED but has not yet run (its task holds a still-current
+            // generation) must not race it and win, showing automatic-resume
+            // behaviour for a start the user just took by hand. The bump
+            // supersedes any queued task; the manual start is the only one
+            // left standing. GitHub #13.
+            invalidatePendingStart()
             scheduleStart()
         }
     }
@@ -552,6 +582,19 @@ final class ConversationViewModel: ObservableObject {
             errorMessage = strings.micDenied
             return
         }
+        // The scene left while the prompt was up. This is the NORMAL
+        // first-run shape, not an edge: the system permission alert itself
+        // puts the scene in .inactive, and the grant can resolve before the
+        // reactivation is delivered. Zero audio work while not active — the
+        // granted intent is handed to the `.active` path, which starts the
+        // moment the scene returns (for the alert case, immediately).
+        // Background never reaches here: it invalidates the generation
+        // outright, and deliberately without a resume. GitHub #13.
+        guard sceneIsActive else {
+            diag("app", "permission granted while the scene is not active — deferring the start to .active")
+            resumeWhenActive = true
+            return
+        }
         hasEverStarted = true
         start()
     }
@@ -578,6 +621,7 @@ final class ConversationViewModel: ObservableObject {
         switch phase {
         case .background:
             diag("app", "backgrounded (listening=\(isListening))")
+            sceneIsActive = false
             DiagnosticLog.shared.flush()
             // A permission prompt still up when the app leaves the screen
             // must not come back granted and start audio and sockets while
@@ -596,6 +640,7 @@ final class ConversationViewModel: ObservableObject {
             LogUploader.uploadCurrentLog(reason: hasEverStarted ? "session" : "launch")
         case .active:
             diag("app", "foregrounded (resume=\(resumeWhenActive))")
+            sceneIsActive = true
             // Coming back from Settings is the one moment the answer can have
             // changed without us asking. Reading it is free and does not
             // prompt. GitHub #25.
@@ -603,7 +648,16 @@ final class ConversationViewModel: ObservableObject {
             if noteBecameActive() {
                 scheduleStart()
             }
-        default:
+        case .inactive:
+            // The alert-and-app-switcher state. Deliberately invalidates
+            // NOTHING — the permission alert itself puts the scene here, so
+            // a pending tap-started prompt must survive it. What .inactive
+            // does change: no start may PERFORM while it holds; grants and
+            // resumes arriving now are deferred to `.active` through the
+            // armed flag. GitHub #13.
+            diag("app", "scene inactive")
+            sceneIsActive = false
+        @unknown default:
             break
         }
     }
@@ -685,6 +739,15 @@ final class ConversationViewModel: ObservableObject {
         // for why this stopped being a gate. The device log still says what
         // iOS thought, so the decision stays reviewable against real traffic.
         diag("app", "interruption ended (iOS shouldResume=\(Self.mayResume(afterInterruptionOptions: raw)))")
+        // An interruption that ends while the app is NOT active — the call
+        // was taken, the app was backgrounded mid-call, then the call ended —
+        // must not restart microphone and network work off-screen. The
+        // resume is deferred, not consumed: the flag stays armed and the
+        // `.active` path claims it when the app returns. GitHub #13.
+        guard sceneIsActive else {
+            diag("app", "interruption ended while the scene is not active — resume deferred to .active")
+            return false
+        }
         return claimPendingResume()
     }
 

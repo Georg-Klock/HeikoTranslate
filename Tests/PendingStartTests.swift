@@ -124,7 +124,9 @@ final class PendingStartTests: XCTestCase {
         XCTAssertFalse(vm.resumeWhenActive,
                        "a start that never happened earns no automatic resume")
 
-        // A fresh tap afterwards works normally.
+        // A fresh tap afterwards works normally. (.active first: a user
+        // cannot tap a backgrounded app, and scene eligibility gates starts.)
+        vm.handleScenePhase(.active)
         vm.toggleButton()
         await drain()
         prompt.resolve(true)
@@ -143,6 +145,7 @@ final class PendingStartTests: XCTestCase {
         vm.toggleButton()                      // start #1
         await drain()
         vm.handleScenePhase(.background)       // voids it, prompt still up
+        vm.handleScenePhase(.active)           // back on screen
         vm.toggleButton()                      // start #2, its own prompt
         await drain()
         XCTAssertTrue(vm.isLaunching)
@@ -243,7 +246,9 @@ final class PendingStartTests: XCTestCase {
         XCTAssertFalse(vm.isListening)
         XCTAssertFalse(vm.resumeWhenActive)
 
-        // The UI is not wedged: a fresh tap works.
+        // The UI is not wedged: a fresh tap works (after reactivation —
+        // a user cannot tap a backgrounded app).
+        vm.handleScenePhase(.active)
         vm.toggleButton()
         await drain()
         prompt.resolve(true)
@@ -275,7 +280,8 @@ final class PendingStartTests: XCTestCase {
         XCTAssertFalse(vm.isListening)
         XCTAssertFalse(vm.resumeWhenActive, "no stale resume is left armed")
 
-        // A fresh tap afterwards works normally.
+        // A fresh tap afterwards works normally (after reactivation).
+        vm.handleScenePhase(.active)
         vm.toggleButton()
         await drain()
         prompt.resolve(true)
@@ -318,6 +324,86 @@ final class PendingStartTests: XCTestCase {
         XCTAssertEqual(vm.serviceStartCount, 1)
         XCTAssertTrue(vm.isListening)
         XCTAssertEqual(vm.automaticResumeCount, 1)
+    }
+
+    // The reviewer's repro: listening → interruption arms the resume → the
+    // app backgrounds mid-call → the call ends OFF-SCREEN. The resume must
+    // be deferred, still armed — not consumed into a start that reopens the
+    // microphone with the app not on screen — and `.active` performs exactly
+    // the one owed resume.
+    func testInterruptionEndedWhileBackgroundedDefersResumeToActive() async {
+        let prompt = HeldPrompt()
+        let vm = makeModel(prompt: prompt)
+
+        vm.simulateInterruptionBeganForTesting()               // arms the resume
+        vm.handleScenePhase(.background)                       // user leaves mid-call
+        XCTAssertTrue(vm.resumeWhenActive, "the armed resume survives backgrounding")
+
+        vm.handleAudioInterruption(Self.interruption(.ended))  // call ends off-screen
+        await drain()
+
+        XCTAssertEqual(vm.serviceStartCount, 0, "no start while the app is off screen")
+        XCTAssertTrue(prompt.pending.isEmpty, "not even permission work off screen")
+        XCTAssertTrue(vm.resumeWhenActive, "deferred, not consumed — still armed for .active")
+
+        vm.handleScenePhase(.active)                           // user returns
+        await drain()
+        prompt.resolve(true)
+        await drain()
+
+        XCTAssertEqual(vm.serviceStartCount, 1, "exactly the one owed resume, on reactivation")
+        XCTAssertTrue(vm.isListening)
+        XCTAssertEqual(vm.automaticResumeCount, 1)
+    }
+
+    // A grant resolving while the scene is .inactive — which is where the
+    // permission alert itself puts the app — performs no audio work. The
+    // granted intent is handed to .active, which starts immediately on the
+    // ordinary alert-dismissal reactivation.
+    func testGrantDuringInactiveDefersTheStartToActive() async {
+        let prompt = HeldPrompt()
+        let vm = makeModel(prompt: prompt)
+
+        vm.toggleButton()
+        await drain()
+        vm.handleScenePhase(.inactive)     // the alert is up
+        prompt.resolve(true)               // the grant lands first
+        await drain()
+
+        XCTAssertEqual(vm.serviceStartCount, 0, "zero starts while not active")
+        XCTAssertFalse(vm.isLaunching, "the deferral releases the launch state")
+        XCTAssertTrue(vm.resumeWhenActive, "the granted intent is carried to .active")
+
+        vm.handleScenePhase(.active)       // alert dismissed
+        await drain()
+        prompt.resolve(true)               // the carried start re-runs the (now instant) gate
+        await drain()
+
+        XCTAssertEqual(vm.serviceStartCount, 1)
+        XCTAssertTrue(vm.isListening)
+    }
+
+    // A manual tap after an automatic resume has been QUEUED but not yet run:
+    // the tap owns the session. The queued automatic task is superseded, and
+    // the start that happens carries no automatic-resume banner.
+    func testManualTapBeatsAQueuedAutomaticResume() async {
+        let prompt = HeldPrompt()
+        let vm = makeModel(prompt: prompt)
+
+        vm.simulateInterruptionBeganForTesting()
+        vm.handleAudioInterruption(Self.interruption(.ended))  // queues the auto resume
+        vm.toggleButton()                                      // the user beats it by hand
+        await drain()
+        prompt.resolve(true)
+        await drain()
+        prompt.resolve(true)   // generosity: a regressed duplicate fails on the count, not by hanging
+        await drain()
+
+        XCTAssertEqual(vm.serviceStartCount, 1, "one start, owned by the tap")
+        XCTAssertTrue(vm.isListening)
+        XCTAssertNil(vm.micNotice,
+                     "the start belongs to the tap — the automatic-resume banner must not appear")
+        XCTAssertTrue(prompt.pending.isEmpty)
     }
 
     // A manual mute while a start is somehow pending (mute reached through a
