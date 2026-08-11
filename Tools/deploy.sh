@@ -12,10 +12,9 @@
 # devicectl, which looks exactly like "not plugged in" — that single fact
 # has cost this project more time than any bug in the app.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 source Tools/ios_device.sh
 
-BUNDLE_ID="com.klock.heikotranslate"
 
 # The paired iPhone's UDID identifies a physical device, and the Apple
 # Developer team ID identifies an account. Neither is a fact about this
@@ -51,7 +50,6 @@ BUMPED=0
 COMMITTED=0
 INSTALLED=0
 INSTALL_ATTEMPTED=0
-SIGNALLED=0
 CURRENT_BUILD=""
 NEXT_BUILD=""
 
@@ -180,7 +178,6 @@ NOTE
 # conventional 128+signo so callers and CI still see a real interrupt.
 on_signal() {
   local signo=$1
-  SIGNALLED=$signo
   exit $((128 + signo))
 }
 
@@ -264,8 +261,17 @@ fi
 # installed while the fresh build number was committed — quietly breaking
 # the number↔code mapping everything else here protects. The settings name
 # the exact product the build above produced. GitHub #3.
-APP=$(xcodebuild -project HeikoTranslate.xcodeproj -scheme HeikoTranslate \
-  -destination 'generic/platform=iOS' -showBuildSettings 2>/dev/null \
+# The `|| { … }` matters under `set -euo pipefail`: a plain assignment from a
+# failing command substitution exits the script on the spot, its stderr
+# already discarded — the operator would get a silent stop with no hint that
+# the SETTINGS QUERY (not the build, not the phone) was what died.
+BUILD_SETTINGS=$(xcodebuild -project HeikoTranslate.xcodeproj -scheme HeikoTranslate \
+  -destination 'generic/platform=iOS' -showBuildSettings 2>&1) || {
+  echo "xcodebuild -showBuildSettings failed — cannot resolve which app to install:" >&2
+  printf '%s\n' "$BUILD_SETTINGS" | tail -5 >&2
+  exit 1
+}
+APP=$(printf '%s\n' "$BUILD_SETTINGS" \
   | awk -F' = ' '/[[:space:]]TARGET_BUILD_DIR =/ {dir=$2} /[[:space:]]FULL_PRODUCT_NAME =/ {name=$2} END {if (dir != "" && name != "") print dir "/" name}')
 if [[ -z "$APP" || ! -d "$APP" ]]; then
   echo "Could not resolve a built app from -showBuildSettings (got: '${APP:-}')." >&2

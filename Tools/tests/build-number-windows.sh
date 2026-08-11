@@ -13,7 +13,7 @@
 # where the case says. No copy of the scripts' logic lives here — the thing
 # under test is the thing that ships.
 set -uo pipefail
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../.." || exit 1
 REPO="$PWD"
 
 PASS=0
@@ -74,6 +74,10 @@ case " $* " in
   # Answers the shape deploy.sh parses (GitHub #3): the fake DerivedData the
   # sandbox sets up, named exactly.
   *"-showBuildSettings"*)
+    if [[ "${FAIL_AT:-}" == "showsettings" ]]; then
+      echo "xcodebuild: error: Unable to load workspace (stub)" >&2
+      exit 70
+    fi
     printf 'Build settings for action build and target HeikoTranslate:\n'
     printf '    TARGET_BUILD_DIR = %s\n' "$HOME/Library/Developer/Xcode/DerivedData/HeikoTranslate-aaa/Build/Products/Debug-iphoneos"
     printf '    FULL_PRODUCT_NAME = HeikoTranslate.app\n'
@@ -260,7 +264,7 @@ case_end()   { [[ "$KEEP" == "1" ]] || rm -rf "$SANDBOX"; }
 # --- deploy.sh -------------------------------------------------------------
 
 case_start "deploy: happy path commits the number it installed"
-  status=$(FAIL_AT= run deploy.sh)
+  status=$(FAIL_AT='' run deploy.sh)
   check "exit"          0             "$status"
   check "build number"  41            "$(build_number)"
   check "head"          "Build 2.3.41 (device)" "$(head_subject)"
@@ -274,11 +278,25 @@ case_end
 # settings, whatever else is lying around.
 case_start "deploy: installs the app the build settings name, not the alphabetically first DerivedData"
   mkdir -p "$SANDBOX/Library/Developer/Xcode/DerivedData/HeikoTranslate-000/Build/Products/Debug-iphoneos/Stale.app"
-  status=$(FAIL_AT= run deploy.sh)
+  status=$(FAIL_AT='' run deploy.sh)
   check "exit" 0 "$status"
   check "installed app" \
     "$SANDBOX/Library/Developer/Xcode/DerivedData/HeikoTranslate-aaa/Build/Products/Debug-iphoneos/HeikoTranslate.app" \
     "$(cat "$SANDBOX/installed-app")"
+case_end
+
+# A failed settings query must be user-visible, not a silent `set -e` death
+# with the stderr already discarded — and nothing may be installed, nothing
+# committed, the number restored (the failure is before the point of no
+# return). GitHub #3 review.
+case_start "deploy: a failed settings query stops loudly with the number restored"
+  status=$(FAIL_AT=showsettings run deploy.sh)
+  check "exit nonzero" 1 "$([[ "$status" -ne 0 ]] && echo 1 || echo 0)"
+  check "names the query" 1 "$(grep -c "showBuildSettings failed" "$SANDBOX/out" || true)"
+  check "shows the tool's error" 1 "$(grep -c "Unable to load workspace" "$SANDBOX/out" || true)"
+  check "nothing installed" missing "$([[ -f "$SANDBOX/installed" ]] && echo present || echo missing)"
+  check "build number restored" 40 "$(build_number)"
+  check "tree" clean "$(is_dirty)"
 case_end
 
 # deploy installs to DEVICE_UUID explicitly but used to pull logs from
@@ -288,7 +306,7 @@ case_end
 # answer, which is the only arrangement that can fail.
 case_start "deploy: logs come from the phone that was installed to"
   DEVICE_FIXTURE=$'11111111-1111-1111-1111-111111111111|connected|Other iPhone|iPhone\nAAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|connected|Target iPhone|iPhone'
-  status=$(FAIL_AT= run deploy.sh)
+  status=$(FAIL_AT='' run deploy.sh)
   check "exit"          0             "$status"
   check "installed device" "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" "$(cat "$SANDBOX/installed-device")"
   check "copied device"    "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" "$(cat "$SANDBOX/copied-device")"
@@ -315,7 +333,7 @@ case_end
 case_start "deploy: unavailable target is not treated as reachable"
   # A misleading display name would fool a substring check for `available`.
   DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|unavailable|Available iPhone"
-  status=$(FAIL_AT= run deploy.sh --wait -1)
+  status=$(FAIL_AT='' run deploy.sh --wait -1)
   check "exit"          1             "$status"
   check "installed"     no            "$([[ -e "$SANDBOX/installed" ]] && echo yes || echo no)"
   check "build number"  40            "$(build_number)"
@@ -329,7 +347,7 @@ case_start "deploy: another reachable phone cannot stand in for the unavailable 
   # A UUID in a *different device's name* must not be mistaken for the target
   # identifier. Only the real target is unavailable here.
   DEVICE_FIXTURE=$'11111111-1111-1111-1111-111111111111|connected|AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE\nAAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|unavailable|Target iPhone'
-  status=$(FAIL_AT= run deploy.sh --wait -1)
+  status=$(FAIL_AT='' run deploy.sh --wait -1)
   check "exit"          1             "$status"
   check "installed"     no            "$([[ -e "$SANDBOX/installed" ]] && echo yes || echo no)"
   check "build number"  40            "$(build_number)"
@@ -339,7 +357,7 @@ case_end
 # Wi-Fi paired devices remain valid deploy targets.
 case_start "deploy: paired available target is reachable"
   DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|available (paired)|Example iPhone"
-  status=$(FAIL_AT= run deploy.sh)
+  status=$(FAIL_AT='' run deploy.sh)
   check "exit"          0             "$status"
   check "installed"     yes           "$([[ -e "$SANDBOX/installed" ]] && echo yes || echo no)"
   check "build number"  41            "$(build_number)"
@@ -348,7 +366,7 @@ case_end
 
 case_start "deploy: a lowercase devicectl UUID is canonicalized before install"
   DEVICE_FIXTURE="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee|connected|Example iPhone"
-  status=$(FAIL_AT= run deploy.sh)
+  status=$(FAIL_AT='' run deploy.sh)
   check "exit"          0             "$status"
   check "installed device" "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" "$(cat "$SANDBOX/installed-device")"
   check "build number"  41            "$(build_number)"
@@ -358,14 +376,14 @@ case_end
 # device must never be handed to `devicectl copy`.
 case_start "pull logs: skip unavailable rows and use a paired reachable phone"
   DEVICE_FIXTURE=$'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|unavailable|Locked iPhone\n11111111-1111-1111-1111-111111111111|available (paired)|Reachable iPhone'
-  status=$(FAIL_AT= run pull_logs.sh)
+  status=$(FAIL_AT='' run pull_logs.sh)
   check "exit"          0             "$status"
   check "copied device" "11111111-1111-1111-1111-111111111111" "$(cat "$SANDBOX/copied-device")"
 case_end
 
 case_start "pull logs: disconnected rows are rejected without a copy"
   DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|disconnected|Example iPhone"
-  status=$(FAIL_AT= run pull_logs.sh)
+  status=$(FAIL_AT='' run pull_logs.sh)
   check "exit"          1             "$status"
   check "copy attempted" no           "$([[ -e "$SANDBOX/copied-device" ]] && echo yes || echo no)"
 case_end
@@ -374,7 +392,7 @@ case_end
 # unreachable even if its name says otherwise.
 case_start "deploy: not connected target does not consume a build number"
   DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|not connected|Available target"
-  status=$(FAIL_AT= run deploy.sh --wait -1)
+  status=$(FAIL_AT='' run deploy.sh --wait -1)
   check "exit"          1             "$status"
   check "installed"     no            "$([[ -e "$SANDBOX/installed" ]] && echo yes || echo no)"
   check "build number"  40            "$(build_number)"
@@ -383,42 +401,42 @@ case_end
 
 case_start "pull logs: explicit unavailable UUID cannot bypass reachability"
   DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|unavailable|Example iPhone"
-  status=$(FAIL_AT= run pull_logs.sh "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")
+  status=$(FAIL_AT='' run pull_logs.sh "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")
   check "exit"          1             "$status"
   check "copy attempted" no           "$([[ -e "$SANDBOX/copied-device" ]] && echo yes || echo no)"
 case_end
 
 case_start "pull logs: explicit lowercase UUID resolves to its reachable device"
   DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|connected|Example iPhone"
-  status=$(FAIL_AT= run pull_logs.sh "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+  status=$(FAIL_AT='' run pull_logs.sh "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
   check "exit"          0             "$status"
   check "copied device" "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" "$(cat "$SANDBOX/copied-device")"
 case_end
 
 case_start "pull logs: paired named device with an apostrophe resolves safely"
   DEVICE_FIXTURE=$'11111111-1111-1111-1111-111111111111|connected|Other iPhone|iPhone\nAAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|available (paired)|Georg\'s iPhone|iPhone'
-  status=$(FAIL_AT= run pull_logs.sh "Georg's iPhone")
+  status=$(FAIL_AT='' run pull_logs.sh "Georg's iPhone")
   check "exit"          0             "$status"
   check "copied device" "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" "$(cat "$SANDBOX/copied-device")"
 case_end
 
 case_start "pull logs: explicit unavailable named device cannot bypass reachability"
   DEVICE_FIXTURE="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE|unavailable|Georg's iPhone|iPhone"
-  status=$(FAIL_AT= run pull_logs.sh "Georg's iPhone")
+  status=$(FAIL_AT='' run pull_logs.sh "Georg's iPhone")
   check "exit"          1             "$status"
   check "copy attempted" no           "$([[ -e "$SANDBOX/copied-device" ]] && echo yes || echo no)"
 case_end
 
 case_start "pull logs: connected iPad remains a supported automatic target"
   DEVICE_FIXTURE="22222222-2222-2222-2222-222222222222|connected|Example iPad|iPad"
-  status=$(FAIL_AT= run pull_logs.sh)
+  status=$(FAIL_AT='' run pull_logs.sh)
   check "exit"          0             "$status"
   check "copied device" "22222222-2222-2222-2222-222222222222" "$(cat "$SANDBOX/copied-device")"
 case_end
 
 case_start "pull logs: malformed JSON identifier is rejected without a copy"
   DEVICE_FIXTURE="not-a-uuid|connected|Example iPhone"
-  status=$(FAIL_AT= run pull_logs.sh)
+  status=$(FAIL_AT='' run pull_logs.sh)
   check "exit"          1             "$status"
   check "copy attempted" no           "$([[ -e "$SANDBOX/copied-device" ]] && echo yes || echo no)"
 case_end
@@ -483,7 +501,7 @@ case_start "deploy: the install command itself fails -> number is BURNED, not re
 case_end
 
 case_start "release: happy path uploads and commits"
-  status=$(FAIL_AT= run release.sh)
+  status=$(FAIL_AT='' run release.sh)
   check "exit"          0             "$status"
   check "build number"  41            "$(build_number)"
   check "head"          "Release 2.3.41" "$(head_subject)"
@@ -495,14 +513,14 @@ case_end
 # say so unmissably.
 case_start "release: uploaded but the commit fails -> keeps the number, shouts"
   write_failing_git
-  status=$(FAIL_AT= run release.sh)
+  status=$(FAIL_AT='' run release.sh)
   check "build number"  41            "$(build_number)"
   check "kept the bump" dirty         "$(is_dirty)"
   check "warns loudly"  yes           "$(grep -q 'ALREADY UPLOADED' "$SANDBOX/out" && echo yes || echo no)"
 case_end
 
 case_start "release: dry run archives, reverts, leaves the tree clean"
-  status=$(FAIL_AT= run release.sh --dry-run)
+  status=$(FAIL_AT='' run release.sh --dry-run)
   check "exit"          0             "$status"
   check "build number"  40            "$(build_number)"
   check "head"          base          "$(head_subject)"
@@ -542,7 +560,7 @@ case_end
 
 case_start "deploy: a dirty worktree is recorded IN the commit, not just warned about"
   echo "scratch" > "$REPO_DIR/notes.txt"
-  status=$(FAIL_AT= run deploy.sh)
+  status=$(FAIL_AT='' run deploy.sh)
   check "exit"          0             "$status"
   check "head"          "Build 2.3.41 (device)" "$(head_subject)"
   check "names the dirty file" yes \
@@ -552,7 +570,7 @@ case_end
 case_start "deploy: --no-bump does not sweep a staged project.yml edit into a Build commit"
   printf '# unrelated staged edit\n' >> "$REPO_DIR/project.yml"
   git -C "$REPO_DIR" add project.yml
-  status=$(FAIL_AT= run deploy.sh --no-bump)
+  status=$(FAIL_AT='' run deploy.sh --no-bump)
   check "exit"          0             "$status"
   check "head"          base          "$(head_subject)"
   check "edit still staged" yes \
@@ -563,7 +581,7 @@ case_start "deploy: a failing pre-commit hook cannot lose an installed number"
   mkdir -p "$REPO_DIR/.git/hooks"
   printf '#!/bin/bash\nexit 1\n' > "$REPO_DIR/.git/hooks/pre-commit"
   chmod +x "$REPO_DIR/.git/hooks/pre-commit"
-  status=$(FAIL_AT= run deploy.sh)
+  status=$(FAIL_AT='' run deploy.sh)
   check "build number"  41            "$(build_number)"
   check "head"          "Build 2.3.41 (device)" "$(head_subject)"
   check "said it bypassed" yes "$(grep -q 'no-verify' "$SANDBOX/out" && echo yes || echo no)"
@@ -571,7 +589,7 @@ case_end
 
 case_start "release: an unrecordable uploaded number leaves a recovery note on disk"
   write_failing_git
-  status=$(FAIL_AT= run release.sh)
+  status=$(FAIL_AT='' run release.sh)
   check "build number"  41            "$(build_number)"
   check "recovery note" yes           "$([[ -f "$REPO_DIR/.build-number-recovery" ]] && echo yes || echo no)"
   check "note names the build" yes \

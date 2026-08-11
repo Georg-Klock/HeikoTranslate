@@ -24,7 +24,7 @@
 # Tools/tests/l3direction-scoring.sh pins all four outcomes with a stubbed
 # l3replay, no network.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 case="${1:?usage: l3direction.sh TestAudio/<case>.wav [runs] [logdir]}"
 runs="${2:-10}"
 if ! [[ "$runs" =~ ^[1-9][0-9]*$ ]]; then
