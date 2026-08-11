@@ -31,11 +31,13 @@ echo "==> L1  ($DEST)"
 set +e
 xcodebuild test -project HeikoTranslate.xcodeproj -scheme HeikoTranslate \
   -destination "$DEST" 2>&1 | tee "$OUT" | grep -E "^(Test Suite|Executed|.*error:|\*\* )"
-# PIPESTATUS survives only until the next command — appending `|| true` to the
-# pipeline counts as one and zeroes it (on the /bin/bash 3.2 this runs under,
-# in every case), so xcodebuild's real exit vanished and the gate fell through
-# to the summary grep alone. Capture the whole array first; grep finding no
-# lines to display is fine and must not fail the gate (set +e covers it).
+# PIPESTATUS survives only until the next command. This line used to end in
+# `|| true` — and under the pipefail set at the top, any xcodebuild failure
+# fails the pipeline, so `true` always ran and reset PIPESTATUS to (0) before
+# it was read. A failed build whose output still carried a passing summary
+# line was reported as "L1 passed". Capture the whole array first; grep
+# finding no lines to display is fine and must not fail the gate (set +e
+# covers it).
 PIPE=("${PIPESTATUS[@]}")
 set -e
 STATUS=${PIPE[0]}
