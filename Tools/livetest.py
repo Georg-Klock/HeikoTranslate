@@ -62,11 +62,12 @@ def read_wav_pcm16k(path: str) -> bytes:
         return w.readframes(w.getnframes())
 
 
-async def run(pcm: bytes, target: str, realtime: bool, quiet_tail: float, speak_voice: str | None = None) -> dict:
+async def run(pcm: bytes, target: str, realtime: bool, quiet_tail: float,
+              result: dict, speak_voice: str | None = None) -> dict:
     import websockets  # imported here so --help works without the dep
 
     url = f"{ENDPOINT}?key={load_api_key()}"
-    result = {
+    result.update({
         "setup_complete": False,
         "input_transcript": "",
         "output_transcript": "",
@@ -76,7 +77,7 @@ async def run(pcm: bytes, target: str, realtime: bool, quiet_tail: float, speak_
         "messages": 0,
         "errors": [],
         "closed": None,
-    }
+    })
 
     async with websockets.connect(url, max_size=None) as ws:
         setup = {
@@ -114,8 +115,12 @@ async def run(pcm: bytes, target: str, realtime: bool, quiet_tail: float, speak_
                         result["setup_complete"] = True
                         continue
                     if "goAway" in msg:
+                        # Close on cue, the way GeminiLiveSession does — the
+                        # server force-closes lingerers with a 1008, which is
+                        # exactly what the #65 run collected.
                         result["closed"] = "goAway"
-                        continue
+                        await ws.close()
+                        break
                     sc = msg.get("serverContent")
                     if not sc:
                         continue
@@ -140,25 +145,31 @@ async def run(pcm: bytes, target: str, realtime: bool, quiet_tail: float, speak_
         reader_task = asyncio.create_task(reader())
 
         bytes_per_chunk = int(16000 * 2 * CHUNK_MS / 1000)
-        for i in range(0, len(pcm), bytes_per_chunk):
-            chunk = pcm[i : i + bytes_per_chunk]
-            await ws.send(json.dumps({
-                "realtimeInput": {
-                    "audio": {
-                        "data": base64.b64encode(chunk).decode(),
-                        "mimeType": "audio/pcm;rate=16000",
+        try:
+            for i in range(0, len(pcm), bytes_per_chunk):
+                chunk = pcm[i : i + bytes_per_chunk]
+                await ws.send(json.dumps({
+                    "realtimeInput": {
+                        "audio": {
+                            "data": base64.b64encode(chunk).decode(),
+                            "mimeType": "audio/pcm;rate=16000",
+                        }
                     }
-                }
-            }))
-            if realtime:
-                await asyncio.sleep(CHUNK_MS / 1000)
+                }))
+                if realtime:
+                    await asyncio.sleep(CHUNK_MS / 1000)
 
-        await ws.send(json.dumps({"realtimeInput": {"audioStreamEnd": True}}))
+            await ws.send(json.dumps({"realtimeInput": {"audioStreamEnd": True}}))
+        except websockets.ConnectionClosed:
+            # The goAway path closes our side promptly now, and that close can
+            # land mid-send. The tail loop below exits on `closed`, and
+            # validation judges what was collected.
+            result["errors"].append("connection closed while sending")
 
         # Wait for the tail of the response.
         last = -1
         stable_for = 0.0
-        while stable_for < quiet_tail:
+        while stable_for < quiet_tail and not result["closed"]:
             await asyncio.sleep(0.25)
             if result["messages"] != last:
                 last = result["messages"]
@@ -182,6 +193,10 @@ def validation_error(result: dict) -> str | None:
     `Tools/tests/livetest-validation.py` holds it against fake results without
     the network.
     """
+    if result.get("deadline_exceeded"):
+        return (f"deadline exceeded — {result['messages']} messages and "
+                f"{result['audio_bytes']} audio bytes and still streaming "
+                f"(runaway generation, or the quiet tail never fired: #65)")
     if result["errors"]:
         return f"server errors: {result['errors']}"
     if not result.get("setup_complete"):
@@ -203,6 +218,10 @@ def main():
     ap.add_argument("--target", default="de", help="target language code")
     ap.add_argument("--fast", action="store_true", help="send audio as fast as possible")
     ap.add_argument("--tail", type=float, default=4.0, help="seconds of quiet before giving up")
+    ap.add_argument("--deadline", type=float, default=None,
+                    help="hard cap on the whole run, seconds (default: 4x the "
+                         "audio length + tail + 30, floor 60). The probe must "
+                         "not be able to outlive its session: #65")
     ap.add_argument("--speak-voice", default=None,
                     help="prebuiltVoiceConfig voiceName to request in speechConfig (probe)")
     args = ap.parse_args()
@@ -220,7 +239,29 @@ def main():
     print(f"input: {source}")
     print(f"audio: {secs:.1f}s -> target={args.target}\n")
 
-    res = asyncio.run(run(pcm, args.target, realtime=not args.fast, quiet_tail=args.tail, speak_voice=args.speak_voice))
+    # One hard deadline over the WHOLE session — connect, send, tail. The #65
+    # run streamed 2355 messages and ~28 MB for a 7-word sentence: with the
+    # server never going quiet, a message-quiet tail can never fire, so the
+    # probe rode the session to its ~9-minute goAway. A probe that needs this
+    # cap is itself evidence of misbehaviour, and validation fails it by name.
+    deadline = args.deadline if args.deadline is not None else max(60.0, secs * 4 + args.tail + 30)
+    res: dict = {}
+
+    async def capped():
+        await asyncio.wait_for(
+            run(pcm, args.target, realtime=not args.fast, quiet_tail=args.tail,
+                result=res, speak_voice=args.speak_voice),
+            timeout=deadline)
+
+    try:
+        asyncio.run(capped())
+    except (asyncio.TimeoutError, TimeoutError):
+        res["deadline_exceeded"] = True
+        res["input_langs"] = sorted(res.get("input_langs") or [])
+        res["output_langs"] = sorted(res.get("output_langs") or [])
+        res.setdefault("messages", 0); res.setdefault("audio_bytes", 0)
+        res.setdefault("input_transcript", ""); res.setdefault("output_transcript", "")
+        res.setdefault("errors", []); res.setdefault("closed", None)
 
     print(f"heard  ({','.join(res['input_langs']) or '?'}): {res['input_transcript']}")
     print(f"spoke  ({','.join(res['output_langs']) or '?'}): {res['output_transcript']}")

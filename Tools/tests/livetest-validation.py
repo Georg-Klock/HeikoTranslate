@@ -60,6 +60,11 @@ case("empty output transcript fails", lambda r: r.update(output_transcript=""), 
 case("zero returned audio fails", lambda r: r.update(audio_bytes=0), "no translated audio")
 case("an error outranks otherwise-good content",
      lambda r: r["errors"].append("late"), "server errors")
+case("a deadline-capped run fails by name, whatever it collected",
+     lambda r: r.update(deadline_exceeded=True), "deadline exceeded")
+case("deadline outranks the errors it usually causes",
+     lambda r: (r.update(deadline_exceeded=True), r["errors"].append("1008"))[0],
+     "deadline exceeded")
 
 if failures:
     print(f"==> livetest-validation: {failures} failure(s)")
