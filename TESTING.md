@@ -625,6 +625,13 @@ REAL `l1.sh` against logging stubs, so the ordering is asserted on the
 script that ships, not a re-implementation. `release.sh` and `deploy.sh`
 inherit the guarantee through `l1.sh`, which they both call.
 
+A third case pins the gate's exit status itself: a stubbed `xcodebuild`
+prints a passing-looking `Executed … with 0 failures` summary but exits
+nonzero, and `l1.sh` must exit nonzero without printing "L1 passed". The
+original construct appended `|| true` to the xcodebuild pipeline before
+reading `PIPESTATUS[0]`, which zeroed it — a failed build whose output
+still carried a passing summary line was reported as a pass.
+
 The invariant under test is the one #16 established and #22 found holes in:
 **every build number that ever reaches a screen or Apple exists in exactly one
 commit, and no number is ever reverted once it has been seen.** That only

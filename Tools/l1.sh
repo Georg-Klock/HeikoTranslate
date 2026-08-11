@@ -30,9 +30,15 @@ trap 'rm -f "$OUT"' EXIT
 echo "==> L1  ($DEST)"
 set +e
 xcodebuild test -project HeikoTranslate.xcodeproj -scheme HeikoTranslate \
-  -destination "$DEST" 2>&1 | tee "$OUT" | grep -E "^(Test Suite|Executed|.*error:|\*\* )" || true
-STATUS=${PIPESTATUS[0]}
+  -destination "$DEST" 2>&1 | tee "$OUT" | grep -E "^(Test Suite|Executed|.*error:|\*\* )"
+# PIPESTATUS survives only until the next command — appending `|| true` to the
+# pipeline counts as one and zeroes it (on the /bin/bash 3.2 this runs under,
+# in every case), so xcodebuild's real exit vanished and the gate fell through
+# to the summary grep alone. Capture the whole array first; grep finding no
+# lines to display is fine and must not fail the gate (set +e covers it).
+PIPE=("${PIPESTATUS[@]}")
 set -e
+STATUS=${PIPE[0]}
 
 if [[ $STATUS -ne 0 ]]; then
   echo "==> L1 FAILED (xcodebuild exit $STATUS)" >&2
