@@ -568,6 +568,15 @@ script checking `$?` saw green on a completely failed probe). The pass/fail
 predicate is pure and pinned by `Tools/tests/livetest-validation.py`, which
 needs no network and runs with the other L0 scripts.
 
+The probe also **cannot outlive its session** (#65): one hard deadline
+covers connect, send and tail (default 4× the audio length + tail + 30s,
+floor 60s; `--deadline` overrides), because a runaway generation — 2355
+messages and ~28 MB for a 7-word sentence, measured — never goes
+message-quiet, so a quiet tail alone can never fire. A deadline-capped run
+fails validation by name with the partial tallies as evidence. On `goAway`
+the probe now closes on cue the way `GeminiLiveSession` does, instead of
+lingering into the server's 1008.
+
 | ID | Check | Status |
 |---|---|---|
 | L2.1 | Handshake + setup accepted | ✅ verified |
