@@ -149,15 +149,15 @@ the point of the project; hiding it is what would look bad.
   `xcodebuild test` — it asserts a **non-zero** test count, so a scheme that
   builds no test target fails instead of exiting 0 and looking like a pass.
   `deploy.sh` and `release.sh` both call it.
-- **CI runs L1 on merges to `main`**, not on pull requests
-  (`.github/workflows/l1.yml`), and skips documentation-only changes. The
-  per-PR trigger was dropped on 2026-08-08: at the macOS billing multiplier it
-  consumed most of the monthly Actions allowance re-verifying what had already
-  passed locally, with no failures it caught. What no local gate covers is the
-  MERGE COMMIT — nobody tests the merged result — and that is what the
-  remaining job guards. Run it by hand on a risky branch with
-  `gh workflow run L1`. Still no L3 in CI: it needs the API key and is
-  known-flaky by design.
+- **CI runs L1 on pull requests and on merges to `main`**
+  (`.github/workflows/l1.yml`), skipping documentation-only changes. The
+  per-PR trigger was dropped on 2026-08-08 over cost (the macOS billing
+  multiplier) and restored on 2026-08-10: with several concurrent AI-assisted
+  branches, a PR body's self-reported L1 count stopped being independently
+  checkable. PR runs build the preview merge, so the merged result is tested
+  before landing; the on-main run stays authoritative for what actually
+  landed. Still no L3 in CI: it needs the API key and is known-flaky by
+  design.
 - Cut a TestFlight build (tests → bump → archive → export → upload):
   `Tools/release.sh` — see `docs/release.md` before the first one.
 
@@ -251,10 +251,11 @@ the point of the project; hiding it is what would look bad.
   unpublish a commit, which is why these are structural rather than a list
   someone has to remember to extend.
 - **Run `Tools/l1.sh` before opening a PR, and put the result in the PR
-  body** ("L1 90/90"). Since CI no longer runs on pull requests, this is the
-  only thing standing between a branch and `main` — and unlike a CI check,
-  a reviewer can see whether it was actually done. A PR that does not state
-  its L1 result has not been tested; treat it as unreviewable rather than
+  body** ("L1 90/90"). CI re-runs L1 on the PR's preview merge
+  (since 2026-08-10), but the local run is still the rule: it is faster
+  feedback than a queued macOS runner, and the stated count is what a
+  reviewer checks the CI result against. A PR that does not state its L1
+  result has not been tested; treat it as unreviewable rather than
   guessing.
 - **Run L1 AND L3 before every device deploy** (standing rule,
   2026-07-29). `deploy.sh` now runs L1 itself and refuses to build if it

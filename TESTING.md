@@ -40,9 +40,11 @@ test target exits 0 and is otherwise indistinguishable from a green suite.
 line that is the only proof the suite ran at all.
 
 `deploy.sh` runs it before it bumps the build number, and `release.sh` runs it
-before it archives. **CI does not run it on pull requests** — since 2026-08-08
-the workflow triggers on merges to `main` only, so running it before opening a
-PR, and stating the count in the PR body, is the gate.
+before it archives. CI runs it on pull requests (against the preview merge)
+and on merges to `main` (restored 2026-08-10; it was main-only since
+2026-08-08). Running it locally before opening a PR and stating the count in
+the PR body is still the rule — the CI run is what a reviewer checks that
+stated count against.
 
 | ID | Given | Expect | Rule |
 |---|---|---|---|
