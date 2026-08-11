@@ -149,6 +149,14 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// acting, so anything from a stopped run or a replaced instance is
     /// dropped at the door. The rule itself lives in `SessionRegistry` so it
     /// is L1-testable without audio or network. GitHub #20.
+    ///
+    /// ONE deliberate exception: `.usage` frames are recorded for cost
+    /// accounting BEFORE the token check in `makeSession`'s callback — and
+    /// only there. Billing happened whether or not the instance is still
+    /// current, and a cost tally steers no session state, so staleness
+    /// protection has no business filtering it (GitHub #4). Nothing else may
+    /// join that exception: every event that touches turn, direction,
+    /// readiness or liveness state stays behind the token.
     private var registry = SessionRegistry()
 
     /// The only way sessions are constructed: mints the token and wires the
