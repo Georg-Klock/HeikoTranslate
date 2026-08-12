@@ -96,6 +96,39 @@ final class KeyRevocationTests: XCTestCase {
         XCTAssertEqual(vm.errorMessage, UIStrings.of(vm.homeLang).updateRequired)
     }
 
+    func testAuthSuspectErrorProbesImmediately() async {
+        // Phone day 2026-08-12: the retry ladder needs ~17s to exhaust and
+        // the person at the phone taps long before that. Suspicion must
+        // start the probe on the FIRST auth-rejected close.
+        let vm = makeModel(verdict: .revoked)
+        vm.reportServiceErrorForTesting(
+            "authentication rejected on close: Request had invalid authentication credentials.")
+        await vm.awaitKeyConfirmationForTesting()
+        XCTAssertTrue(vm.keyRevoked)
+        XCTAssertEqual(vm.errorMessage, UIStrings.of(vm.homeLang).updateRequired)
+    }
+
+    func testPlainConnectionErrorNeverProbes() async {
+        var probeRuns = 0
+        let vm = ConversationViewModel()
+        vm.permissionRequestForTesting = { true }
+        vm.serviceStartForTesting = { true }
+        vm.keyProbeForTesting = { probeRuns += 1; return .revoked }
+        vm.reportServiceErrorForTesting("de: connection failed before handshake")
+        await vm.awaitKeyConfirmationForTesting()
+        XCTAssertEqual(probeRuns, 0, "no suspicion, no probe — bad WiFi must never ask")
+        XCTAssertFalse(vm.keyRevoked)
+        XCTAssertEqual(vm.errorMessage, UIStrings.of(vm.homeLang).connectionError)
+    }
+
+    func testRevokedStateSilencesTheStatusLine() async {
+        let vm = makeModel(verdict: .revoked)
+        vm.forceSessionsExhaustedForTesting()
+        await vm.awaitKeyConfirmationForTesting()
+        XCTAssertEqual(vm.statusText, "",
+                       "'Verbinde…'/'Mikrofon pausiert' beside the sentence is a promise the app cannot keep")
+    }
+
     func testEveryLanguageHasTheSentence() {
         for lang in TurnLogic.Lang.allCases where lang.canBeHome {
             XCTAssertFalse(UIStrings.of(lang).updateRequired.isEmpty)

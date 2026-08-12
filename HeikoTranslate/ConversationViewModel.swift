@@ -399,30 +399,53 @@ final class ConversationViewModel: ObservableObject {
 
     private var keyConfirmationTask: Task<Void, Never>?
 
-    /// What `onSessionsExhausted` runs — a named method rather than closure
-    /// body so the test seam drives the identical code, not a copy.
-    private func handleSessionsExhausted() {
-        stop()
-        // "For good" has exactly one cause that no retry, tap or better WiFi
-        // will ever fix: a revoked key. One REST probe settles it; if
-        // confirmed, the message upgrades from "try again" to "update the
-        // app". GitHub #9.
-        confirmKeyAfterExhaustedSessions()
+    /// Every service error funnels here — a named method rather than
+    /// closure body so the test seam drives the identical code, not a copy.
+    private func handleServiceError(_ message: String) {
+        // A server that names API_KEY_INVALID outright has already answered
+        // what the probe would ask. GitHub #9.
+        if KeyCheck.verdict(fromResponseBody: message) == .revoked {
+            noteKeyRevoked("server error frame")
+            return
+        }
+        // An auth-flavored rejection starts the probe NOW, not after the
+        // retry ladder: on the device the ladder needs ~17s of "Verbinde…"
+        // to exhaust, and the person at the phone taps long before that
+        // (phone day 2026-08-12). The generic line still shows while the
+        // probe runs — suspicion is not conviction.
+        if KeyCheck.suspectsAuth(closeReason: message) {
+            confirmKeyNow("auth-suspect session error")
+        }
+        errorMessage = strings.connectionError
+        print("GeminiLiveTranslationService error: \(message)")
     }
 
-    private func confirmKeyAfterExhaustedSessions() {
-        guard !keyRevoked else { return }
+    /// What `onSessionsExhausted` runs.
+    private func handleSessionsExhausted() {
+        stop()
+        // The belt to the immediate path above: whatever exhausted the
+        // retries, one probe settles whether an update is the only fix.
+        confirmKeyNow("post-exhaustion probe")
+    }
+
+    /// One probe in flight at a time; conviction is permanent, an
+    /// inconclusive verdict clears the latch so a later suspicion (or the
+    /// exhausted belt) can ask again once the network is back.
+    private func confirmKeyNow(_ evidence: String) {
+        guard !keyRevoked, keyConfirmationTask == nil else { return }
         let probe = keyProbeForTesting ?? KeyProbe.currentVerdict
         keyConfirmationTask = Task { @MainActor [weak self] in
-            guard await probe() == .revoked else { return }
-            self?.noteKeyRevoked("post-exhaustion probe")
+            if await probe() == .revoked { self?.noteKeyRevoked(evidence) }
+            self?.keyConfirmationTask = nil
         }
     }
 
     #if DEBUG
-    /// Reaching the exhausted state for real needs three failed connection
-    /// attempts against a live socket. DEBUG-only, same code path.
+    /// Reaching the exhausted state for real needs failed connections
+    /// against a live socket. DEBUG-only, same code path.
     func forceSessionsExhaustedForTesting() { handleSessionsExhausted() }
+    /// The service-error funnel, reachable without a socket. DEBUG-only.
+    func reportServiceErrorForTesting(_ message: String) { handleServiceError(message) }
     /// Lets a test wait for the probe verdict instead of sleeping.
     func awaitKeyConfirmationForTesting() async { await keyConfirmationTask?.value }
     #endif
@@ -464,6 +487,11 @@ final class ConversationViewModel: ObservableObject {
 
     /// Status line under the mic.
     var statusText: String {
+        // A revoked key shows ONE sentence. "Verbinde…" beside it is a
+        // promise the app cannot keep, and "Mikrofon pausiert" an
+        // invitation to a tap that cannot help — device finding,
+        // phone day 2026-08-12. GitHub #9.
+        if keyRevoked { return "" }
         if !isListening {
             if isLaunching { return strings.connecting }
             return hasEverStarted ? strings.micPaused : ""
@@ -1133,14 +1161,7 @@ final class ConversationViewModel: ObservableObject {
                     self?.activity = activity
                 },
                 onError: { [weak self] message in
-                    // A server that names API_KEY_INVALID in an error frame
-                    // has already answered what the probe would ask. GitHub #9.
-                    if KeyCheck.verdict(fromResponseBody: message) == .revoked {
-                        self?.noteKeyRevoked("server error frame")
-                        return
-                    }
-                    self?.errorMessage = self?.strings.connectionError
-                    print("GeminiLiveTranslationService error: \(message)")
+                    self?.handleServiceError(message)
                 },
                 onInputLevel: { [weak self] level in
                     // Smooth the jitter out, but let a rise through fast so
