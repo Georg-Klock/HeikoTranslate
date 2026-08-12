@@ -85,12 +85,13 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: 1
         run: brew install xcodegen
 
-      # Secrets.plist is gitignored, so CI never has one. L1 does not need a
-      # key — AppConfig.geminiAPIKey is only read by start()/reconnect(), which
-      # no L1 test reaches — but the placeholder mirrors the documented local
-      # setup and stops a future test that instantiates more of the app from
-      # tripping AppConfig's fatalError with a confusing CI-only failure.
-      # The example's values are literally "REPLACE-ME", so nothing can call out.
+      # Secrets.plist is gitignored, so CI never has one. The seam suites DO
+      # call start() now, but under the session-factory seam the key is never
+      # read (GitHub #68 — the old comment here claimed no L1 test reached
+      # it, which the seam suites made stale). The placeholder still mirrors
+      # the documented local setup and covers any future test that reaches
+      # the key outside the seam. Its values are literally "REPLACE-ME", so
+      # nothing can call out.
       - name: Placeholder Secrets.plist
         run: cp HeikoTranslate/Resources/Secrets.plist.example HeikoTranslate/Resources/Secrets.plist
 

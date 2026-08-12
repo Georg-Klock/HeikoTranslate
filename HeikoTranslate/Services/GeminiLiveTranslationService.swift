@@ -419,6 +419,19 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Skips the AVAudioEngine setup so `start()` runs without audio
     /// hardware; tests drive `forward(_:)` directly instead of the mic tap.
     var skipAudioIOForTesting = false
+    /// The key, read only when a REAL session will be built. The factory
+    /// seam must not depend on bundle I/O: a transient Secrets.plist read
+    /// failure under simulator load fatalErrored the test host mid-suite,
+    /// intermittently, with a message blaming a missing file that was
+    /// present (GitHub #68). Under the seam the value is never used —
+    /// makeSession's factory branch ignores it.
+    private var liveAPIKey: String {
+        #if DEBUG
+        if sessionFactoryForTesting != nil { return "unused-under-test-seam" }
+        #endif
+        return AppConfig.geminiAPIKey
+    }
+
     /// Stands in for a loud mic buffer (GitHub #39): with the tap skipped,
     /// nothing sets `speechHeardThisTurn`, and the straggler gates treat
     /// every event as post-turn noise. A test marks speech exactly where the
@@ -496,7 +509,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         // One session per side of the selected pair, both fed the same mic
         // audio. The pair is explicit (settings), so exactly two sessions.
         activePair = [home, partner]
-        let apiKey = AppConfig.geminiAPIKey
+        let apiKey = liveAPIKey
         for lang in [home, partner] {
             let session = makeSession(lang, apiKey: apiKey)
             sessions[lang] = session
@@ -1094,7 +1107,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         // socket state it still had. Same one-line discipline the #1 fix
         // added to start(). GitHub #19.
         sessions[lang]?.close()
-        let session = makeSession(lang, apiKey: AppConfig.geminiAPIKey)
+        let session = makeSession(lang, apiKey: liveAPIKey)
         sessions[lang] = session
         session.connect()
         diag("session", "[\(lang.rawValue)] reconnected")
