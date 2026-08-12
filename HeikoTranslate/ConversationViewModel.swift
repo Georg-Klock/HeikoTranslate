@@ -778,10 +778,23 @@ final class ConversationViewModel: ObservableObject {
     /// app is behind this guard. GitHub #28.
     func noteAutomaticResumeFinished(started: Bool) {
         guard started else {
-            diag("app", "automatic resume after interruption did NOT start — no notice shown")
+            diag("app", "automatic resume after interruption did NOT start — showing the tap prompt")
+            // The one user least able to infer an action gets one: the app
+            // failed HIM, not the other way round, and the button is the
+            // recovery. errorMessage, not a micNotice — the failed state has
+            // statusShowsMuted true, and the notice slot's precedence
+            // (muted > warning > notice) would never render a notice here.
+            // A later successful start clears it (start() begins with
+            // errorMessage = nil). Approved copy, 2026-08-06. GitHub #5.
+            errorMessage = strings.micResumeFailed
             return
         }
         diag("app", "resumed automatically after an interruption")
+        // A resume that STARTED leaves no failure prompt behind. In the app
+        // this is already true — the successful start() cleared it — but the
+        // rule belongs to this seam, where L1.41e can hold it without a real
+        // start. GitHub #5.
+        errorMessage = nil
         showMicNotice()
     }
 

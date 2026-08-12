@@ -261,12 +261,17 @@ final class LanguagePairTests: XCTestCase {
         let vm = ConversationViewModel()
         XCTAssertNil(vm.micNotice)
 
-        // A resume that did NOT start says nothing. "The microphone is on
-        // again" over a start that did not happen is worse than silence, and
-        // honouring the decision to resume regardless of iOS's hint is exactly
-        // what makes this path reachable.
+        // A resume that did NOT start shows no NOTICE — "the microphone is on
+        // again" over a start that did not happen is worse than silence — but
+        // it no longer says NOTHING: the tap prompt goes to the errorMessage
+        // layer, because the failed state has statusShowsMuted true and the
+        // notice slot's precedence would never render a notice (GitHub #5).
         vm.noteAutomaticResumeFinished(started: false)
-        XCTAssertNil(vm.micNotice, "a failed resume must not announce itself")
+        XCTAssertNil(vm.micNotice, "a failed resume must not announce a resume")
+        XCTAssertEqual(vm.errorMessage, vm.strings.micResumeFailed,
+                       "the reader gets an ACTION, not a statement of failure")
+        XCTAssertNotEqual(vm.strings.micResumeFailed, vm.strings.micFailed,
+                          "the manual-failure copy is deliberately different and unchanged")
 
         vm.noteAutomaticResumeFinished(started: true)
         XCTAssertEqual(vm.micNotice?.severity, .info, "informational — not styled as a warning")
@@ -274,6 +279,10 @@ final class LanguagePairTests: XCTestCase {
         // persisted pair happens to be — so assert against that rather than
         // against German, which only passed while German was hardcoded.
         XCTAssertEqual(vm.micNotice?.text, vm.strings.micResumed)
+        // The issue's extension to this test: a SUCCESSFUL resume carries no
+        // error — and it clears a failed attempt's prompt, which must not
+        // outlive the state it described. GitHub #5.
+        XCTAssertNil(vm.errorMessage, "success shows the notice and no error")
 
         vm.noteManualToggle()
         XCTAssertNil(vm.micNotice)
