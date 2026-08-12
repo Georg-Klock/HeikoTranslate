@@ -257,6 +257,21 @@ translated both.
 | L1.75 | The collision swap with a partner-only old partner | Falls back (default home, or its counterpart on a second collision) — never seats tl/vi on home | **§4.4/#30** |
 | L1.75b | Any write of a partner-only language to the home binding | Refused; previous home survives; the pair stays distinct | **R8/#30** |
 
+The wheels, for VoiceOver (#14, 2026-08-11). Each language column is ONE
+adjustable element; a swipe steps through the same displayed order the
+wheel scrolls, writing the same `selection` binding, so the distinct-pair
+rules apply unchanged. The element's presence, label
+and value are verified by the LOCAL accessibility UI target (below) —
+the adjustable ACTION itself has no XCUITest trigger for custom
+elements, so its behaviour stays pinned by the pure lap tests plus the
+same-binding argument.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.73 | The excluding column's options, for every other-side choice | The other side is never offered, and never produced by any adjustment step | **§4.4/a11y** |
+| L1.73b | A full adjustable lap, both directions | Every option visited exactly once, wrapping — one notch of the endless wheel | **a11y** |
+| L1.73c | An empty option list, or a stored selection outside it | Safe: current pick kept, or first option — a persisted value outlives invariants | **R8** |
+
 Commit diagnostics. Evidence only — these must never influence which
 transcript `TurnLogic` commits.
 
@@ -856,7 +871,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 166 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService` and `ConversationViewModel` (2026-08-12) |
+| L1 | ✅ Built and passing — 170 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService` and `ConversationViewModel` (2026-08-12) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Needs a device re-run. The 2026-08-11 queue landed service-layer fixes for the replacement window (#15), audio-startup transactionality (#16), start serialization (#13), late fragments (#39) and session-lifecycle races (#1) — none re-verified on a phone. The ordered plan, with the log lines that decide each block, is on GitHub #27; the needs-validation issues (#31–#40 family) track what specifically to confirm. (An earlier version of this row still described the three-session design; the pair design has run exactly two sessions since 2026-07-28.) |
