@@ -97,6 +97,11 @@ private struct LanguageColumn: View {
     private var options: [TurnLogic.Lang] {
         TurnLogic.Lang.allCases
             .filter { !excludesOtherSide || $0 != otherSide }
+            // The HOME column offers only full app languages: a partner-only
+            // language (#30) has no UI set, so the reader's side must never
+            // become one. The partner column offers everything the model
+            // translates.
+            .filter { excludesOtherSide || $0.canBeHome }
             .sorted { displayed($0).localizedCompare(displayed($1)) == .orderedAscending }
     }
 

@@ -34,6 +34,12 @@ struct TurnLogic {
     /// target probe: de/en/es/fr/ko/zh all translate).
     enum Lang: String, CaseIterable, Codable {
         case de, en, es, fr, ko, zh
+        // Partner-side only (Georg's decision, #30/#28, 2026-08-12): the
+        // model translates both (verified live 2026-08-12,
+        // Tools/targetprobe.sh tl vi), but neither is an app language — the
+        // home wheel never offers them, so no UI set exists for them and
+        // #6's review surface does not grow.
+        case tl, vi
 
         /// Flag shown in the picker and on the split button. English uses
         /// the US flag and Spanish the Mexican flag by product decision.
@@ -45,6 +51,8 @@ struct TurnLogic {
             case .fr: return "🇫🇷"
             case .ko: return "🇰🇷"
             case .zh: return "🇨🇳"
+            case .tl: return "🇵🇭"
+            case .vi: return "🇻🇳"
             }
         }
 
@@ -60,6 +68,19 @@ struct TurnLogic {
             case .fr: return "Französisch"
             case .ko: return "Koreanisch"
             case .zh: return "Chinesisch"
+            case .tl: return "Tagalog"
+            case .vi: return "Vietnamesisch"
+            }
+        }
+
+        /// Whether this language may take the HOME side — the reader's
+        /// side, whose language the whole UI renders in. Partner-only
+        /// languages have no UI set, so home must never become one; the
+        /// wheel filter and the collision swap both consult this. #30.
+        var canBeHome: Bool {
+            switch self {
+            case .tl, .vi: return false
+            default: return true
             }
         }
 

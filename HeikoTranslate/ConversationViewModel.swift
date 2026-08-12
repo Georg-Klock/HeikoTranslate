@@ -30,6 +30,15 @@ final class ConversationViewModel: ObservableObject {
     @Published var homeLang: TurnLogic.Lang {
         didSet {
             guard !isAdjustingPair else { return }
+            // Belt to the wheel's own filter (#30): home must never become a
+            // partner-only language, whatever path wrote it — a stored value
+            // from some future migration included. Revert to the previous
+            // home, or the default when that is itself unusable.
+            if !homeLang.canBeHome {
+                withPairAdjustment {
+                    homeLang = oldValue.canBeHome ? oldValue : Self.defaultHomeLang
+                }
+            }
             if homeLang == partnerLang { withPairAdjustment { partnerLang = oldValue } }
             persistAndApplyLanguages()
         }
@@ -37,7 +46,17 @@ final class ConversationViewModel: ObservableObject {
     @Published var partnerLang: TurnLogic.Lang {
         didSet {
             guard !isAdjustingPair else { return }
-            if partnerLang == homeLang { withPairAdjustment { homeLang = oldValue } }
+            if partnerLang == homeLang {
+                // The SPEC §4.4 swap — with one new guard: the old partner
+                // may be a partner-only language (#30), which must never
+                // take the home side (it has no UI set). The swap then
+                // falls back to the default home, or its counterpart when
+                // the pick collides with that too.
+                let swapped = oldValue.canBeHome ? oldValue
+                    : (partnerLang == Self.defaultHomeLang ? Self.defaultPartnerLang
+                                                           : Self.defaultHomeLang)
+                withPairAdjustment { homeLang = swapped }
+            }
             persistAndApplyLanguages()
         }
     }
