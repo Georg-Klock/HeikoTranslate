@@ -77,6 +77,33 @@ private extension View {
     }
 }
 
+/// The revoked-key modal (GitHub #9): one sentence, whole screen, whole
+/// surface tappable — the sentence already says what a tap does, so the
+/// cover adds no words of its own and nothing new for the German gate.
+/// Terminal by design; only an updated build ends it.
+private struct KeyRevokedCover: View {
+    let sentence: String
+    let onTap: () -> Void
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Palette.backgroundTop, Palette.backgroundBottom],
+                           startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+            Text(sentence)
+                .font(.title2.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 32)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(sentence)
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
 struct ContentView: View {
     @StateObject private var viewModel = ConversationViewModel()
     @Environment(\.scenePhase) private var scenePhase
@@ -125,6 +152,18 @@ struct ContentView: View {
         .sheet(isPresented: $showingSettings) {
             LanguageSettingsSheet(viewModel: viewModel)
                 .morphDestination(Self.pillMorphID, pillMorph)
+        }
+        // The revoked key takes the WHOLE screen, not a footnote — Georg's
+        // call, phone day 2026-08-12. The state is terminal, so there is
+        // nothing underneath worth seeing, and a modal cannot be missed or
+        // half-read. Not dismissible: dismissing it would reveal an app that
+        // cannot work. The set closure is empty on purpose — only an update
+        // ends this state.
+        .fullScreenCover(isPresented: Binding(
+            get: { viewModel.keyRevoked }, set: { _ in }
+        )) {
+            KeyRevokedCover(sentence: viewModel.strings.updateRequired,
+                            onTap: viewModel.toggleButton)
         }
         // Both occupants of the bottom slot fade, so a mic notice replacing a
         // cleared warning animates rather than snapping. Needs StatusNotice to
