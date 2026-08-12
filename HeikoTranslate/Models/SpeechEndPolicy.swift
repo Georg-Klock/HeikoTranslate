@@ -44,4 +44,22 @@ struct SpeechEndPolicy {
            now.timeIntervalSince(since) >= maxMicExtension { return true }
         return false
     }
+
+    /// GitHub #83, from the device: once `speakerHasStopped` was set, the
+    /// microphone was never consulted again until commit — so speech
+    /// RESUMING inside that stopped→commit window (~2s) had its first half
+    /// committed and its second half dropped as post-commit stragglers,
+    /// with the half-sentence translation played over the still-talking
+    /// speaker. A loud mic in that window un-stops the turn instead: back
+    /// to normal listening, the regular end-of-turn clock re-governs, and
+    /// a cough merely re-runs the stop decision 1.4s later.
+    ///
+    /// `isPlayingOutput` gates the echo: while the loudspeaker is playing
+    /// (a previous turn's tail), loudness at the mic proves nothing, and an
+    /// un-stop driven by our own voice would hold turns open indefinitely.
+    static func speechResumesTurn(speakerHasStopped: Bool,
+                                  isPlayingOutput: Bool) -> Bool {
+        speakerHasStopped && !isPlayingOutput
+    }
+
 }

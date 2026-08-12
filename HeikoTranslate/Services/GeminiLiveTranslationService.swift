@@ -437,6 +437,12 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// every event as post-turn noise. A test marks speech exactly where the
     /// real tap would have.
     func markSpeechHeardForTesting() { speechHeardThisTurn = true }
+    /// The #83 wiring, reachable without an audio graph. Same code path as
+    /// a real loud buffer.
+    func noteLoudMicSampleForTesting() { noteLoudMicSample() }
+    /// Reaching a stopped turn for real needs timers and transcripts.
+    func forceSpeakerStoppedForTesting() { speakerHasStopped = true }
+    var speakerHasStoppedForTesting: Bool { speakerHasStopped }
     #endif
 
     func requestPermissions() async -> Bool {
@@ -707,8 +713,7 @@ final class GeminiLiveTranslationService: ObservableObject {
                 self.peakMicRMS = max(self.peakMicRMS, rms)
                 self.secondPeakRMS = max(self.secondPeakRMS, rms)
                 if rms > Self.micSpeechRMSFloor {
-                    self.speechHeardThisTurn = true
-                    self.lastLoudMicAt = Date()
+                    self.noteLoudMicSample()
                 }
                 // One line a second, so "the room was quiet" is always
                 // distinguishable from "the microphone was dead".
@@ -1264,6 +1269,13 @@ final class GeminiLiveTranslationService: ObservableObject {
     private func noteInputActivity() {
         lastInputAt = Date()
         lingeringTranslator = nil   // new speech owns the buffers again
+        armSpeechEndClock()
+    }
+
+    /// The turn is (still) live: clear the stop and restart the idle clock.
+    /// Shared by transcript activity and the #83 mic-resume path, so the two
+    /// cannot drift.
+    private func armSpeechEndClock() {
         speakerHasStopped = false
         speechEndTimer?.invalidate()
         speechEndTimer = Timer.scheduledTimer(
@@ -1272,6 +1284,29 @@ final class GeminiLiveTranslationService: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.speakerStopped() }
         }
+    }
+
+    /// GitHub #83: a loud mic between "speaker stopped" and the commit means
+    /// the stop was premature — the person is still talking. Un-stop and let
+    /// the normal clock re-decide; deliberately NOT noteInputActivity, whose
+    /// `lastInputAt` is server-transcript timing and feeds the linger and
+    /// finalize decisions. If the resumed speech never transcribes, the
+    /// clock re-runs the stop 1.4s later and commits what exists — no worse
+    /// than today, and the deferral now sees the ongoing loudness.
+    /// One loud mic buffer (above `micSpeechRMSFloor`), wherever it lands
+    /// in the turn's life. Named so the tap and the test seam share it.
+    private func noteLoudMicSample() {
+        speechHeardThisTurn = true
+        lastLoudMicAt = Date()
+        if SpeechEndPolicy.speechResumesTurn(speakerHasStopped: speakerHasStopped,
+                                             isPlayingOutput: isPlayingOutput) {
+            resumeStoppedTurn()
+        }
+    }
+
+    private func resumeStoppedTurn() {
+        diag("turn", "speaker resumed during the commit window — un-stopping (GitHub #83)")
+        armSpeechEndClock()
     }
 
     private func speakerStopped(deferredSince: Date? = nil) {
