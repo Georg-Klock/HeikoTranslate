@@ -238,6 +238,15 @@ struct ContentView: View {
                     .font(.footnote)
                     .foregroundStyle(.red)
                     .padding(.bottom, 4)
+                    // "Zum Aktualisieren antippen" invites a tap, and on the
+                    // device the tap lands on the SENTENCE, not the button
+                    // below it (phone day 2026-08-12). Same routing as the
+                    // button, so the log sees it either way. Only in the
+                    // revoked state — tapping "bitte nochmal versuchen"
+                    // mid-session must not toggle the microphone.
+                    .onTapGesture {
+                        if viewModel.keyRevoked { viewModel.toggleButton() }
+                    }
             }
             // Status and hint read BEFORE the control they describe, so they
             // sit above it. They used to hang underneath, which put the one
