@@ -31,4 +31,19 @@ enum KeyCheck {
     static func verdict(fromResponseBody body: String) -> Verdict {
         markers.contains(where: body.contains) ? .revoked : .inconclusive
     }
+
+    /// Whether a server-initiated CLOSE looks like an authentication
+    /// rejection rather than a network mishap. Learned on the device
+    /// (2026-08-12, phone-day case 8): a dead key does NOT fail the
+    /// WebSocket upgrade — the handshake completes and the server then
+    /// closes 1008 with "Request had invalid authentication credentials",
+    /// which is the post-handshake drop path, the one that deliberately
+    /// reconnects forever for tunnels and lifts. Suspicion is not
+    /// conviction: a close matching this routes into the CAPPED retry
+    /// path so the REST probe gets to arbitrate, and the sentence still
+    /// only appears when the probe's body convicts.
+    static func suspectsAuth(closeReason: String) -> Bool {
+        closeReason.contains("invalid authentication credentials")
+            || markers.contains(where: closeReason.contains)
+    }
 }

@@ -27,6 +27,11 @@ struct SessionLifecycle {
     /// The server announced the end with `goAway`, so the close that follows
     /// is planned rather than a network drop. GitHub #3.
     var sawGoAway = false
+    /// The reason text of a server-initiated close, kept so the completion
+    /// callback can tell an authentication rejection (capped retries, key
+    /// probe) from a network drop (reconnect forever). A dead key closes
+    /// AFTER a successful handshake — learned on the device, GitHub #9.
+    var closeReason: String?
     /// The exactly-once latch: a session instance reports terminal failure
     /// ONE time, however many transport callbacks observe it. GitHub #1.
     private(set) var didReportFailure = false
@@ -71,12 +76,22 @@ struct SessionLifecycle {
         /// Never opened, and this is the first report: a real connect/auth
         /// failure worth surfacing.
         case failure
+        /// Opened, then closed by the server with an AUTH rejection — a dead
+        /// key completes the handshake first (device-verified, GitHub #9).
+        /// Must take the capped-retry path, never reconnect-forever.
+        case authRejected(String)
     }
 
     /// The URLSession task completed (the final word on any transport).
     mutating func noteTaskCompleted() -> CompletionDisposition {
         guard !intentionalClose else { return .quiet }
-        if hasOpened { return .closed(expected: sawGoAway) }
+        if hasOpened {
+            if !sawGoAway, let reason = closeReason,
+               KeyCheck.suspectsAuth(closeReason: reason) {
+                return .authRejected(reason)
+            }
+            return .closed(expected: sawGoAway)
+        }
         return claimFailure() ? .failure : .quiet
     }
 }
@@ -457,8 +472,11 @@ extension GeminiLiveSession: URLSessionWebSocketDelegate {
         didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
         reason: Data?
     ) {
-        withLifecycle { $0.isClosing = true }
         let reasonText = reason.flatMap { String(data: $0, encoding: .utf8) } ?? "(no reason given)"
+        withLifecycle {
+            $0.isClosing = true
+            $0.closeReason = reasonText
+        }
         onEvent(.debug("WebSocket closed by server. closeCode=\(closeCode.rawValue) reason=\(reasonText)"))
     }
 
@@ -486,6 +504,16 @@ extension GeminiLiveSession: URLSessionWebSocketDelegate {
         case .closed(let planned):
             diag("session", "[\(targetLanguageCode)] closed by server (\(planned ? "goAway" : "abrupt drop")) — will reconnect")
             onEvent(.closed(expected: planned))
+        case .authRejected(let reason):
+            // NOT the reconnect-forever drop path: from the transport's seat
+            // an auth rejection is indistinguishable from a tunnel — except
+            // by the reason text, which SessionLifecycle has already read.
+            // The error event puts it on the CAPPED retry path, whose
+            // exhaustion runs the key probe; the probe stays the arbiter, so
+            // a one-off server hiccup still ends as "try again", not
+            // "update the app". Learned on the device, GitHub #9.
+            diag("session", "[\(targetLanguageCode)] closed by server with an auth rejection — session error, not a drop")
+            onEvent(.error("authentication rejected on close: \(reason)"))
         case .failure:
             diag("session", "[\(targetLanguageCode)] FAILED before handshake: \(detail)")
             onEvent(.error("connection failed before handshake"))
