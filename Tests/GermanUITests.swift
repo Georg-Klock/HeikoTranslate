@@ -72,6 +72,12 @@ final class GermanUITests: XCTestCase {
         // microphone reopened without a tap. Wording approved by Georg
         // 2026-08-05.
         "Mikrofon wieder aktiv — die Übersetzung läuft weiter.",
+        // The revoked-key sentence (GitHub #9): only shown once a REST probe
+        // has confirmed API_KEY_INVALID, at which point updating is the only
+        // action that can ever work — the button opens the update page, and
+        // the copy follows the micDenied pattern of saying what the tap does.
+        // CANDIDATE: written 2026-08-12, Georg's on-device check pending.
+        "Diese Version der App funktioniert nicht mehr. Zum Aktualisieren antippen.",
     ]
 
     private var repoRoot: URL {

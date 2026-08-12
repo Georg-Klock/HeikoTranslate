@@ -70,6 +70,18 @@ version; bump when he is home.
 4. Builds expire **90 days** after upload. Cut the build Heiko actually travels
    with close to the trip, not months ahead.
 
+## Key rotation and the revoked-key sentence
+
+`Tools/rotate-key.sh` mints the replacement key and runs this same release
+path. The order is **revoke first, then ship** — safe because a build that
+meets a revoked key (from 2.3, GitHub #9) confirms it over REST and shows
+one sentence: *"Diese Version der App funktioniert nicht mehr. Zum
+Aktualisieren antippen."* The tap opens `APP_UPDATE_URL` from
+`Secrets.plist`: add it there once (see `Secrets.plist.example`) and every
+build carries it. The value is the unlisted App Store link and is never
+committed — the plist is gitignored. Builds older than the sentence fail
+silently until updated; that residual is accepted on #9.
+
 ## Things that have bitten
 
 - **A locked iPhone reports as "unavailable"** to `devicectl`, which looks

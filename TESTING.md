@@ -274,6 +274,21 @@ same-binding argument.
 | L1.73b | A full adjustable lap, both directions | Every option visited exactly once, wrapping — one notch of the endless wheel | **a11y** |
 | L1.73c | An empty option list, or a stored selection outside it | Safe: current pick kept, or first option — a persisted value outlives invariants | **R8** |
 
+The revoked key (#9, 2026-08-12). The piece that makes revoke-first rotation
+safe: after the pre-handshake retries exhaust, ONE REST probe asks whether
+the key itself is dead, and only a body naming `API_KEY_INVALID` upgrades
+the message from "try again" to the update sentence. The German sentence is
+a candidate awaiting Georg's on-device check; the tap opens `APP_UPDATE_URL`
+from Secrets.plist (absent in dev builds by design — the unlisted link must
+not be committed).
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.76 | A response body naming `API_KEY_INVALID` (or the standard human message) | Verdict: revoked | **#9** |
+| L1.76b | Quota exhaustion, a healthy body, a captive portal, garbage | Inconclusive — never "update the app" on a network problem | **#9** |
+| L1.76c | Exhausted sessions + a probe that confirms revocation | `keyRevoked`, the reader-language update sentence shown, listening refused until updated | **R8/#9** |
+| L1.76d | Exhausted sessions + an inconclusive probe | Generic messaging stands; nothing terminal | **#9** |
+
 Commit diagnostics. Evidence only — these must never influence which
 transcript `TurnLogic` commits.
 
