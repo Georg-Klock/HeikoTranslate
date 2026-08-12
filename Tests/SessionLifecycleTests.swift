@@ -118,4 +118,45 @@ final class SessionLifecycleTests: XCTestCase {
         state.hasOpened = true
         XCTAssertEqual(state.noteTaskCompleted(), .closed(expected: false))
     }
+    // Phone-day case 8 (GitHub #9): a dead key COMPLETES the handshake and
+    // is then closed 1008 with an auth-rejection reason — which, without
+    // the reason check, was an "abrupt drop" and reconnected forever. The
+    // observed reason text is reproduced verbatim from the device log.
+    func testAuthRejectedCloseIsNotADrop() {
+        var state = SessionLifecycle()
+        state.hasOpened = true
+        state.isClosing = true
+        state.closeReason = "Request had invalid authentication credentials. "
+            + "Expected OAuth 2 access token, login cookie or other valid authentication c"
+        XCTAssertEqual(state.noteTaskCompleted(),
+                       .authRejected(state.closeReason!),
+                       "capped retries + key probe, never reconnect-forever")
+    }
+
+    func testOrdinaryCloseReasonStaysADrop() {
+        var state = SessionLifecycle()
+        state.hasOpened = true
+        state.isClosing = true
+        state.closeReason = "(no reason given)"
+        XCTAssertEqual(state.noteTaskCompleted(), .closed(expected: false))
+    }
+
+    func testGoAwayOutranksAStaleAuthReason() {
+        // A planned end is a planned end: the 1008 that can follow a slow
+        // goAway close (GitHub #65's tail) must not convict anything.
+        var state = SessionLifecycle()
+        state.hasOpened = true
+        state.sawGoAway = true
+        state.closeReason = "Request had invalid authentication credentials."
+        XCTAssertEqual(state.noteTaskCompleted(), .closed(expected: true))
+    }
+
+    func testIntentionalCloseOutranksAuthReason() {
+        var state = SessionLifecycle()
+        state.hasOpened = true
+        state.intentionalClose = true
+        state.closeReason = "Request had invalid authentication credentials."
+        XCTAssertEqual(state.noteTaskCompleted(), .quiet)
+    }
+
 }

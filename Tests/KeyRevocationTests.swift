@@ -44,6 +44,20 @@ final class KeyRevocationTests: XCTestCase {
                        "a hotel login page is a network problem, not a key problem")
     }
 
+    // MARK: - Auth suspicion from a close reason (device-verified shape).
+
+    func testAuthRejectionReasonIsSuspectButNotConviction() {
+        let reason = "Request had invalid authentication credentials. Expected OAuth 2 access token"
+        XCTAssertTrue(KeyCheck.suspectsAuth(closeReason: reason))
+        XCTAssertEqual(KeyCheck.verdict(fromResponseBody: reason), .inconclusive,
+                       "suspicion routes to the probe; only the probe's body convicts")
+    }
+
+    func testOrdinaryCloseReasonsAreNotSuspect() {
+        XCTAssertFalse(KeyCheck.suspectsAuth(closeReason: "(no reason given)"))
+        XCTAssertFalse(KeyCheck.suspectsAuth(closeReason: "policy violation"))
+    }
+
     // MARK: - The state it drives, through the real view model paths.
 
     private func makeModel(verdict: KeyCheck.Verdict) -> ConversationViewModel {
