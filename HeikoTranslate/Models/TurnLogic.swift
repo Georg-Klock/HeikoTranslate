@@ -117,7 +117,27 @@ struct TurnLogic {
     /// calibrated reference, and #29's defect is over-rejection in dense
     /// scripts. GitHub #29.
     static func floors(for home: Lang) -> OutputFloors {
-        germanBaselineFloors
+        switch home {
+        // Measured 2026-08-11, Tools/floor_measurement.py on the Swift wire
+        // path (60 probes; the table is committed beside the tool). Korean
+        // short answers ran 2-7 chars ("네."=2) with answer ratios down to
+        // 0.5; Chinese 2-4 ("谢谢。"=3, "好的。"=4) with ratios to 0.34 —
+        // both sides of the German baseline would reject most of them. The
+        // suggested floors take the observed minimum (corroborated), keep
+        // the German 8:5 shape above it (decisive), and put the same 0.67
+        // safety factor under the observed minimum ratio that 0.4 has
+        // against German's measured ~0.6.
+        case .ko: return OutputFloors(decisive: 3, corroborated: 2, ratio: 0.34)
+        case .zh: return OutputFloors(decisive: 3, corroborated: 2, ratio: 0.23)
+        // The Latin homes measured SAFELY ABOVE the baseline (short answers
+        // ≥3 chars — "No."=3, "Vale."≈5 — ratios ≥0.84), so they keep the
+        // German values: the binding constraint there is the false-start
+        // corpus ("Ich"/"Das"/"Und"), which only German has measured, and
+        // which the campaign deliberately does not model. Loosening Latin
+        // floors to the campaign's naive minimum would readmit exactly
+        // those. GitHub #29.
+        default: return germanBaselineFloors
+        }
     }
     /// How long the partner session must translate alone before home-session
     /// silence proves the home language was spoken.

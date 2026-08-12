@@ -55,27 +55,34 @@ SAMPLES = [
                    "Der nächste Zug fährt in zwanzig Minuten von Gleis zwei."),
 ]
 
-SPOKE_LINE = re.compile(r"^spoke\s+\([^)]*\):\s?(.*)$")
+OUT_LINE = re.compile(r"^FLOORPROBE-OUT: (.*)$")
 
 
-def run_probe(livetest: str, text: str, target: str) -> dict | None:
-    """One live probe. Returns a record, or None when the probe failed —
-    the caller counts failures; it never fabricates a length from one."""
-    proc = subprocess.run(
-        [sys.executable, "-u", livetest, "--text", text, "--target", target,
-         "--tail", "5"],
-        capture_output=True, text=True, timeout=300)
-    out = proc.stdout + proc.stderr
-    if "L2 OK" not in out:
+def synthesize(text: str, voice: str, out_path: str) -> None:
+    """Render one sample to the app's mic format via macOS say."""
+    aiff = out_path + ".aiff"
+    subprocess.run(["say", "-v", voice, "-o", aiff, text], check=True)
+    subprocess.run(["afconvert", "-f", "WAVE", "-d", "LEI16@16000", "-c", "1",
+                    aiff, out_path], check=True)
+    os.unlink(aiff)
+
+
+def run_probe(floorprobe: str, wav: str, target: str) -> dict | None:
+    """One live probe on the SWIFT wire path (the Python path went silent
+    while GeminiLiveSession kept working — #76). Returns a record, or None
+    when the probe failed — the caller counts failures; it never fabricates
+    a length from one."""
+    try:
+        proc = subprocess.run([floorprobe, wav, target],
+                              capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
         return None
-    spoke = ""
-    for line in out.splitlines():
-        m = SPOKE_LINE.match(line.strip())
-        if m:
+    for line in proc.stdout.splitlines():
+        m = OUT_LINE.match(line.strip())
+        if m and m.group(1).strip():
             spoke = m.group(1).strip()
-    if not spoke:
-        return None
-    return {"output_chars": len(spoke), "output_text": spoke}
+            return {"output_chars": len(spoke), "output_text": spoke}
+    return None
 
 
 def analyze(records: list) -> dict:
@@ -137,14 +144,20 @@ def main() -> int:
         return 0
     if not args.out:
         ap.error("need --out (live campaign) or --analyze <records.json>")
-    livetest = os.path.join(here, "livetest.py")
+    floorprobe = os.path.join(here, "floorprobe.sh")
+    import tempfile
+    wavdir = tempfile.mkdtemp(prefix="floor-samples-")
     records, failures = [], 0
     for home in HOMES:
         for sample_id, en_text, de_text in SAMPLES:
             text = de_text if home == "en" else en_text
+            voice = "Anna" if home == "en" else "Samantha"
+            wav = os.path.join(wavdir, f"{home}-{sample_id}.wav")
+            if not os.path.exists(wav):
+                synthesize(text, voice, wav)
             rec = {"home": home, "sample": sample_id,
                    "input_chars": len(text)}
-            probe = run_probe(livetest, text, home)
+            probe = run_probe(floorprobe, wav, home)
             if probe is None:
                 failures += 1
                 rec["failed"] = True

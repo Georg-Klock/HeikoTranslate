@@ -1,0 +1,422 @@
+[
+ {
+  "home": "de",
+  "sample": "yes",
+  "input_chars": 4,
+  "output_chars": 3,
+  "output_text": "Ja."
+ },
+ {
+  "home": "de",
+  "sample": "no",
+  "input_chars": 3,
+  "output_chars": 5,
+  "output_text": "Nein."
+ },
+ {
+  "home": "de",
+  "sample": "thanks",
+  "input_chars": 10,
+  "output_chars": 6,
+  "output_text": "Danke."
+ },
+ {
+  "home": "de",
+  "sample": "good",
+  "input_chars": 10,
+  "output_chars": 9,
+  "output_text": "Sehr gut."
+ },
+ {
+  "home": "de",
+  "sample": "price",
+  "input_chars": 20,
+  "output_chars": 15,
+  "output_text": "kostet 14 Euro."
+ },
+ {
+  "home": "de",
+  "sample": "overthere",
+  "input_chars": 29,
+  "output_chars": 32,
+  "output_text": "Da drüben, auf der linken Seite."
+ },
+ {
+  "home": "de",
+  "sample": "time",
+  "input_chars": 19,
+  "output_chars": 17,
+  "output_text": "Es ist halb vier."
+ },
+ {
+  "home": "de",
+  "sample": "station",
+  "input_chars": 27,
+  "output_chars": 19,
+  "output_text": "Wo ist der Bahnhof?"
+ },
+ {
+  "home": "de",
+  "sample": "control1",
+  "input_chars": 41,
+  "output_chars": 44,
+  "output_text": "zwei Blocks weiter, dann links an der Ampel."
+ },
+ {
+  "home": "de",
+  "sample": "control2",
+  "input_chars": 58,
+  "output_chars": 51,
+  "output_text": "Der nächste Zug fährt in 20 Minuten von Gleis zwei."
+ },
+ {
+  "home": "en",
+  "sample": "yes",
+  "input_chars": 3,
+  "failed": true,
+  "note": "excluded: ~300ms utterance never engages the model — no output at all, twice (campaign + manual retry). A VAD floor, not a translation-length fact."
+ },
+ {
+  "home": "en",
+  "sample": "no",
+  "input_chars": 5,
+  "output_chars": 3,
+  "output_text": "No."
+ },
+ {
+  "home": "en",
+  "sample": "thanks",
+  "input_chars": 6,
+  "output_chars": 5,
+  "output_text": "Well."
+ },
+ {
+  "home": "en",
+  "sample": "good",
+  "input_chars": 9,
+  "output_chars": 10,
+  "output_text": "Very good."
+ },
+ {
+  "home": "en",
+  "sample": "price",
+  "input_chars": 19,
+  "output_chars": 20,
+  "output_text": "That costs 14 euros."
+ },
+ {
+  "home": "en",
+  "sample": "overthere",
+  "input_chars": 24,
+  "output_chars": 29,
+  "output_text": "It's over there, on the left."
+ },
+ {
+  "home": "en",
+  "sample": "time",
+  "input_chars": 13,
+  "output_chars": 19,
+  "output_text": "at half past three."
+ },
+ {
+  "home": "en",
+  "sample": "station",
+  "input_chars": 19,
+  "output_chars": 27,
+  "output_text": "Where is the train station?"
+ },
+ {
+  "home": "en",
+  "sample": "control1",
+  "input_chars": 44,
+  "output_chars": 40,
+  "output_text": "two blocks down, then left at the light."
+ },
+ {
+  "home": "en",
+  "sample": "control2",
+  "input_chars": 56,
+  "output_chars": 52,
+  "output_text": "The next train leaves in 20 minutes from platform 2."
+ },
+ {
+  "home": "es",
+  "sample": "yes",
+  "input_chars": 4,
+  "output_chars": 3,
+  "output_text": "Sí."
+ },
+ {
+  "home": "es",
+  "sample": "no",
+  "input_chars": 3,
+  "output_chars": 3,
+  "output_text": "No."
+ },
+ {
+  "home": "es",
+  "sample": "thanks",
+  "input_chars": 10,
+  "output_chars": 8,
+  "output_text": "Gracias."
+ },
+ {
+  "home": "es",
+  "sample": "good",
+  "input_chars": 10,
+  "output_chars": 9,
+  "output_text": "Muy bien."
+ },
+ {
+  "home": "es",
+  "sample": "price",
+  "input_chars": 20,
+  "output_chars": 10,
+  "output_text": "cuesta 14."
+ },
+ {
+  "home": "es",
+  "sample": "overthere",
+  "input_chars": 29,
+  "output_chars": 25,
+  "output_text": "Por allá, a la izquierda."
+ },
+ {
+  "home": "es",
+  "sample": "time",
+  "input_chars": 19,
+  "output_chars": 17,
+  "output_text": "Las tres y media."
+ },
+ {
+  "home": "es",
+  "sample": "station",
+  "input_chars": 27,
+  "output_chars": 32,
+  "output_text": "¿Dónde está la estación de tren?"
+ },
+ {
+  "home": "es",
+  "sample": "control1",
+  "input_chars": 41,
+  "output_chars": 64,
+  "output_text": "dos cuadras más adelante, luego a la izquierda en los semáforos."
+ },
+ {
+  "home": "es",
+  "sample": "control2",
+  "input_chars": 58,
+  "output_chars": 49,
+  "output_text": "El próximo tren sale en 20 minutos del andén dos."
+ },
+ {
+  "home": "fr",
+  "sample": "yes",
+  "input_chars": 4,
+  "output_chars": 4,
+  "output_text": "Oui."
+ },
+ {
+  "home": "fr",
+  "sample": "no",
+  "input_chars": 3,
+  "output_chars": 4,
+  "output_text": "Non."
+ },
+ {
+  "home": "fr",
+  "sample": "thanks",
+  "input_chars": 10,
+  "output_chars": 6,
+  "output_text": "Merci."
+ },
+ {
+  "home": "fr",
+  "sample": "good",
+  "input_chars": 10,
+  "output_chars": 10,
+  "output_text": "Très bien."
+ },
+ {
+  "home": "fr",
+  "sample": "price",
+  "input_chars": 20,
+  "output_chars": 18,
+  "output_text": "ça coûte 14 euros."
+ },
+ {
+  "home": "fr",
+  "sample": "overthere",
+  "input_chars": 29,
+  "output_chars": 17,
+  "output_text": "Là-bas, à gauche."
+ },
+ {
+  "home": "fr",
+  "sample": "time",
+  "input_chars": 19,
+  "output_chars": 22,
+  "output_text": "Trois heures et demie."
+ },
+ {
+  "home": "fr",
+  "sample": "station",
+  "input_chars": 27,
+  "output_chars": 16,
+  "output_text": "Où est la gare ?"
+ },
+ {
+  "home": "fr",
+  "sample": "control1",
+  "input_chars": 41,
+  "output_chars": 55,
+  "output_text": "deux pâtés de maisons plus bas, puis à gauche aux feux."
+ },
+ {
+  "home": "fr",
+  "sample": "control2",
+  "input_chars": 58,
+  "output_chars": 52,
+  "output_text": "Le prochain train part dans 20 minutes du quai deux."
+ },
+ {
+  "home": "ko",
+  "sample": "yes",
+  "input_chars": 4,
+  "output_chars": 2,
+  "output_text": "네."
+ },
+ {
+  "home": "ko",
+  "sample": "no",
+  "input_chars": 3,
+  "output_chars": 4,
+  "output_text": "아니요."
+ },
+ {
+  "home": "ko",
+  "sample": "thanks",
+  "input_chars": 10,
+  "output_chars": 6,
+  "output_text": "감사합니다."
+ },
+ {
+  "home": "ko",
+  "sample": "good",
+  "input_chars": 10,
+  "output_chars": 7,
+  "output_text": "아주 좋아요."
+ },
+ {
+  "home": "ko",
+  "sample": "price",
+  "input_chars": 20,
+  "output_chars": 7,
+  "output_text": "14유로예요."
+ },
+ {
+  "home": "ko",
+  "sample": "overthere",
+  "input_chars": 29,
+  "output_chars": 8,
+  "output_text": "저기, 왼쪽에."
+ },
+ {
+  "home": "ko",
+  "sample": "time",
+  "input_chars": 19,
+  "output_chars": 5,
+  "output_text": "3시 반."
+ },
+ {
+  "home": "ko",
+  "sample": "station",
+  "input_chars": 27,
+  "output_chars": 13,
+  "output_text": "기차역이 어디에 있나요?"
+ },
+ {
+  "home": "ko",
+  "sample": "control1",
+  "input_chars": 41,
+  "output_chars": 24,
+  "output_text": "두 블록 내려가서, 신호등에서 좌회전하세요."
+ },
+ {
+  "home": "ko",
+  "sample": "control2",
+  "input_chars": 58,
+  "output_chars": 29,
+  "output_text": "다음 열차는 2번 플랫폼에서 20분 후에 출발합니다."
+ },
+ {
+  "home": "zh",
+  "sample": "yes",
+  "input_chars": 4,
+  "output_chars": 3,
+  "output_text": "是的。"
+ },
+ {
+  "home": "zh",
+  "sample": "no",
+  "input_chars": 3,
+  "output_chars": 2,
+  "output_text": "不。"
+ },
+ {
+  "home": "zh",
+  "sample": "thanks",
+  "input_chars": 10,
+  "output_chars": 3,
+  "output_text": "谢谢。"
+ },
+ {
+  "home": "zh",
+  "sample": "good",
+  "input_chars": 10,
+  "output_chars": 4,
+  "output_text": "非常好。"
+ },
+ {
+  "home": "zh",
+  "sample": "price",
+  "input_chars": 20,
+  "output_chars": 8,
+  "output_text": "价格是14欧元。"
+ },
+ {
+  "home": "zh",
+  "sample": "overthere",
+  "input_chars": 29,
+  "output_chars": 7,
+  "output_text": "在那边，左边。"
+ },
+ {
+  "home": "zh",
+  "sample": "time",
+  "input_chars": 19,
+  "output_chars": 4,
+  "output_text": "三点半。"
+ },
+ {
+  "home": "zh",
+  "sample": "station",
+  "input_chars": 27,
+  "output_chars": 7,
+  "output_text": "火车站在哪里？"
+ },
+ {
+  "home": "zh",
+  "sample": "control1",
+  "input_chars": 41,
+  "output_chars": 16,
+  "output_text": "两个街区后，然后在红绿灯处左转。"
+ },
+ {
+  "home": "zh",
+  "sample": "control2",
+  "input_chars": 58,
+  "output_chars": 20,
+  "output_text": "下一班列车将在20分钟后从2号站台出发。"
+ }
+]
