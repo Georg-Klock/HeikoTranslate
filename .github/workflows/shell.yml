@@ -62,3 +62,11 @@ jobs:
 
       - name: Build-number failure windows
         run: Tools/tests/build-number-windows.sh
+
+      # The L2 probe's lifecycle proof (#65/#67 review): drives the real
+      # livetest.run() against a LOCAL WebSocket server — deadline teardown,
+      # prompt goAway closure, close-mid-send. Loopback only; no key.
+      - name: Probe lifecycle against a local server
+        run: |
+          pip install --quiet websockets
+          Tools/tests/livetest-lifecycle.py
