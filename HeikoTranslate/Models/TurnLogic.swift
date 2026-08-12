@@ -80,35 +80,45 @@ struct TurnLogic {
     static let settleWindow: TimeInterval = 1.5
     /// A tally with no fresh votes for this long belongs to a dead context.
     static let voteExpiry: TimeInterval = 4.0
-    /// The home session's output must be at least this fraction of the
-    /// partner session's before it counts as a real translation — its false
-    /// starts ("Ich", 3 chars vs 95) must not decide the turn.
-    static let homeOutputRatioFloor = 0.4
-    /// Absolute floor when the partner session hasn't produced anything yet.
-    ///
-    /// GERMAN-CALIBRATED, like `minCorroboratedHomeOutput` below. Both are
-    /// character counts measured against German output, and `home` is not
-    /// always German — the settings sheet offers all six on the home wheel
-    /// (L1.29e). Chinese and Korean say the same thing in far fewer
-    /// characters, so these floors are stricter there than they read here.
-    /// Latent rather than urgent: Heiko's home language is German. GitHub #38.
-    static let minDecisiveHomeOutput = 8
+    /// The output-substance floors, PER HOME LANGUAGE. Character counts
+    /// carry different amounts of meaning per script (#29): eight characters
+    /// of German is one short word, eight of Chinese a substantial clause —
+    /// and `home` is not always German; the settings sheet offers all six on
+    /// the home wheel (L1.29e).
+    struct OutputFloors {
+        /// Absolute floor when the partner session hasn't produced anything
+        /// yet — the home output must stand on its own.
+        let decisive: Int
+        /// Floor once the codes HAVE settled on a non-home language AND the
+        /// partner session echoed. Corroboration does the work then; this
+        /// only stops a bare false start riding in beside a full echo.
+        /// Deliberately NOT applied when nothing echoed — see
+        /// `homeIsRealTranslation`; a floor there would swallow "Ja" (2) and
+        /// "Nein" (4), L1.41b.
+        let corroborated: Int
+        /// The home output as a fraction of the partner echo before it
+        /// counts as a real translation on length alone.
+        let ratio: Double
+    }
 
-    /// Floor once the codes HAVE settled on a non-home language AND the
-    /// partner session echoed. Corroboration is doing the work at that point;
-    /// this only has to stop a bare false start from riding in beside a full
-    /// echo.
-    ///
-    /// Two measured points bracket it: the false start is "Ich" (3 chars,
-    /// L1.22) and the real translation is "14 Euro" (7 chars, measured
-    /// 2026-07-29). 5 clears every false start observed so far — they are
-    /// aborted pronouns and articles, "Ich" / "Das" / "Und" — with a character
-    /// of margin, and admits the short numeric answers Heiko will actually
-    /// get at a till. GitHub #23.
-    ///
-    /// Deliberately NOT applied when nothing echoed: see
-    /// `homeIsRealTranslation`. Also German-calibrated — see above.
-    static let minCorroboratedHomeOutput = 5
+    /// The measured German values, unchanged: ratio 0.4 (false starts —
+    /// "Ich", 3 chars vs 95 — must not decide a turn), decisive 8, and
+    /// corroborated 5, bracketed by the measured points "Ich" (3, L1.22)
+    /// and "14 Euro" (7, 2026-07-29) — clearing every observed false start
+    /// with a character of margin while admitting the short numeric answers
+    /// Heiko actually gets at a till. GitHub #23.
+    static let germanBaselineFloors = OutputFloors(decisive: 8, corroborated: 5, ratio: 0.4)
+
+    /// Every language currently carries the German-measured baseline —
+    /// behaviour identical to the shared constants this replaces. The rule
+    /// for what lands here, stated before any number does: a language's
+    /// entry comes from `Tools/floor_measurement.py`'s campaign, and may
+    /// only LOOSEN relative to the baseline, never tighten — German is the
+    /// calibrated reference, and #29's defect is over-rejection in dense
+    /// scripts. GitHub #29.
+    static func floors(for home: Lang) -> OutputFloors {
+        germanBaselineFloors
+    }
     /// How long the partner session must translate alone before home-session
     /// silence proves the home language was spoken.
     static let homeSilenceConfirmDelay: TimeInterval = 1.2
@@ -432,7 +442,7 @@ struct TurnLogic {
         let partnerCount = text(partner).count
         if partnerCount > 0 {
             // Plenty long relative to the echo — decisive on its own.
-            if Double(homeText.count) / Double(partnerCount) >= homeOutputRatioFloor { return true }
+            if Double(homeText.count) / Double(partnerCount) >= Self.floors(for: home).ratio { return true }
             // The ratio failed, but settled non-home codes can still rescue a
             // SHORT genuine translation. This branch used to be unreachable
             // whenever the partner session echoed — and an echo is the common
@@ -450,7 +460,7 @@ struct TurnLogic {
             // for — still swallowed whenever the partner echoed. L1.31 passed
             // only because its example ("14 Euro bitte") is 13. GitHub #23.
             if let spoken = spokenLang, spoken != home {
-                return homeText.count >= minCorroboratedHomeOutput
+                return homeText.count >= Self.floors(for: home).corroborated
             }
             return false
         }
@@ -459,7 +469,7 @@ struct TurnLogic {
         // against here, and a floor would swallow "Ja" (2) and "Nein" (4).
         // L1.41b pins it.
         if let spoken = spokenLang, spoken != home { return true }
-        return homeText.count >= minDecisiveHomeOutput
+        return homeText.count >= Self.floors(for: home).decisive
     }
 
     /// Re-evaluate the turn's direction from everything the sessions have

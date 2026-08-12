@@ -36,6 +36,10 @@ struct ExpectedBubble {
 let pairs: [String: (TurnLogic.Lang, TurnLogic.Lang)] = [
     "es_short": (.de, .es),
     "de_after_es": (.de, .es),
+    // #29: German spoken under a CHINESE-home pair — the zh session is the
+    // home translator, and its few-character output is what the per-script
+    // floors exist to admit.
+    "de_price_short": (.zh, .de),
 ]
 
 let expectations: [String: [ExpectedBubble]] = [
@@ -57,13 +61,17 @@ let expectations: [String: [ExpectedBubble]] = [
     // One German utterance with an internal breath pause (#78): ONE bubble,
     // both halves present (word floor), ONE release.
     "de_pause": [ExpectedBubble(isHome: true, translator: .en, minOriginalWords: 10)],
+    // Foreign (German) speech under the zh-home pair: LEFT bubble, the home
+    // (zh) session translating. The translation is legitimately only a few
+    // characters — the #29 discriminator.
+    "de_price_short": [ExpectedBubble(isHome: false, translator: .zh)],
     "silence": [],
     "noise": [],
 ]
 
 let defaultOrder = ["en_short", "de_short", "es_short", "en_entities",
                     "en_long", "de_after_en", "de_after_es", "de_pause",
-                    "silence", "noise"]
+                    "de_price_short", "silence", "noise"]
 
 /// #78: expected count of "speaker stopped" releases, for cases that pin
 /// the release timing. `de_pause` holds one utterance with an internal
