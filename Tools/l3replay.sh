@@ -19,6 +19,7 @@ swiftc -O -o .build/l3replay \
   HeikoTranslate/Models/FillerWords.swift \
   HeikoTranslate/Models/FinalizePolicy.swift \
   HeikoTranslate/Models/SpeechEndPolicy.swift \
+  HeikoTranslate/Models/KeyCheck.swift \
   HeikoTranslate/Services/GeminiLiveSession.swift \
   Tools/l3replay/common.swift \
   Tools/l3replay/main.swift
