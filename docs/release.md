@@ -20,9 +20,6 @@ Flags: `--no-tests` skips the L1+L3 gate (don't), `--no-l3` runs only L1 when
 you have already run L3 this session, `--dry-run` archives and then restores
 the build number, so a dry run leaves the tree exactly as it found it.
 
-It also **refuses to release while `DIAGNOSTIC_UPLOAD_URL` is set** — see the
-last section. `ALLOW_UPLOAD_URL=1` overrides, for a build going nowhere near
-the public link.
 
 After a successful upload it commits the build-number bump to `main`. That is
 the one commit exempt from the branch-and-PR rule (`CLAUDE.md`), because it
@@ -82,10 +79,3 @@ version; bump when he is home.
   `CFBundleVersion` joined, e.g. `2.3.35`. The build number is the part that
   moves; that is why "did my phone update?" stays answerable without touching
   the marketing version.
-- **`DIAGNOSTIC_UPLOAD_URL` and the public TestFlight link must never both be
-  live.** The log contains conversation transcripts — Heiko's and his
-  counterpart's. With a public link, those are strangers' conversations
-  landing in Georg's bucket. `release.sh` refuses to build while that key is
-  present in `HeikoTranslate/Resources/Secrets.plist`; `ALLOW_UPLOAD_URL=1`
-  overrides it. This used to be a line in a document asking a human to
-  remember, which is not a control.

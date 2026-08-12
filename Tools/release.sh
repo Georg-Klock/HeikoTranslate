@@ -85,34 +85,6 @@ if [[ -n "${L3_ALLOW_RAW:-}" || -n "${L3_INJECT_RAW:-}" ]]; then
   exit 2
 fi
 
-# The log holds full conversation transcripts — Heiko's and whoever he is
-# talking to. With DIAGNOSTIC_UPLOAD_URL set, the app POSTs it on every
-# backgrounding. A TestFlight build can reach the public link, where those
-# would be strangers' conversations landing in Georg's bucket. docs/release.md
-# says to check this by hand; a script that checks is worth more than a doc
-# that asks you to remember.
-#
-# Test the VALUE, not the key name. Secrets.plist.example ships the key with
-# "REPLACE-ME" in it, and AppConfig deliberately ignores that — so grepping for
-# the key alone refuses a build that would never upload anything. This mirrors
-# AppConfig.diagnosticUploadURL exactly: non-empty, not REPLACE-ME, https.
-SECRETS="HeikoTranslate/Resources/Secrets.plist"
-UPLOAD_URL=""
-if [[ -f "$SECRETS" ]]; then
-  UPLOAD_URL=$(/usr/libexec/PlistBuddy -c "Print :DIAGNOSTIC_UPLOAD_URL" "$SECRETS" 2>/dev/null || true)
-fi
-if [[ -n "$UPLOAD_URL" && "$UPLOAD_URL" != "REPLACE-ME" && "$UPLOAD_URL" == https://* ]]; then
-  if [[ "${ALLOW_UPLOAD_URL:-0}" != "1" ]]; then
-    echo "!!  DIAGNOSTIC_UPLOAD_URL is set in Secrets.plist." >&2
-    echo "!!  This build would POST conversation transcripts on every" >&2
-    echo "!!  backgrounding, and a TestFlight build can reach the public" >&2
-    echo "!!  link — those would be strangers' conversations." >&2
-    echo "!!  Remove the key, or re-run with ALLOW_UPLOAD_URL=1 if this" >&2
-    echo "!!  build is genuinely going nowhere near the public link." >&2
-    exit 2
-  fi
-  echo "==> WARNING: releasing with DIAGNOSTIC_UPLOAD_URL set (overridden)"
-fi
 
 if [[ "$RUN_TESTS" == "1" ]]; then
   # One definition of "L1 passed", shared with deploy.sh and quoted in PR

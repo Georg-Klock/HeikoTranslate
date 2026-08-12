@@ -43,8 +43,11 @@ privacy page along with it, which is harmless.
 
 Everything below is true of the app as built. If any of it stops being true —
 particularly the "stores nothing off the device" line — this file and the page
-must change on the same day. `DIAGNOSTIC_UPLOAD_URL` being set would make that
-sentence false.
+must change on the same day. Since 2026-08-12 that sentence is true BY
+CONSTRUCTION: the automatic diagnostic-upload path was removed entirely
+(GitHub #8, Georg's decision), so no configuration of the app can send a log
+anywhere on its own — the manual share row and the cable are the only routes,
+both human-initiated.
 
 ---
 
