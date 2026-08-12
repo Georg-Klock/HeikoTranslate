@@ -289,6 +289,22 @@ not be committed).
 | L1.76c | Exhausted sessions + a probe that confirms revocation | `keyRevoked`, the reader-language update sentence shown, listening refused until updated | **R8/#9** |
 | L1.76d | Exhausted sessions + an inconclusive probe | Generic messaging stands; nothing terminal | **#9** |
 
+Resumed speech un-stops the turn (#83, 2026-08-12). Device finding: once
+"speaker stopped" was set, the mic was never consulted again until commit,
+so speech resuming in that ~2s window was half-committed, half-dropped, and
+talked over. A loud mic buffer in the window now returns the turn to normal
+listening; the regular end-of-turn clock re-governs, so a cough merely
+re-runs the stop 1.4s later. Loudspeaker playback is gated out — an
+echo-driven un-stop would hold turns open forever. Needs the device
+re-validation the next phone session: the case-1 long-breath run should now
+show `speaker resumed during the commit window` instead of losing words.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.77 | A loud mic buffer while stopped, no playback | The turn un-stops — the person is still talking | **R1/#83** |
+| L1.77b | A loud mic buffer while our own translation plays | No un-stop — echo proves nothing | **#35/#83** |
+| L1.77c | A loud buffer on a live turn | Nothing changes | **#83** |
+
 Commit diagnostics. Evidence only — these must never influence which
 transcript `TurnLogic` commits.
 
