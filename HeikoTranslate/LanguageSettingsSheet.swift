@@ -276,6 +276,11 @@ struct LanguageColumn: View {
         // travels with a row. It sits BEHIND the rows, which is what puts the
         // parked language inside it and lets the others pass over it.
         .background(alignment: .topLeading) {
+            // Hidden from accessibility explicitly: the column is ONE
+            // adjustable element (#14), and a SwiftUI background escapes
+            // `children: .ignore` — the real tree surfaced this descriptor
+            // as a second element with the same label, found by the local
+            // UI test on its first run.
             VStack(alignment: .leading, spacing: descriptorGap) {
                 Text(descriptor)
                     .font(.system(size: descriptorSize, weight: .medium))
@@ -293,6 +298,7 @@ struct LanguageColumn: View {
                         .stroke(stroke, lineWidth: 1))
                     .frame(height: slot, alignment: .center)
             }
+            .accessibilityHidden(true)
             .frame(maxWidth: .infinity, alignment: onRight ? .trailing : .leading)
         }
         .scrollTargetBehavior(.viewAligned)
