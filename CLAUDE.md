@@ -273,11 +273,12 @@ the point of the project; hiding it is what would look bad.
   English, so anything he might be asked to do must be readable by him.
   `Tests/GermanUITests.swift` fails the build if a new user-facing string
   appears that hasn't been reviewed for language.
-- Logs can also upload themselves: set `DIAGNOSTIC_UPLOAD_URL` in
-  `Secrets.plist` and the app POSTs its log on backgrounding. Absent by
-  default, and absent means nothing is ever sent. The log contains
-  conversation transcripts — Heiko's and his counterpart's — so that switch
-  is a decision about other people's speech, not just about debugging.
+- Logs never leave the phone by themselves. The automatic-upload path
+  was removed by decision (GitHub #8, 2026-08-12): the manual share row
+  and `Tools/pull_logs.sh` are the only ways a log moves, both
+  human-initiated. This is what makes the privacy disclosure true by
+  construction.
+
 - The app writes a diagnostic log on device every launch. After any device
   session that misbehaved, run `Tools/pull_logs.sh` and read it before
   theorising — this project has lost time to guessing at timing bugs that

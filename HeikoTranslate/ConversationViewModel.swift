@@ -633,11 +633,6 @@ final class ConversationViewModel: ObservableObject {
                 resumeWhenActive = true
                 stop()
             }
-            // Flush first, then send: the last lines written are usually the
-            // ones that explain whatever just went wrong. No-op unless an
-            // upload URL is configured.
-            DiagnosticLog.shared.flush()
-            LogUploader.uploadCurrentLog(reason: hasEverStarted ? "session" : "launch")
         case .active:
             diag("app", "foregrounded (resume=\(resumeWhenActive))")
             sceneIsActive = true
