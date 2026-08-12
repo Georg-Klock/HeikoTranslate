@@ -244,6 +244,19 @@ a test. One campaign exclusion, recorded in the table: a ~300ms utterance
 | L1.74c | The decisive path, densest script: 1 char alone vs a 3-char real answer | 1 stays a false start; 3 stands, which the baseline 8 swallowed | **R2/R4** |
 | L1.74d | zh/ko short answers through commit under settled foreign codes | Shape coverage, labelled as such — the settled-codes route admits these regardless; the discrimination lives in the rows above | **R2** |
 
+Partner-only languages (#30, 2026-08-12). Tagalog and Vietnamese are
+selectable as the partner, never as home (`canBeHome`): the wheel filters,
+the SPEC §4.4 collision swap falls back instead of seating them, and the
+home binding refuses them outright. L1.44 encodes the amended rule: a
+partner-only language needs a NAME in every set and falls back to German,
+not a set of its own. Verified live before landing: `targetprobe.sh tl vi`
+translated both.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.75 | The collision swap with a partner-only old partner | Falls back (default home, or its counterpart on a second collision) — never seats tl/vi on home | **§4.4/#30** |
+| L1.75b | Any write of a partner-only language to the home binding | Refused; previous home survives; the pair stays distinct | **R8/#30** |
+
 Commit diagnostics. Evidence only — these must never influence which
 transcript `TurnLogic` commits.
 
@@ -843,7 +856,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 162 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService`, `ConversationViewModel` and `BackgroundTaskLease` (2026-08-11) |
+| L1 | ✅ Built and passing — 166 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService` and `ConversationViewModel` (2026-08-12) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Needs a device re-run. The 2026-08-11 queue landed service-layer fixes for the replacement window (#15), audio-startup transactionality (#16), start serialization (#13), late fragments (#39) and session-lifecycle races (#1) — none re-verified on a phone. The ordered plan, with the log lines that decide each block, is on GitHub #27; the needs-validation issues (#31–#40 family) track what specifically to confirm. (An earlier version of this row still described the three-session design; the pair design has run exactly two sessions since 2026-07-28.) |

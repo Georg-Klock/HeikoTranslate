@@ -27,7 +27,10 @@ The app translates between an explicitly selected **language pair**
 (language pill → Sprachen): a **home** language (German by default — the phone
 owner's reader language) and a **partner** language (English/🇺🇸 by
 default). Available: German, English (US), Spanish (MX), French, Korean,
-Chinese — every pairing, both directions.
+Chinese — every pairing, both directions. Tagalog and Vietnamese are
+**partner-only** (decision, 2026-08-12): selectable as the other person's
+language, never as home — home is the reader's side and renders the whole
+UI, and these two have no reviewed UI set.
 
 - Someone speaks the **partner language** → said in the **home language**.
 - Someone speaks the **home language** → said in the **partner language**.

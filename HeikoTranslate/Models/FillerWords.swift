@@ -48,7 +48,10 @@ enum FillerWords {
         switch lang {
         case .de: return strip(text, isGerman: true)
         case .en, .es: return strip(text, isGerman: false)
-        case .fr, .ko, .zh: return text
+        // tl/vi join the unstudied set for the same reason (#30): deleting
+        // real words is the expensive failure, and nobody has studied their
+        // hesitation noises against real-word collisions.
+        case .fr, .ko, .zh, .tl, .vi: return text
         }
     }
 

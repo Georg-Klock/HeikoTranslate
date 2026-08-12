@@ -69,11 +69,17 @@ struct UIStrings {
     let startListeningLabel: String
     let stopListeningLabel: String
 
-    /// The six languages, named in THIS language.
+    /// Every selectable language — the six full ones plus the
+    /// partner-only pair (#30) — named in THIS language.
     let languageNames: [TurnLogic.Lang: String]
 
     static func of(_ lang: TurnLogic.Lang) -> UIStrings {
         switch lang {
+        // Partner-only languages (#30) can never be the HOME/reader side —
+        // `canBeHome` gates the wheel and the collision swap — so no UI set
+        // exists for them. German is the safe fallback if an impossible
+        // state ever reaches here: the app's own language.
+        case .tl, .vi: return german
         case .de: return german
         case .en: return english
         case .es: return spanish
@@ -110,7 +116,8 @@ struct UIStrings {
         startListeningLabel: "Zuhören starten",
         stopListeningLabel: "Zuhören beenden",
         languageNames: [.de: "Deutsch", .en: "Englisch", .es: "Spanisch",
-                        .fr: "Französisch", .ko: "Koreanisch", .zh: "Chinesisch"])
+                        .fr: "Französisch", .ko: "Koreanisch", .zh: "Chinesisch",
+                        .tl: "Tagalog", .vi: "Vietnamesisch"])
 
     static let english = UIStrings(
         connecting: "Connecting…",
@@ -138,7 +145,8 @@ struct UIStrings {
         startListeningLabel: "Start listening",
         stopListeningLabel: "Stop listening",
         languageNames: [.de: "German", .en: "English", .es: "Spanish",
-                        .fr: "French", .ko: "Korean", .zh: "Chinese"])
+                        .fr: "French", .ko: "Korean", .zh: "Chinese",
+                        .tl: "Tagalog", .vi: "Vietnamese"])
 
     // MARK: - Unreviewed translations (see the note on this type)
 
@@ -168,7 +176,8 @@ struct UIStrings {
         startListeningLabel: "Empezar a escuchar",
         stopListeningLabel: "Dejar de escuchar",
         languageNames: [.de: "Alemán", .en: "Inglés", .es: "Español",
-                        .fr: "Francés", .ko: "Coreano", .zh: "Chino"])
+                        .fr: "Francés", .ko: "Coreano", .zh: "Chino",
+                        .tl: "Tagalo", .vi: "Vietnamita"])
 
     static let french = UIStrings(
         connecting: "Connexion…",
@@ -196,7 +205,8 @@ struct UIStrings {
         startListeningLabel: "Commencer à écouter",
         stopListeningLabel: "Arrêter d'écouter",
         languageNames: [.de: "Allemand", .en: "Anglais", .es: "Espagnol",
-                        .fr: "Français", .ko: "Coréen", .zh: "Chinois"])
+                        .fr: "Français", .ko: "Coréen", .zh: "Chinois",
+                        .tl: "Tagalog", .vi: "Vietnamien"])
 
     static let korean = UIStrings(
         connecting: "연결 중…",
@@ -224,7 +234,8 @@ struct UIStrings {
         startListeningLabel: "듣기 시작",
         stopListeningLabel: "듣기 중지",
         languageNames: [.de: "독일어", .en: "영어", .es: "스페인어",
-                        .fr: "프랑스어", .ko: "한국어", .zh: "중국어"])
+                        .fr: "프랑스어", .ko: "한국어", .zh: "중국어",
+                        .tl: "타갈로그어", .vi: "베트남어"])
 
     static let chinese = UIStrings(
         connecting: "连接中…",
@@ -252,7 +263,8 @@ struct UIStrings {
         startListeningLabel: "开始聆听",
         stopListeningLabel: "停止聆听",
         languageNames: [.de: "德语", .en: "英语", .es: "西班牙语",
-                        .fr: "法语", .ko: "韩语", .zh: "中文"])
+                        .fr: "法语", .ko: "韩语", .zh: "中文",
+                        .tl: "他加禄语", .vi: "越南语"])
 }
 
 extension TurnLogic.Lang {
