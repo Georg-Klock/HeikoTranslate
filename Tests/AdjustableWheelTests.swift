@@ -27,8 +27,11 @@ final class AdjustableWheelTests: XCTestCase {
 
         let home = LanguageColumn.selectableOptions(
             excludesOtherSide: false, otherSide: .de, displayName: name)
-        XCTAssertEqual(home.count, TurnLogic.Lang.allCases.count,
-                       "the ME column always offers all six — a collision there swaps, by design")
+        XCTAssertEqual(home.count,
+                       TurnLogic.Lang.allCases.filter(\.canBeHome).count,
+                       "the ME column offers every full app language — a collision there swaps, by design")
+        XCTAssertTrue(home.allSatisfy(\.canBeHome),
+                      "a partner-only language (#30) never reaches the home wheel")
     }
 
     // A full lap in each direction visits every option exactly once and
