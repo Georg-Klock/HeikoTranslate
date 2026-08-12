@@ -17,8 +17,9 @@ import XCTest
 /// check you cannot trust gets muted. Any new or edited string fails here
 /// until a human looks at it and decides — which is the whole point.
 ///
-/// `CostSheet.swift` is deliberately out of scope: it is the developer's cost
-/// and token detail, in English, reached only via Settings → Nutzung. The one
+/// (The old CostSheet — developer cost detail in English — was deleted by
+/// decision on 2026-08-12, GitHub #7: costs are checked in the provider's
+/// console. CostTracker still counts, invisibly. The one
 /// thing in it that Heiko might need is surfaced one level up, in German.
 final class GermanUITests: XCTestCase {
 
@@ -264,7 +265,7 @@ final class GermanUITests: XCTestCase {
             contentsOf: repoRoot.appendingPathComponent("HeikoTranslate/LanguageSettingsSheet.swift"),
             encoding: .utf8)
         XCTAssertTrue(sheet.contains("ShareLink"),
-                      "the settings sheet must offer the log directly, not only via CostSheet")
+                      "the settings sheet must offer the log directly")
         // The literal moved into `UIStrings`; the sheet reads it from there.
         // Both halves still have to hold: the sheet must use the log string,
         // and that string must still be the reviewed German (L1.43 pins the

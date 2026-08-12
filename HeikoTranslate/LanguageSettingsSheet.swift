@@ -340,7 +340,6 @@ private struct TextSizeSlider: View {
 
 struct LanguageSettingsSheet: View {
     @ObservedObject var viewModel: ConversationViewModel
-    @ObservedObject private var tracker = CostTracker.shared
     @Environment(\.dismiss) private var dismiss
     @AppStorage(TextSize.key) private var textSizeStep = TextSize.defaultStep
 
@@ -426,7 +425,6 @@ struct LanguageSettingsSheet: View {
                 Spacer(minLength: 0)
 
                 VStack(spacing: 10) {
-                    usageRow
                     TextSizeSlider(step: $textSizeStep, label: strings.textSize)
                     logRow
                 }
@@ -497,40 +495,10 @@ struct LanguageSettingsSheet: View {
         .preferredColorScheme(.dark)
     }
 
-    /// Usage, tucked under the language settings — free tier, so the dollar
-    /// figure is what the paid tier WOULD cost.
-    /// A readout, not a control. The chevron and the detail sheet behind it
-    /// are gone: this row now says what it says and nothing else, which is one
-    /// fewer tappable thing on a screen whose user should never have to wonder
-    /// what is a button.
-    private var usageRow: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(strings.usage)
-                    .fadeThrough(viewModel.homeLang)
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                Text(String(format: strings.minutesSpokenFormat, tracker.audioMinutesIn))
-                    .fadeThrough(viewModel.homeLang)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer()
-            Text(usd(tracker.estimatedCostUSD))
-                .font(.callout.weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
-    }
 
     /// The one thing the user may be asked to do remotely: send the log.
     /// It has to be one tap from the language pill, in German, and named after
-    /// the person who receives it — the developer-facing copy lives one level
-    /// deeper in CostSheet.
+    /// the person who receives it.
     @ViewBuilder
     private var logRow: some View {
         if let log = logFile {
