@@ -384,6 +384,68 @@ final class ConversationViewModel: ObservableObject {
     func forceMicPermissionDeniedForTesting() { micPermissionDenied = true }
     #endif
 
+    /// The embedded key is revoked (GitHub #9). Terminal like a denied
+    /// permission, and handled the same way: the one button stops trying to
+    /// listen and opens the update page instead. Never cleared — a revoked
+    /// key cannot come back; only an updated build can.
+    @Published private(set) var keyRevoked = false
+
+    /// The confirmation step between "connections keep failing" and "tell
+    /// the user this build is dead". Tests substitute a canned verdict; the
+    /// real closure asks the API over REST (`KeyProbe`), because convicting
+    /// the key on connection failures alone would show "update the app" to
+    /// anyone on airport WiFi.
+    var keyProbeForTesting: (() async -> KeyCheck.Verdict)?
+
+    private var keyConfirmationTask: Task<Void, Never>?
+
+    /// What `onSessionsExhausted` runs — a named method rather than closure
+    /// body so the test seam drives the identical code, not a copy.
+    private func handleSessionsExhausted() {
+        stop()
+        // "For good" has exactly one cause that no retry, tap or better WiFi
+        // will ever fix: a revoked key. One REST probe settles it; if
+        // confirmed, the message upgrades from "try again" to "update the
+        // app". GitHub #9.
+        confirmKeyAfterExhaustedSessions()
+    }
+
+    private func confirmKeyAfterExhaustedSessions() {
+        guard !keyRevoked else { return }
+        let probe = keyProbeForTesting ?? KeyProbe.currentVerdict
+        keyConfirmationTask = Task { @MainActor [weak self] in
+            guard await probe() == .revoked else { return }
+            self?.noteKeyRevoked("post-exhaustion probe")
+        }
+    }
+
+    #if DEBUG
+    /// Reaching the exhausted state for real needs three failed connection
+    /// attempts against a live socket. DEBUG-only, same code path.
+    func forceSessionsExhaustedForTesting() { handleSessionsExhausted() }
+    /// Lets a test wait for the probe verdict instead of sleeping.
+    func awaitKeyConfirmationForTesting() async { await keyConfirmationTask?.value }
+    #endif
+
+    private func noteKeyRevoked(_ evidence: String) {
+        guard !keyRevoked else { return }
+        diag("app", "API key revoked (\(evidence)) — showing the update sentence, no more retries")
+        keyRevoked = true
+        errorMessage = strings.updateRequired
+        stop()
+    }
+
+    /// Opens the update page. Soft on a missing URL by design: a build
+    /// without `APP_UPDATE_URL` keeps showing the sentence, and the tap
+    /// stays a no-op rather than a crash or a lie in the log.
+    private func openUpdatePage() {
+        guard let url = AppConfig.appUpdateURL else {
+            diag("app", "update tap with no APP_UPDATE_URL configured — nowhere to send it")
+            return
+        }
+        UIApplication.shared.open(url)
+    }
+
     /// Fold a fresh reading of the microphone permission into the denial state.
     /// Split from the scene-phase handler so L1 can exercise it without an
     /// audio session — the branch is otherwise unreachable from a test, which
@@ -503,6 +565,11 @@ final class ConversationViewModel: ObservableObject {
         // never show again. Deliberately still ONE button doing one thing at a
         // time — the alternative was adding a second control to a single-button
         // app, or leaving Heiko tapping something that cannot work. GitHub #25.
+        if keyRevoked {
+            diag("ui", "tap while the key is revoked — opening the update page")
+            openUpdatePage()
+            return
+        }
         if micPermissionDenied {
             diag("ui", "opening Settings for the denied microphone permission")
             openSettings()
@@ -555,6 +622,14 @@ final class ConversationViewModel: ObservableObject {
     /// Ensures mic permission, then starts listening. Called on every unmute
     /// and when resuming after an interruption.
     func beginListening() async {
+        // A revoked key is terminal for this build — an automatic resume
+        // restarting the doomed connect-retry-fail loop would replace the
+        // update sentence with "Verbinde…", which is a promise the app
+        // cannot keep. GitHub #9.
+        guard !keyRevoked else {
+            diag("app", "start requested while the key is revoked — refusing; only an update fixes this")
+            return
+        }
         // One start at a time: a second trigger while one is pending (a
         // double-tap racing an automatic resume, two resume paths firing)
         // must not run the gate concurrently — two grants both called
@@ -1048,13 +1123,22 @@ final class ConversationViewModel: ObservableObject {
                     self.messages.append(Message(original: original, translation: translation, fromHome: wasHome))
                     self.liveTranscript = ""
                     // Translation is flowing, so the connection evidently
-                    // works — don't leave a stale error banner up.
-                    self.errorMessage = nil
+                    // works — don't leave a stale error banner up. Unless
+                    // the key was revoked mid-conversation: a straggler
+                    // utterance landing after that verdict must not wipe
+                    // the one sentence that says what to do. GitHub #9.
+                    if !self.keyRevoked { self.errorMessage = nil }
                 },
                 onActivity: { [weak self] activity in
                     self?.activity = activity
                 },
                 onError: { [weak self] message in
+                    // A server that names API_KEY_INVALID in an error frame
+                    // has already answered what the probe would ask. GitHub #9.
+                    if KeyCheck.verdict(fromResponseBody: message) == .revoked {
+                        self?.noteKeyRevoked("server error frame")
+                        return
+                    }
                     self?.errorMessage = self?.strings.connectionError
                     print("GeminiLiveTranslationService error: \(message)")
                 },
@@ -1079,7 +1163,7 @@ final class ConversationViewModel: ObservableObject {
                     // says "bitte nochmal versuchen". Leaving the spinner up
                     // beside that error was two contradictory claims at once.
                     // GitHub #4, SPEC R8.
-                    self?.stop()
+                    self?.handleSessionsExhausted()
                 },
                 onConnectionQuality: { [weak self] quality in
                     guard let self else { return }

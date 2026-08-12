@@ -35,4 +35,20 @@ enum AppConfig {
         }
         return key
     }()
+
+    /// Where "Zum Aktualisieren antippen" leads: this app's install page,
+    /// read from `APP_UPDATE_URL` in Secrets.plist. Optional and read
+    /// SOFTLY, unlike the key above — a build without it still shows the
+    /// update sentence, the tap just has nowhere to go. It lives in
+    /// Secrets.plist rather than the repo because the value is an unlisted
+    /// App Store link: publishing it in a public repository would unlist it.
+    /// GitHub #9.
+    static var appUpdateURL: URL? = {
+        guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
+              let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let string = plist["APP_UPDATE_URL"] as? String, !string.isEmpty
+        else { return nil }
+        return URL(string: string)
+    }()
 }

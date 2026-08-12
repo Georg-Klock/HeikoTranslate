@@ -37,6 +37,12 @@ struct UIStrings {
     /// the #6 native-review backlog like the rest of their sets.
     let micResumeFailed: String
     let connectionError: String
+    /// The key this build shipped with has been revoked — rotation after
+    /// abuse, see GitHub #9. Terminal in a way connectionError is not: no
+    /// retry can ever work, only an update can, and the one button opens the
+    /// update page (the micDenied pattern). German is a CANDIDATE awaiting
+    /// Georg's on-device check; the other five ride the #6 review backlog.
+    let updateRequired: String
 
     // Connection warnings
     let poorConnection: String
@@ -100,6 +106,7 @@ struct UIStrings {
         micFailed: "Mikrofon konnte nicht gestartet werden.",
         micResumeFailed: "Mikrofon ist aus — bitte antippen.",
         connectionError: "Verbindungsfehler. Bitte nochmal versuchen.",
+        updateRequired: "Diese Version der App funktioniert nicht mehr. Zum Aktualisieren antippen.",
         poorConnection: "Schlechte Verbindung — die Übersetzung kann darunter leiden.",
         noServerResponse: "Keine Antwort vom Server — bitte Internetverbindung prüfen.",
         offline: "Keine Internetverbindung.",
@@ -129,6 +136,7 @@ struct UIStrings {
         micFailed: "Couldn't start the microphone.",
         micResumeFailed: "Microphone is off — tap to turn it back on.",
         connectionError: "Connection problem. Please try again.",
+        updateRequired: "This version of the app no longer works. Tap to update.",
         poorConnection: "Poor connection — translation quality may drop.",
         noServerResponse: "No response from the server — please check your connection.",
         offline: "No internet connection.",
@@ -160,6 +168,7 @@ struct UIStrings {
         micFailed: "No se pudo iniciar el micrófono.",
         micResumeFailed: "El micrófono está apagado — toca la pantalla.",
         connectionError: "Error de conexión. Inténtalo de nuevo.",
+        updateRequired: "Esta versión de la app ya no funciona. Toca para actualizar.",
         poorConnection: "Mala conexión — la traducción puede verse afectada.",
         noServerResponse: "El servidor no responde — revisa tu conexión.",
         offline: "Sin conexión a internet.",
@@ -189,6 +198,7 @@ struct UIStrings {
         micFailed: "Impossible de démarrer le microphone.",
         micResumeFailed: "Le microphone est coupé — touchez l'écran, s'il vous plaît.",
         connectionError: "Problème de connexion. Veuillez réessayer.",
+        updateRequired: "Cette version de l'app ne fonctionne plus. Touchez pour mettre à jour.",
         poorConnection: "Connexion faible — la traduction peut s'en ressentir.",
         noServerResponse: "Pas de réponse du serveur — vérifiez votre connexion.",
         offline: "Pas de connexion internet.",
@@ -218,6 +228,7 @@ struct UIStrings {
         micFailed: "마이크를 시작할 수 없습니다.",
         micResumeFailed: "마이크가 꺼져 있습니다 — 화면을 탭하세요.",
         connectionError: "연결 오류입니다. 다시 시도해 주세요.",
+        updateRequired: "이 버전은 더 이상 작동하지 않습니다. 업데이트하려면 탭하세요.",
         poorConnection: "연결 상태가 좋지 않습니다 — 번역 품질이 떨어질 수 있습니다.",
         noServerResponse: "서버 응답이 없습니다 — 인터넷 연결을 확인해 주세요.",
         offline: "인터넷에 연결되어 있지 않습니다.",
@@ -247,6 +258,7 @@ struct UIStrings {
         micFailed: "无法启动麦克风。",
         micResumeFailed: "麦克风已关闭，请轻点屏幕。",
         connectionError: "连接出错，请重试。",
+        updateRequired: "此版本已无法使用。轻点前往更新。",
         poorConnection: "连接不佳，翻译质量可能会受影响。",
         noServerResponse: "服务器无响应，请检查网络连接。",
         offline: "没有网络连接。",
