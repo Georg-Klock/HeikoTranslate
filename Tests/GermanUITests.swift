@@ -60,6 +60,7 @@ final class GermanUITests: XCTestCase {
         // hunt through a Settings app he cannot read.
         "Kein Mikrofonzugriff. Zum Öffnen der Einstellungen antippen.",
         "Mikrofon konnte nicht gestartet werden.",
+        "Mikrofon ist aus — bitte antippen.",
         "Verbindungsfehler. Bitte nochmal versuchen.",
         "Schlechte Verbindung — die Übersetzung kann darunter leiden.",
         "Keine Antwort vom Server — bitte Internetverbindung prüfen.",

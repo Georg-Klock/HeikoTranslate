@@ -30,6 +30,12 @@ struct UIStrings {
     let tapToSpeak: String
     let micDenied: String
     let micFailed: String
+    /// A failed AUTOMATIC resume — the app tried to restart listening by
+    /// itself and could not. Deliberately actionable where micFailed is a
+    /// statement: the reader was not at the button when this happened.
+    /// German approved by Georg 2026-08-06 (GitHub #5); the other five ride
+    /// the #6 native-review backlog like the rest of their sets.
+    let micResumeFailed: String
     let connectionError: String
 
     // Connection warnings
@@ -86,6 +92,7 @@ struct UIStrings {
         tapToSpeak: "Zum Sprechen antippen",
         micDenied: "Kein Mikrofonzugriff. Zum Öffnen der Einstellungen antippen.",
         micFailed: "Mikrofon konnte nicht gestartet werden.",
+        micResumeFailed: "Mikrofon ist aus — bitte antippen.",
         connectionError: "Verbindungsfehler. Bitte nochmal versuchen.",
         poorConnection: "Schlechte Verbindung — die Übersetzung kann darunter leiden.",
         noServerResponse: "Keine Antwort vom Server — bitte Internetverbindung prüfen.",
@@ -113,6 +120,7 @@ struct UIStrings {
         tapToSpeak: "Tap to speak",
         micDenied: "No microphone access. Tap to open Settings.",
         micFailed: "The microphone could not be started.",
+        micResumeFailed: "Microphone is off — please tap.",
         connectionError: "Connection problem. Please try again.",
         poorConnection: "Poor connection — the translation may suffer.",
         noServerResponse: "No response from the server — please check your connection.",
@@ -142,6 +150,7 @@ struct UIStrings {
         tapToSpeak: "Toca para hablar",
         micDenied: "Sin acceso al micrófono. Toca para abrir Ajustes.",
         micFailed: "No se pudo iniciar el micrófono.",
+        micResumeFailed: "El micrófono está apagado — toca la pantalla.",
         connectionError: "Error de conexión. Inténtalo de nuevo.",
         poorConnection: "Conexión débil — la traducción puede verse afectada.",
         noServerResponse: "El servidor no responde — comprueba tu conexión.",
@@ -169,6 +178,7 @@ struct UIStrings {
         tapToSpeak: "Appuyez pour parler",
         micDenied: "Pas d'accès au microphone. Appuyez pour ouvrir Réglages.",
         micFailed: "Impossible de démarrer le microphone.",
+        micResumeFailed: "Le micro est éteint — touchez l'écran.",
         connectionError: "Problème de connexion. Veuillez réessayer.",
         poorConnection: "Connexion faible — la traduction peut en souffrir.",
         noServerResponse: "Pas de réponse du serveur — vérifiez votre connexion.",
@@ -196,6 +206,7 @@ struct UIStrings {
         tapToSpeak: "탭하여 말하기",
         micDenied: "마이크 접근 권한이 없습니다. 탭하여 설정을 여세요.",
         micFailed: "마이크를 시작할 수 없습니다.",
+        micResumeFailed: "마이크가 꺼져 있습니다 — 화면을 탭하세요.",
         connectionError: "연결 오류입니다. 다시 시도해 주세요.",
         poorConnection: "연결 상태가 좋지 않습니다 — 번역 품질이 떨어질 수 있습니다.",
         noServerResponse: "서버 응답이 없습니다 — 인터넷 연결을 확인하세요.",
@@ -223,6 +234,7 @@ struct UIStrings {
         tapToSpeak: "点按说话",
         micDenied: "无法访问麦克风。点按以打开设置。",
         micFailed: "无法启动麦克风。",
+        micResumeFailed: "麦克风已关闭 — 请点按屏幕。",
         connectionError: "连接出错，请重试。",
         poorConnection: "连接不佳 — 翻译质量可能受影响。",
         noServerResponse: "服务器无响应 — 请检查网络连接。",
