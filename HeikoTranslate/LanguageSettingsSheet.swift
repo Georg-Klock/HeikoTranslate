@@ -27,7 +27,11 @@ private extension View {
 /// replaced two labelled wheel pickers ("Gesprächspartner" / "Zuhause") and a
 /// sentence of German explaining the layout, none of which a non-reader of
 /// German-as-instructions needs if the picture is right.
-private struct LanguageColumn: View {
+// Internal, not private: the two pure rules extracted for GitHub #14
+// (`selectableOptions`, `adjacent`) are what L1 pins, and a private type
+// would put them back out of reach — the same reason `showMicNotice` and
+// the seam methods are internal.
+struct LanguageColumn: View {
     @Binding var selection: TurnLogic.Lang
     /// The other side's current pick.
     let otherSide: TurnLogic.Lang
@@ -95,6 +99,18 @@ private struct LanguageColumn: View {
     /// in the reader's language, the home column by endonym. Either way the
     /// order matches what the eye is scanning.
     private var options: [TurnLogic.Lang] {
+        Self.selectableOptions(excludesOtherSide: excludesOtherSide,
+                               otherSide: otherSide,
+                               displayName: displayed)
+    }
+
+    /// The column's option list, extracted static so L1 can hold the two
+    /// rules it carries — the excluding column never offers the other side,
+    /// and the order is alphabetical by the name THIS column shows — without
+    /// a mirror copy in the test. GitHub #14.
+    static func selectableOptions(excludesOtherSide: Bool,
+                                  otherSide: TurnLogic.Lang,
+                                  displayName: (TurnLogic.Lang) -> String) -> [TurnLogic.Lang] {
         TurnLogic.Lang.allCases
             .filter { !excludesOtherSide || $0 != otherSide }
             // The HOME column offers only full app languages: a partner-only
@@ -102,7 +118,18 @@ private struct LanguageColumn: View {
             // become one. The partner column offers everything the model
             // translates.
             .filter { excludesOtherSide || $0.canBeHome }
-            .sorted { displayed($0).localizedCompare(displayed($1)) == .orderedAscending }
+            .sorted { displayName($0).localizedCompare(displayName($1)) == .orderedAscending }
+    }
+
+    /// One VoiceOver adjustable step through the displayed order, wrapping —
+    /// the wheel is endless, and an increment should behave like one notch
+    /// of the same wheel. Pure, so L1 can walk full laps. GitHub #14.
+    static func adjacent(_ current: TurnLogic.Lang, by step: Int,
+                         in options: [TurnLogic.Lang]) -> TurnLogic.Lang {
+        guard !options.isEmpty else { return current }
+        guard let i = options.firstIndex(of: current) else { return options[0] }
+        let n = options.count
+        return options[((i + step) % n + n) % n]
     }
 
     /// What a rebuild-and-fade is keyed to. Constant for the ME column, so it
@@ -288,6 +315,27 @@ private struct LanguageColumn: View {
         // out and back rather than sliding past each other. Constant for the ME
         // column, which therefore never rebuilds at all.
         .fadeThrough(reorderKey)
+        // One semantic control per column (GitHub #14). VoiceOver used to
+        // meet ~500 duplicated rows — 101 turns of the endless wheel — with
+        // no way to learn the selection or change it. The whole column is
+        // ONE adjustable element now: the descriptor is its label, the
+        // selected language its value, and a swipe adjusts through the SAME
+        // `selection` binding a drag lands on — so the distinct-pair swap
+        // rule applies to VoiceOver exactly as to touch (L1.29e), and the
+        // visual wheel follows through the existing onChange sync.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(descriptor)
+        .accessibilityValue(displayed(selection))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                selection = Self.adjacent(selection, by: 1, in: options)
+            case .decrement:
+                selection = Self.adjacent(selection, by: -1, in: options)
+            @unknown default:
+                break
+            }
+        }
     }
 }
 
