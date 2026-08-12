@@ -54,6 +54,22 @@ targets:
         # is "Heiko Translate" (with a space), so spell them out.
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Heiko Translate.app/Heiko Translate"
         BUNDLE_LOADER: "$(TEST_HOST)"
+  # LOCAL-ONLY accessibility verification (#14): a UI-test target that
+  # inspects the real accessibility tree — the piece no unit test can
+  # reach. Deliberately NOT part of the HeikoTranslate scheme or CI (the
+  # CI-spend decision stands); Tools/uitest-accessibility.sh runs it.
+  HeikoTranslateAccessibilityUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: HeikoTranslate
+    settings:
+      base:
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: HeikoTranslate
 schemes:
   HeikoTranslate:
     build:
@@ -65,3 +81,11 @@ schemes:
       config: Debug
       targets:
         - HeikoTranslateTests
+  HeikoTranslateAccessibility:
+    build:
+      targets:
+        HeikoTranslateAccessibilityUITests: all
+    test:
+      config: Debug
+      targets:
+        - HeikoTranslateAccessibilityUITests

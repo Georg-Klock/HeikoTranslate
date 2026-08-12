@@ -261,7 +261,9 @@ The wheels, for VoiceOver (#14, 2026-08-11). Each language column is ONE
 adjustable element; a swipe steps through the same displayed order the
 wheel scrolls, writing the same `selection` binding, so the distinct-pair
 rules apply unchanged. The element's presence, label
-and value are verified by the LOCAL accessibility UI target (below) —
+and value are verified by the LOCAL accessibility UI target
+(`Tools/uitest-accessibility.sh`, deliberately outside CI — the CI-spend
+decision stands; the target exists so the claim is verified, not assumed) —
 the adjustable ACTION itself has no XCUITest trigger for custom
 elements, so its behaviour stays pinned by the pure lap tests plus the
 same-binding argument.
