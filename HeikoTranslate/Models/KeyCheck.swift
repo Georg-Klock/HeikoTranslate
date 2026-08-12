@@ -32,6 +32,25 @@ enum KeyCheck {
         markers.contains(where: body.contains) ? .revoked : .inconclusive
     }
 
+    /// The PROBE's standard is broader than a frame's, deliberately. A close
+    /// reason or error frame convicts only on the key markers above, because
+    /// the app cannot know what produced it. The probe is different: the app
+    /// built that request itself, well-formed, carrying only the key — so an
+    /// auth-flavored rejection IS the answer. Learned on the device
+    /// (phone day 2026-08-12, round 3): a scrambled key draws
+    /// 401 UNAUTHENTICATED / "invalid authentication credentials", not
+    /// API_KEY_INVALID, and the narrow standard called it inconclusive
+    /// forever. Quota and network stay inconclusive here too.
+    static func verdict(fromProbeBody body: String) -> Verdict {
+        if markers.contains(where: body.contains) { return .revoked }
+        if body.contains("UNAUTHENTICATED")
+            || body.contains("invalid authentication credentials")
+            || body.contains("PERMISSION_DENIED") {
+            return .revoked
+        }
+        return .inconclusive
+    }
+
     /// Whether a server-initiated CLOSE looks like an authentication
     /// rejection rather than a network mishap. Learned on the device
     /// (2026-08-12, phone-day case 8): a dead key does NOT fail the

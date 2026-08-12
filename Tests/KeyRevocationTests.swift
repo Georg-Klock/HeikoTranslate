@@ -44,6 +44,29 @@ final class KeyRevocationTests: XCTestCase {
                        "a hotel login page is a network problem, not a key problem")
     }
 
+    // MARK: - The probe's broader standard (device-verified, round 3).
+
+    func testProbeConvictsOnUnauthenticated() {
+        // The body a scrambled key actually drew, phone day 2026-08-12.
+        let body = """
+        {"error":{"code":401,"message":"Request had invalid authentication credentials. \
+        Expected OAuth 2 access token, login cookie or other valid authentication credential.",\
+        "status":"UNAUTHENTICATED"}}
+        """
+        XCTAssertEqual(KeyCheck.verdict(fromProbeBody: body), .revoked,
+                       "the probe built this request itself — an auth rejection IS the answer")
+        XCTAssertEqual(KeyCheck.verdict(fromResponseBody: body), .inconclusive,
+                       "a FRAME with the same text still only suspects — the probe stays the arbiter")
+    }
+
+    func testProbeStaysInconclusiveOnQuotaAndNetwork() {
+        XCTAssertEqual(KeyCheck.verdict(fromProbeBody:
+            #"{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}"#), .inconclusive)
+        XCTAssertEqual(KeyCheck.verdict(fromProbeBody: "<html>captive portal</html>"),
+                       .inconclusive)
+        XCTAssertEqual(KeyCheck.verdict(fromProbeBody: #"{"models":[]}"#), .inconclusive)
+    }
+
     // MARK: - Auth suspicion from a close reason (device-verified shape).
 
     func testAuthRejectionReasonIsSuspectButNotConviction() {

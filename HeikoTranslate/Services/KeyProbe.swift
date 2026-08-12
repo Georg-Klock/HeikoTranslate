@@ -22,9 +22,17 @@ enum KeyProbe {
         // either way; whatever the network is doing, six seconds is enough
         // to learn what we came for or to give up as inconclusive.
         request.timeoutInterval = 6
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
               let body = String(data: data, encoding: .utf8)
-        else { return .inconclusive }
-        return KeyCheck.verdict(fromResponseBody: body)
+        else {
+            diag("app", "key probe: no response (network) — inconclusive")
+            return .inconclusive
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let verdict = KeyCheck.verdict(fromProbeBody: body)
+        // The status and verdict, never the body: it could carry anything,
+        // and the log is shareable by design.
+        diag("app", "key probe: HTTP \(status) — \(verdict == .revoked ? "revoked" : "inconclusive")")
+        return verdict
     }
 }
