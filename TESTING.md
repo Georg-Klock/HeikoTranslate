@@ -227,6 +227,23 @@ simulator checks were re-taken after the rewrite.
 | L1.72b | Every explicit slider notch, and out-of-range persisted values | The chosen override, clamped — a stored integer outlives notch-count changes | **§4.4** |
 | L1.72c | The thumb position while the system is in charge | The notch nearest the current system size; accessibility categories clamp to the last notch | **§4.4** |
 
+Per-script floors (#29, measured 2026-08-11). The output-substance floors
+are per home language now — `TurnLogic.floors(for:)` — calibrated by
+`Tools/floor_measurement.py` on the Swift wire path (60 probes, the table
+committed at `Tools/measurements/floors-2026-08-11.json`). Korean and
+Chinese loosen (2/3 and ratio 0.34/0.23); the Latin homes measured safely
+above the baseline and keep the German values, whose binding constraint is
+the false-start corpus only German has. The loosen-only doctrine is itself
+a test. One campaign exclusion, recorded in the table: a ~300ms utterance
+("Ja.") never engages the model at all — a VAD floor, not a length fact.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.74 | Every language's floors vs the German baseline | Loosen-only, and the Latin homes keep the baseline exactly | **#29** |
+| L1.74b | A 7-char zh translation against a 22-char echo (ratio 0.32), codes LYING home | Counts as a real translation and beats the codes (the L1.20 doctrine), where the baseline 0.4 handed the turn to the lying codes — wrong side | **R2** |
+| L1.74c | The decisive path, densest script: 1 char alone vs a 3-char real answer | 1 stays a false start; 3 stands, which the baseline 8 swallowed | **R2/R4** |
+| L1.74d | zh/ko short answers through commit under settled foreign codes | Shape coverage, labelled as such — the settled-codes route admits these regardless; the discrimination lives in the rows above | **R2** |
+
 Commit diagnostics. Evidence only — these must never influence which
 transcript `TurnLogic` commits.
 
@@ -536,6 +553,14 @@ whether a problem is *ours* or *theirs*: `Tools/livetest.py` (one-shot
 probes) and `Tools/l2expiry.sh` (session-lifetime probe, ~10–20 min,
 compiled against the app's real `GeminiLiveSession`).
 
+**`Tools/l2probe.sh <target> "<sentence>"` is the working one-shot probe**:
+it rides the Swift `GeminiLiveSession` — the path the app ships. It exists
+because `livetest.py` went silent server-side while the Swift path worked
+(#76: setupComplete, then nothing; fixture audio, setup-wait, compression
+and a websockets 12↔17 bisect all eliminated client-side). livetest.py
+stays for protocol experiments, with the caveat that its results are
+currently evidence about the Python client, not the API.
+
 The one-shot probe **exits nonzero when the API misbehaved** — a server
 error, a setup that was never acknowledged, an empty transcript, or no
 translated output (#20; it used to print all of that and exit 0, so a
@@ -819,7 +844,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 162 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService`, `ConversationViewModel` and `BackgroundTaskLease` (2026-08-11) |
+| L1 | ✅ Built and passing — 167 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService`, `ConversationViewModel` and `BackgroundTaskLease` (2026-08-11) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Needs a device re-run. The 2026-08-11 queue landed service-layer fixes for the replacement window (#15), audio-startup transactionality (#16), start serialization (#13), late fragments (#39) and session-lifecycle races (#1) — none re-verified on a phone. The ordered plan, with the log lines that decide each block, is on GitHub #27; the needs-validation issues (#31–#40 family) track what specifically to confirm. (An earlier version of this row still described the three-session design; the pair design has run exactly two sessions since 2026-07-28.) |

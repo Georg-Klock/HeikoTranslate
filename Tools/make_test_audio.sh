@@ -104,3 +104,10 @@ print("composite + silence/noise files written")
 PY
 
 ls -la TestAudio/
+
+# #29: the per-script floor discriminator. A short German price answer whose
+# CHINESE translation is a handful of characters — under a zh-home pair the
+# home session's output is judged by floors(for: .zh), and the old shared
+# German floors (8/5 chars) are exactly what over-rejects it.
+say -v "$DE_VOICE" "${FMT[@]}" -o TestAudio/de_price_short.wav \
+  "Das kostet vierzehn Euro."
