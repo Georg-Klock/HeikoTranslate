@@ -109,7 +109,9 @@ interactive.
 ### 4.4 Settings (the language pill, top centre)
 A capsule showing **the two flags of the current pair** — partner left,
 home right, matching the conversation's sides — opens the language sheet:
-two wheel pickers with a search field. Selecting the same language on both
+two wheel pickers, each parking its selection in a chat bubble on the side
+that language occupies in the conversation, with the quiet rows beneath —
+the text-size slider and the send-log row. Selecting the same language on both
 sides swaps them. The choice is remembered; changing it mid-conversation
 restarts the translation. This is the ONLY settings surface, deliberately
 quiet — Heiko never needs it.
