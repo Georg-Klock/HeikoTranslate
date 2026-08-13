@@ -13,7 +13,12 @@ targets:
       path: Generated/Info.plist
       properties:
         UILaunchScreen: {}
-        NSMicrophoneUsageDescription: "Heiko Translate braucht Zugriff auf das Mikrofon, um gesprochene Sprache zu übersetzen."
+        # The second sentence names Google: App Review 5.1.2(i) requires the
+        # third party to be disclosed where permission is asked (GitHub #91).
+        # German-only like the rest of this description; the InfoPlist
+        # localization gap is #6's, not this line's. CANDIDATE wording,
+        # Georg's review pending.
+        NSMicrophoneUsageDescription: "Heiko Translate braucht Zugriff auf das Mikrofon, um gesprochene Sprache zu übersetzen. Die Aufnahme wird dazu an Google (Gemini) gesendet."
         # Shown (very quietly) in the UI corner: one plain number, no build
         # in parentheses. Bump BOTH on every install to a real device, so
         # "is my phone current?" is answerable at a glance.

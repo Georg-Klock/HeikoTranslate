@@ -486,6 +486,7 @@ struct LanguageSettingsSheet: View {
                 VStack(spacing: 10) {
                     TextSizeSlider(step: $textSizeStep, label: strings.textSize)
                     logRow
+                    privacyRow
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
@@ -599,6 +600,45 @@ struct LanguageSettingsSheet: View {
             .background(Color.white.opacity(0.05),
                         in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
+    }
+
+    /// The published privacy policy, `www.` form on purpose — the one
+    /// canonical URL, same as App Store Connect carries, so the two can never
+    /// point at different pages (docs/privacy-policy.md). Hardcoded rather
+    /// than configured: the URL is public by definition, and a row that can
+    /// silently point elsewhere per build would defeat what it is for.
+    private static let privacyPolicyURL =
+        URL(string: "https://www.georgklock.com/heiko-translate-privacy")!
+
+    /// The in-app leg of App Review 5.1.1(i) (GitHub #91): a link to the
+    /// policy "within the app in an easily accessible manner". Same quiet
+    /// surface as the log row above it, same reader-language rule, and it
+    /// opens the page in the browser — the policy stays one document with
+    /// one address, not a second copy to keep true.
+    @ViewBuilder
+    private var privacyRow: some View {
+        Link(destination: Self.privacyPolicyURL) {
+            HStack {
+                Text(strings.privacyPolicy)
+                    .fadeThrough(viewModel.homeLang)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer()
+                // "Leaves the app", where the log row's glyph says "goes to
+                // a person". The distinction matters on a sheet whose reader
+                // taps by shape, not by words.
+                Image(systemName: "arrow.up.right")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(Color.white.opacity(0.05),
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }
 
