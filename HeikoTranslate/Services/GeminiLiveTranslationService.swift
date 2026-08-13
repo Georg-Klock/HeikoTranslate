@@ -286,6 +286,11 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Fired when every session in the pair is dead with no retries left, so
     /// the UI can say "stopped" instead of spinning forever. GitHub #4.
     private var onSessionsExhausted: (() -> Void)?
+    /// Fired when the mic watchdog has spent both rebuilds and the tap is
+    /// still delivering nothing — the run has already been torn down through
+    /// `stopSession()` when this arrives, so the UI's job is to show the
+    /// stopped state and say why. GitHub #87.
+    private var onMicUnrecoverable: (() -> Void)?
 
     /// Effective connection quality, measured end to end. iOS exposes no
     /// signal-strength API to apps (bars are private); what we CAN measure
@@ -443,6 +448,13 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Reaching a stopped turn for real needs timers and transcripts.
     func forceSpeakerStoppedForTesting() { speakerHasStopped = true }
     var speakerHasStoppedForTesting: Bool { speakerHasStopped }
+    /// The mic watchdog's check, fired on demand so L1.68f/g can walk it past
+    /// exhaustion deterministically instead of sleeping through three real
+    /// 0.5s timers. Same method the timers call. GitHub #87.
+    func fireMicWatchdogForTesting() { checkMicAlive() }
+    /// One mic buffer, delivered without an audio graph — the counter the
+    /// watchdog reads is the real one the tap increments. GitHub #87.
+    func noteMicBufferForTesting() { micBufferCount += 1 }
     #endif
 
     func requestPermissions() async -> Bool {
@@ -462,6 +474,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         onDirection: ((Bool?) -> Void)? = nil,
         onServerRecovered: (() -> Void)? = nil,
         onSessionsExhausted: (() -> Void)? = nil,
+        onMicUnrecoverable: (() -> Void)? = nil,
         onConnectionQuality: ((ConnectionQuality) -> Void)? = nil
     ) throws {
         // Second line of defence for GitHub #1. Whatever the caller does, a
@@ -476,6 +489,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         }
         self.onServerRecovered = onServerRecovered
         self.onSessionsExhausted = onSessionsExhausted
+        self.onMicUnrecoverable = onMicUnrecoverable
         self.onConnectionQuality = onConnectionQuality
         startPathMonitorIfNeeded()
         self.onInputLevel = onInputLevel
@@ -787,7 +801,21 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// fixes it instantly, which is exactly what the manual mute/unmute was
     /// doing by hand.
     private func checkMicAlive() {
-        guard isRunning, micBufferCount == 0, audioRebuilds < 2 else { return }
+        guard isRunning, micBufferCount == 0 else { return }
+        // Both rebuilds spent and the tap is still silent: give up LOUDLY.
+        // This used to be a silent no-op — isRunning stayed true, the button
+        // read as listening, and speaking did nothing, the exact state R8
+        // forbids. Same shape as failIfPairIsDead(): tear down through the
+        // one shared path, then tell the UI, which shows the stopped state
+        // and the existing reviewed sentence. A fresh tap is a fresh start()
+        // with a fresh watchdog and two fresh rebuilds. GitHub #87.
+        guard audioRebuilds < 2 else {
+            diag("watchdog", "mic still dead after \(audioRebuilds) rebuilds — giving up and stopping (R8)")
+            let notify = onMicUnrecoverable
+            stopSession()
+            notify?()
+            return
+        }
         audioRebuilds += 1
         diag("watchdog", "@0.5s NO mic buffers — rebuilding audio I/O (attempt \(audioRebuilds))")
         stopAudioIO()

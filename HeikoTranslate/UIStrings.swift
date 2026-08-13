@@ -35,6 +35,9 @@ struct UIStrings {
     /// statement: the reader was not at the button when this happened.
     /// German approved by Georg 2026-08-06 (GitHub #5); the other five ride
     /// the #6 native-review backlog like the rest of their sets.
+    /// Also shown when the mic watchdog spends both rebuilds on a dead
+    /// microphone and gives up (GitHub #87) — the same contract holds: the
+    /// app tried by itself, could not, and a tap is the recovery.
     let micResumeFailed: String
     let connectionError: String
     /// The key this build shipped with has been revoked — rotation after

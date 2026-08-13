@@ -357,6 +357,23 @@ ways because it pins behaviour that predates the fix.
 | L1.68d | AEC cannot be enabled | Logged, not fatal — full-duplex without cancellation beats not running (pre-existing decision, pinned) | **R6** |
 | L1.68e | The 0.5s mic watchdog rebuild | Shared teardown first, then a restart that obeys the once-only wiring | **R8/R4** |
 
+The watchdog's exhausted case (#87, 2026-08-12). Two rebuilds that both came
+up dead used to end as a silent no-op — `isRunning` stayed true, the button
+read as listening, and speaking did nothing. The third strike now gives up
+loudly: the shared teardown, exactly once, and `onMicUnrecoverable` fired;
+the view model stops the UI and shows the existing reviewed sentence
+(`micResumeFailed` — no new copy, so L1.43/L1.44 are untouched). The first
+two attempts and the 0.5s cadence are unchanged. Verified fail-first: with
+the silent no-op back, L1.68f fails on every terminal assertion; L1.68g
+passes both ways because it pins that the cap must not become a hair
+trigger, which was never broken.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.68f | Zero mic buffers through both rebuilds and the next check | Give up LOUDLY: shared teardown exactly once, `onMicUnrecoverable` exactly once, `isRunning` false — no third rebuild, no silent no-op | **R8** |
+| L1.68g | A buffer lands after the first rebuild | The later checks are no-ops: no give-up, no further rebuilds, the run stays up | **R8/R4** |
+| L1.68h | The view model's give-up handler | The button returns to tap-to-start and the EXISTING reviewed sentence (`micResumeFailed`) shows — the same pairing the failed automatic resume uses | **R8/§4.3** |
+
 Cost accounting (#4, 2026-08-10). Usage frames are recorded in the session
 callback ahead of the registry token check — billing happened whether or not
 the instance is still current — and nowhere else. Verified fail-first: with
@@ -938,7 +955,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 173 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService` and `ConversationViewModel` (2026-08-13) |
+| L1 | ✅ Built and passing — XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService` and `ConversationViewModel` (2026-08-13; count on this throwaway integration branch measured by its own L1 run) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Partially re-verified on device (2026-08-12): revoked-key recovery passed after four on-device iterations (#9, PR #82); late-fragment filtering (#39), loanword direction (#40) and mic-aware speech end (#36) passed and closed; number transcription measured — shared model-level mis-hearing of German compound numerals, now a decision (#33); code-switching evidence refreshed (#32). Found live: #83, speech resuming in the stopped→commit window is dropped and talked over — the open half of #31. Still owed: the deliberate self-hearing geometry run (#35, case 7), which has fresh incidental evidence (a post-playback fragment recommitted as a small bubble). The ordered plan with per-case log criteria stays on GitHub #71. |
