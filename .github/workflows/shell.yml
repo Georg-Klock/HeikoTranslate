@@ -70,6 +70,12 @@ jobs:
       - name: Accessibility gate exit status
         run: Tools/tests/uitest-accessibility-gate.sh
 
+      # The Secrets preflight (#89): release.sh and deploy.sh refuse to build
+      # a bundle whose Secrets.plist cannot possibly hold a working key. The
+      # suite carries its own plutil fallback, so ubuntu runs it fine.
+      - name: Secrets preflight refusals
+        run: Tools/tests/release-key-preflight.sh
+
       # The L2 probe's lifecycle proof (#65/#67 review): drives the real
       # livetest.run() against a LOCAL WebSocket server — deadline teardown,
       # prompt goAway closure, close-mid-send. Loopback only; no key.
