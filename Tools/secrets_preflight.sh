@@ -38,10 +38,18 @@ assert_secrets_key() {
     exit 2
   fi
   if ! key=$(plutil -extract GEMINI_API_KEY raw -o - "$SECRETS_PLIST" 2>/dev/null); then
-    echo "!!  $SECRETS_PLIST has no GEMINI_API_KEY entry (or is not a valid" >&2
-    echo "!!  plist). The build would bundle a key the app cannot read." >&2
+    echo "!!  Could not extract GEMINI_API_KEY from $SECRETS_PLIST — the entry" >&2
+    echo "!!  is absent, or the file is not a plist plutil can read. Either" >&2
+    echo "!!  way the build would bundle a key the app cannot read." >&2
     exit 2
   fi
+  # Trim surrounding whitespace before judging the value: plutil preserves it
+  # faithfully, so '   ' passed a plain emptiness check and 'REPLACE-ME '
+  # passed the exact comparison — both real escapes, found in review. The app
+  # reads the plist untrimmed, but whitespace around a working key is a
+  # liveness question (L3's), not a structural one.
+  key="${key#"${key%%[![:space:]]*}"}"
+  key="${key%"${key##*[![:space:]]}"}"
   if [[ -z "$key" ]]; then
     echo "!!  GEMINI_API_KEY in $SECRETS_PLIST is empty. The app would launch," >&2
     echo "!!  fail every handshake, and show installers the permanent update" >&2
