@@ -190,9 +190,8 @@ final class GermanUITests: XCTestCase {
         XCTAssertEqual(g.minutesSpokenFormat, "%.0f Minuten gesprochen")
         XCTAssertEqual(g.sendLog, "Protokoll an Georg senden")
         XCTAssertEqual(g.sendLogSubtitleFormat, "Falls etwas nicht klappt · %@")
-        // The privacy-policy row (#91). CANDIDATE: written 2026-08-12,
-        // Georg's review pending. "Datenschutz" is the word German sites put
-        // on exactly this link.
+        // The privacy-policy row (#91). Approved by Georg 2026-08-13.
+        // "Datenschutz" is the word German sites put on exactly this link.
         XCTAssertEqual(g.privacyPolicy, "Datenschutz")
         XCTAssertEqual(g.settingsLabel, "Einstellungen")
     }

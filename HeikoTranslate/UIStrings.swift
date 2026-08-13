@@ -76,8 +76,8 @@ struct UIStrings {
     /// 5.1.1(i) requires the policy link "within the app in an easily
     /// accessible manner"; this row opens the published policy. The word each
     /// language uses is the one its websites put on exactly this link — the
-    /// reader is finding a legal page, not learning a coinage. German is a
-    /// CANDIDATE awaiting Georg's review; the other five ride the #6 backlog.
+    /// reader is finding a legal page, not learning a coinage. German
+    /// approved by Georg 2026-08-13; the other five ride the #6 backlog.
     let privacyPolicy: String
 
     // Accessibility
