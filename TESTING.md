@@ -389,6 +389,24 @@ cross the speech floor continuously makes the gate transparent.
 | L1.71 | A committed turn, then transcript fragments (prefixes of both lines) with no mic speech since the reset | Exactly ONE bubble — the stragglers rebuild nothing | **R1/R3** |
 | L1.71b | A genuine reply immediately after the commit, mic energy first | Commits normally — the gate is a straggler filter, NOT the cooldown the issue forbids | **R4/R6** |
 
+Log backup exclusion (#92, 2026-08-12). The diagnostic log carries both
+speakers' words, and `Documents/` rides iCloud and local backups by default —
+the one automatic copy "logs never leave the phone by themselves" (#8) did
+not cover. Every log file now carries `isExcludedFromBackup`: the primary
+when its handle opens, every kept run after the rotation moves (a move can
+shed the attribute), and the concatenated share file when it is produced.
+The tests write through the real `DiagnosticLog` into an injected temporary
+directory and read the resource value back off disk; the rotation case runs
+the real launch-rotation path by opening a second instance over the same
+directory. Verified fail-first: all three cases fail without the exclusion
+calls.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.78 | A fresh log file, written through the real type | `isExcludedFromBackup` reads back true on the primary file | **privacy** |
+| L1.78b | A second launch over an existing log (the real rotation, a move) | The rotated `.log.1` AND the fresh primary both read back excluded | **privacy** |
+| L1.78c | The concatenated share file for the manual share row | Reads back excluded — tmp/ not being backed up is an OS default, not a promise | **privacy** |
+
 
 Start serialization (#13, 2026-08-10). One pending start attempt at a time,
 owned and generation-stamped; the permission prompt is replaced by a
@@ -910,7 +928,9 @@ Only after L1–L3 pass. Do these in order and stop at the first failure.
 ### On-device diagnostic log
 
 The app records every launch to `Documents/heiko-diagnostics.log` in its own
-container (previous run kept as `.log.1`, 4 MB cap). No tethering needed
+container (previous run kept as `.log.1`, 4 MB cap). The log files are
+excluded from iCloud and local device backups (#92) — they move off the
+phone only by the owner's hand. No tethering needed
 while testing — use the app anywhere, plug in afterwards and run:
 
 ```
