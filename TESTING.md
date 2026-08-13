@@ -654,9 +654,10 @@ depth, on purpose).
 ## L2 — Protocol tests (real API, no app)
 
 Standalone tools that talk to the Gemini Live API directly, proving
-whether a problem is *ours* or *theirs*: `Tools/livetest.py` (one-shot
-probes) and `Tools/l2expiry.sh` (session-lifetime probe, ~10–20 min,
-compiled against the app's real `GeminiLiveSession`).
+whether a problem is *ours* or *theirs*: `Tools/l2probe.sh` (one-shot
+probe) and `Tools/l2expiry.sh` (session-lifetime probe, ~10–20 min), both
+compiled against the app's real `GeminiLiveSession`. `Tools/livetest.py`
+is the Python twin and is **not** a working probe — see below.
 
 **`Tools/l2probe.sh <target> "<sentence>"` is the working one-shot probe**:
 it rides the Swift `GeminiLiveSession` — the path the app ships. It exists
@@ -665,6 +666,21 @@ because `livetest.py` went silent server-side while the Swift path worked
 and a websockets 12↔17 bisect all eliminated client-side). livetest.py
 stays for protocol experiments, with the caveat that its results are
 currently evidence about the Python client, not the API.
+
+Re-measured 2026-08-13, and the picture is unchanged: `l2probe.sh` returned
+`Wo ist der Bahnhof?` and `targetprobe.sh de` returned `✓ Hallo, Heiko.` in
+the same minutes that nine `livetest.py` variants all returned
+`messages: 1` — setupComplete and nothing else, with no error frame. Newly
+eliminated that round: the **websockets version** (17.0 was installed
+2026-07-30, eleven days before the probe last worked, so the upgrade cannot
+be the cause) and **compression** (the server returns no
+`sec-websocket-extensions` header at all, so permessage-deflate was never
+negotiated and `compression=None` was always a no-op). Also eliminated:
+`audioStreamEnd` present/absent, `mimeType` with and without `rate`, 20ms
+and 64ms chunking, waiting for setupComplete before streaming, and a Darwin
+user-agent. What remains untested is below the application layer — TLS or
+HTTP client fingerprint — which is not reachable from this repo. The
+practical conclusion stands: probe with `l2probe.sh`.
 
 The one-shot probe **exits nonzero when the API misbehaved** — a server
 error, a setup that was never acknowledged, an empty transcript, or no
