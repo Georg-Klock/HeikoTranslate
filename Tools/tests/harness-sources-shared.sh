@@ -53,20 +53,33 @@ done
 # Find every script that builds a binary out of the app's session, by what it
 # does rather than by a hard-coded list — a fifth harness added tomorrow is
 # caught without editing this file.
-# No `mapfile`: macOS ships bash 3.2 and this suite has to run locally as
-# well as on the ubuntu l0 runner.
+#
 # A harness is a script that INVOKES swiftc, not one that mentions it: the
 # shared list names the same files in prose, and targetprobe-smoke.sh
 # describes the compile it delegates. Match a real command line.
+#
+# No `mapfile` either: macOS ships bash 3.2 and this suite runs locally as
+# well as on the ubuntu l0 runner.
 HARNESSES=()
+HARNESS_COUNT=0
 while read -r s; do
   [ "$s" = "$SHARED" ] && continue
   grep -qE '^[[:space:]]*swiftc[[:space:]]' "$s" 2>/dev/null || continue
   HARNESSES+=("$s")
+  HARNESS_COUNT=$((HARNESS_COUNT + 1))
 done < <(git ls-files 'Tools/*.sh' 'Tools/**/*.sh')
 
-if [ "${#HARNESSES[@]:-0}" -eq 0 ]; then
-  fail "found no session harnesses at all — this suite would pass vacuously"
+# A plain counter, not ${#HARNESSES[@]}: an empty array under `set -u` is an
+# error on bash 3.2 (macOS), and `${#arr[@]:-0}` — the obvious guard — is a
+# bad substitution on bash 5 (the ubuntu l0 runner). The counter is correct
+# on both, which is the whole point of this suite running in CI.
+if [ "$HARNESS_COUNT" -eq 0 ]; then
+  # Exit here rather than fall through: iterating an empty array under
+  # `set -u` is itself an error on bash 3.2, so continuing would report a
+  # shell fault instead of the real problem, which is that the discovery
+  # heuristic stopped matching anything.
+  echo "FAIL  found no session harnesses at all — this suite would pass vacuously"
+  exit 1
 fi
 
 for s in "${HARNESSES[@]}"; do
@@ -88,7 +101,7 @@ done
 
 echo
 if [ "$FAILURES" -gt 0 ]; then
-  echo "==> harness-sources-shared: $FAILURES failure(s) across ${#HARNESSES[@]} harnesses"
+  echo "==> harness-sources-shared: $FAILURES failure(s) across $HARNESS_COUNT harnesses"
   exit 1
 fi
-echo "==> harness-sources-shared: all checks pass across ${#HARNESSES[@]} harnesses"
+echo "==> harness-sources-shared: all checks pass across $HARNESS_COUNT harnesses"
