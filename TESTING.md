@@ -746,6 +746,7 @@ that transient first second doesn't decide the turn.
 Tools/tests/build-number-windows.sh
 Tools/tests/shell-syntax.sh
 Tools/tests/l1-gate-regenerates.sh
+Tools/tests/uitest-accessibility-gate.sh
 Tools/tests/release-rejects-l3-overrides.sh
 ```
 
@@ -790,6 +791,21 @@ nonzero, and `l1.sh` must exit nonzero without printing "L1 passed". The
 original construct appended `|| true` to the xcodebuild pipeline before
 reading `PIPESTATUS[0]`, which zeroed it — a failed build whose output
 still carried a passing summary line was reported as a pass.
+
+`uitest-accessibility-gate.sh` pins the same discipline onto the
+accessibility gate (#88): `Tools/uitest-accessibility.sh` ended its
+xcodebuild pipeline in `|| true` — there so a display `grep` matching no
+lines could not fail the run under `pipefail`, but it swallowed the real
+status too, on the script whose whole purpose is that the wheels' VoiceOver
+claims are verified, not assumed (#14 above). The script now tees the
+output aside, reads xcodebuild's status out of `PIPESTATUS`, and asserts a
+non-zero `Executed N tests, with 0 failures` count, exactly as `l1.sh`
+does. Three cases against stubs, the failing two verified fail-first
+against the old construct: a failing xcodebuild cannot pass on its summary
+line, a run that executed zero tests is not a pass, and a passing non-zero
+run still passes with its summary displayed. The UI-test target itself
+stays out of CI — the #14 CI-spend decision stands; only the stubbed L0
+cases run there.
 
 `release-rejects-l3-overrides.sh` pins the release side of the L3 drift gate
 (#19): a shell with `L3_ALLOW_RAW` or `L3_INJECT_RAW` exported — set to
