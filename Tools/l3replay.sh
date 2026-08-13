@@ -14,13 +14,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p .build
+source Tools/session_sources.sh
 swiftc -O -o .build/l3replay \
-  HeikoTranslate/Models/TurnLogic.swift \
-  HeikoTranslate/Models/FillerWords.swift \
-  HeikoTranslate/Models/FinalizePolicy.swift \
-  HeikoTranslate/Models/SpeechEndPolicy.swift \
-  HeikoTranslate/Models/KeyCheck.swift \
-  HeikoTranslate/Services/GeminiLiveSession.swift \
+  "${TURN_SOURCES[@]}" "${SESSION_SOURCES[@]}" \
   Tools/l3replay/common.swift \
   Tools/l3replay/main.swift
 exec .build/l3replay "$@"
