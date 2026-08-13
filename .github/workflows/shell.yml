@@ -68,6 +68,12 @@ jobs:
       # suite carries its own plutil fallback, so ubuntu runs it fine.
       - name: Secrets preflight refusals
         run: Tools/tests/release-key-preflight.sh
+      # The accessibility gate must be able to fail (#88): its xcodebuild
+      # pipeline used to end in `|| true`. Stubbed xcodebuild/xcrun, so this
+      # never runs the UI-test target itself — the #14 decision keeping that
+      # target out of CI stands.
+      - name: Accessibility gate exit status
+        run: Tools/tests/uitest-accessibility-gate.sh
 
       # The L2 probe's lifecycle proof (#65/#67 review): drives the real
       # livetest.run() against a LOCAL WebSocket server — deadline teardown,
