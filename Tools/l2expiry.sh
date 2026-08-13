@@ -7,6 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p .build
 swiftc -O -o .build/l2expiry \
+  HeikoTranslate/Models/KeyCheck.swift \
   HeikoTranslate/Services/GeminiLiveSession.swift \
   Tools/l3replay/common.swift \
   Tools/l2expiry/main.swift
