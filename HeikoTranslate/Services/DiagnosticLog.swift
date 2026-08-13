@@ -21,12 +21,16 @@ final class DiagnosticLog {
     /// rotated the interesting one away.
     static let keptRuns = 5
 
-    static var currentURL: URL {
+    /// Where the log files live. `Documents/` in the app; tests inject a
+    /// temporary directory so they can write through the real type without
+    /// touching the app container.
+    let directory: URL
+
+    var currentURL: URL {
         logURL(index: 0)
     }
-    static func logURL(index: Int) -> URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let base = docs.appendingPathComponent("heiko-diagnostics.log")
+    func logURL(index: Int) -> URL {
+        let base = directory.appendingPathComponent("heiko-diagnostics.log")
         return index == 0 ? base : base.appendingPathExtension("\(index)")
     }
 
@@ -42,7 +46,12 @@ final class DiagnosticLog {
         return f
     }()
 
-    private init() {
+    private convenience init() {
+        self.init(directory: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0])
+    }
+
+    init(directory: URL) {
+        self.directory = directory
         queue.async { [self] in
             rotateIfNeeded(force: false)
             openHandle()
@@ -58,12 +67,27 @@ final class DiagnosticLog {
         log("app", "=== launch: Heiko Translate \(version), iOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
     }
 
+    /// The log carries both speakers' words, and `Documents/` rides iCloud
+    /// and local backups by default — the one automatic copy the "logs never
+    /// leave the phone by themselves" promise (#8) did not cover until #92.
+    /// Set unconditionally, not just at creation: files written before this
+    /// existed, and files rotated by a move (which can shed the attribute),
+    /// must end up excluded too.
+    private static func excludeFromBackup(_ url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var url = url
+        try? url.setResourceValues(values)
+    }
+
     private func openHandle() {
-        let url = Self.currentURL
+        let url = currentURL
         let fm = FileManager.default
         if !fm.fileExists(atPath: url.path) {
             fm.createFile(atPath: url.path, contents: nil)
         }
+        Self.excludeFromBackup(url)
         handle = try? FileHandle(forWritingTo: url)
         _ = try? handle?.seekToEnd()
         bytesWritten = (try? fm.attributesOfItem(atPath: url.path)[.size] as? Int) as? Int ?? 0
@@ -74,13 +98,18 @@ final class DiagnosticLog {
     /// enough context for "did it work last time?".
     private func rotateIfNeeded(force: Bool) {
         let fm = FileManager.default
-        guard force || fm.fileExists(atPath: Self.currentURL.path) else { return }
+        guard force || fm.fileExists(atPath: currentURL.path) else { return }
         // Shift .3 → .4, .2 → .3, … , current → .1, dropping the oldest.
-        try? fm.removeItem(at: Self.logURL(index: Self.keptRuns - 1))
+        try? fm.removeItem(at: logURL(index: Self.keptRuns - 1))
         for index in stride(from: Self.keptRuns - 2, through: 0, by: -1) {
-            let from = Self.logURL(index: index)
+            let from = logURL(index: index)
             guard fm.fileExists(atPath: from.path) else { continue }
-            try? fm.moveItem(at: from, to: Self.logURL(index: index + 1))
+            try? fm.moveItem(at: from, to: logURL(index: index + 1))
+        }
+        // Re-mark every kept run: the moves above can shed the attribute,
+        // and runs written before the exclusion existed pick it up here.
+        for index in 1..<Self.keptRuns {
+            Self.excludeFromBackup(logURL(index: index))
         }
         handle = nil
         bytesWritten = 0
@@ -122,6 +151,9 @@ final class DiagnosticLog {
             .appendingPathComponent("heiko-diagnostics-all.log")
         do {
             try exportText().write(to: url, atomically: true, encoding: .utf8)
+            // tmp/ is not backed up today, but that is an OS default, not a
+            // promise — mark the one file that concatenates every kept run.
+            Self.excludeFromBackup(url)
             return url
         } catch {
             return nil
@@ -133,7 +165,7 @@ final class DiagnosticLog {
     func exportText() -> String {
         flush()
         return (0..<Self.keptRuns).compactMap { index -> String? in
-            guard let text = try? String(contentsOf: Self.logURL(index: index), encoding: .utf8),
+            guard let text = try? String(contentsOf: logURL(index: index), encoding: .utf8),
                   !text.isEmpty else { return nil }
             return "===== run -\(index) =====\n\(text)"
         }.joined(separator: "\n")
