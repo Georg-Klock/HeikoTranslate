@@ -446,9 +446,10 @@ final class ConversationViewModel: ObservableObject {
     /// second `stopSession()` is redundant but harmless — same shape as the
     /// exhausted-pair handler above), and the sentence is the existing
     /// reviewed one for "the app tried to restart the microphone by itself
-    /// and could not": actionable, because the reader was not at the button
-    /// when this happened. Same errorMessage-over-muted pairing the failed
-    /// automatic resume uses (GitHub #5). No new copy. GitHub #87, SPEC R8.
+    /// and could not": actionable, because the fix it names — tap — is the
+    /// fix (a fresh tap is a fresh start with fresh rebuilds). Same
+    /// errorMessage-over-muted pairing the failed automatic resume uses
+    /// (GitHub #5). No new copy. GitHub #87, SPEC R8.
     private func handleMicUnrecoverable() {
         stop()
         errorMessage = strings.micResumeFailed
