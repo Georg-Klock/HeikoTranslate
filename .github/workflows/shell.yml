@@ -76,6 +76,14 @@ jobs:
       - name: Secrets preflight refusals
         run: Tools/tests/release-key-preflight.sh
 
+      # The four session harnesses share one source list (#103), so a file
+      # added to the session's graph cannot break them one at a time. This is
+      # the structural half — it needs no swiftc, so ubuntu runs it. The
+      # compile half (Tools/tests/harness-compile.sh) stays local, like
+      # targetprobe-smoke.sh, rather than buying a macOS runner.
+      - name: Harnesses share one source list
+        run: Tools/tests/harness-sources-shared.sh
+
       # The L2 probe's lifecycle proof (#65/#67 review): drives the real
       # livetest.run() against a LOCAL WebSocket server — deadline teardown,
       # prompt goAway closure, close-mid-send. Loopback only; no key.

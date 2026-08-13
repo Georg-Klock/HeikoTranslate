@@ -6,9 +6,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p .build
+source Tools/session_sources.sh
 swiftc -O -o .build/l2expiry \
-  HeikoTranslate/Models/KeyCheck.swift \
-  HeikoTranslate/Services/GeminiLiveSession.swift \
+  "${SESSION_SOURCES[@]}" \
   Tools/l3replay/common.swift \
   Tools/l2expiry/main.swift
 exec .build/l2expiry "$@"

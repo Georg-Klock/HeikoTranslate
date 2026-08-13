@@ -783,7 +783,13 @@ Tools/tests/l1-gate-regenerates.sh
 Tools/tests/uitest-accessibility-gate.sh
 Tools/tests/release-rejects-l3-overrides.sh
 Tools/tests/release-key-preflight.sh
+Tools/tests/harness-sources-shared.sh
 ```
+
+Two L0 suites are **local only**, because they need `swiftc` and the ubuntu
+runner has none: `targetprobe-smoke.sh` and `harness-compile.sh`. Putting
+them on a macOS runner is the CI spend #14 and #88 both declined. Run them
+before a PR that touches the session's dependency graph.
 
 Runs in a couple of seconds and needs nothing installed — it stubs `xcrun`,
 `xcodebuild` and `xcodegen`, so it is safe on any machine and in CI. **CI
@@ -869,6 +875,26 @@ a machine without a `plutil` (Linux CI) the suite substitutes a stub that
 honours the contract the real tool was verified to have — the same contract
 `build-number-windows.sh`'s plutil stub answers, since that stub shadows the
 host tool for its whole harness.
+
+`harness-sources-shared.sh` and `harness-compile.sh` pin the shared harness
+source list (#103). Four scripts compile a `swiftc` binary out of the app's
+own files — `l3replay.sh`, `floorprobe.sh`, `l2expiry.sh`, `targetprobe.sh`
+— and each used to carry a private copy of that list, so a new file in the
+session's graph broke all four and stayed broken in whichever ones nobody
+ran. `KeyCheck.swift` (#82) did exactly that: #86 fixed the two being run,
+and the other two were found by reading, not by failing (#102). The list now
+lives once, in `Tools/session_sources.sh`.
+
+`harness-sources-shared.sh` is the structural half and runs in CI: it
+discovers harnesses by what they do (a real `swiftc` command line, not a
+mention of one), then asserts each sources the shared list and names no
+`HeikoTranslate/` source inline — plus that every file the list names
+exists. Verified fail-first: regressed to main's inline shape, both
+assertions fire. `harness-compile.sh` is the sufficiency half — it
+type-checks all four — and is local only, since `swiftc` is not on the
+ubuntu runner. Verified fail-first by deleting `KeyCheck.swift` from the
+shared list: all four fail with the original `cannot find 'KeyCheck' in
+scope`, which is the signal that was missing in #82.
 
 The invariant under test is the one #16 established and #22 found holes in:
 **every build number that ever reaches a screen or Apple exists in exactly one

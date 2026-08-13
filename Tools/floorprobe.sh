@@ -4,9 +4,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p .build
+source Tools/session_sources.sh
 swiftc -O -o .build/floorprobe \
-  HeikoTranslate/Models/KeyCheck.swift \
-  HeikoTranslate/Services/GeminiLiveSession.swift \
+  "${SESSION_SOURCES[@]}" \
   Tools/l3replay/common.swift \
   Tools/floorprobe/main.swift
 exec .build/floorprobe "$@"
