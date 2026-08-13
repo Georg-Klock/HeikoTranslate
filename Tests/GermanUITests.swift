@@ -190,6 +190,10 @@ final class GermanUITests: XCTestCase {
         XCTAssertEqual(g.minutesSpokenFormat, "%.0f Minuten gesprochen")
         XCTAssertEqual(g.sendLog, "Protokoll an Georg senden")
         XCTAssertEqual(g.sendLogSubtitleFormat, "Falls etwas nicht klappt · %@")
+        // The privacy-policy row (#91). CANDIDATE: written 2026-08-12,
+        // Georg's review pending. "Datenschutz" is the word German sites put
+        // on exactly this link.
+        XCTAssertEqual(g.privacyPolicy, "Datenschutz")
         XCTAssertEqual(g.settingsLabel, "Einstellungen")
     }
 
@@ -218,7 +222,8 @@ final class GermanUITests: XCTestCase {
                 ("textSize", s.textSize),
                 ("done", s.done), ("usage", s.usage),
                 ("minutesSpokenFormat", s.minutesSpokenFormat), ("sendLog", s.sendLog),
-                ("sendLogSubtitleFormat", s.sendLogSubtitleFormat), ("settingsLabel", s.settingsLabel),
+                ("sendLogSubtitleFormat", s.sendLogSubtitleFormat),
+                ("privacyPolicy", s.privacyPolicy), ("settingsLabel", s.settingsLabel),
                 ("startListeningLabel", s.startListeningLabel),
                 ("stopListeningLabel", s.stopListeningLabel),
             ]
@@ -288,5 +293,24 @@ final class GermanUITests: XCTestCase {
         XCTAssertTrue(sheet.contains("strings.sendLog"),
                       "the settings sheet must label the share action from UIStrings")
         XCTAssertEqual(UIStrings.german.sendLog, "Protokoll an Georg senden")
+    }
+
+    /// L1.78 — the privacy-policy row (#91). App Review 5.1.1(i) requires the
+    /// policy link "within the app in an easily accessible manner"; the app's
+    /// answer is a row on the language sheet, one tap from the pill, beside
+    /// the log row and under the same reader-language rule. Same shape as
+    /// L1.28: the sheet must offer the link, label it from UIStrings, and the
+    /// destination must be the ONE canonical URL — the `www.` form the policy
+    /// is published under (docs/privacy-policy.md) — so the row and App Store
+    /// Connect can never point at different pages.
+    func testL1_78_privacyPolicyRowIsReachableAndCanonical() throws {
+        let sheet = try String(
+            contentsOf: repoRoot.appendingPathComponent("HeikoTranslate/LanguageSettingsSheet.swift"),
+            encoding: .utf8)
+        XCTAssertTrue(sheet.contains("https://www.georgklock.com/heiko-translate-privacy"),
+                      "the settings sheet must link the published policy, www. form")
+        XCTAssertTrue(sheet.contains("strings.privacyPolicy"),
+                      "the settings sheet must label the policy row from UIStrings")
+        XCTAssertEqual(UIStrings.german.privacyPolicy, "Datenschutz")
     }
 }

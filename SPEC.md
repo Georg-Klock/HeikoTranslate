@@ -114,6 +114,14 @@ sides swaps them. The choice is remembered; changing it mid-conversation
 restarts the translation. This is the ONLY settings surface, deliberately
 quiet — Heiko never needs it.
 
+Below the wheels sit the sheet's three quiet rows, all in the reader's
+language: the text-size slider, the log-share row ("Protokoll an Georg
+senden", the one action he may ever be asked to perform), and a
+**Datenschutz** row that opens the published privacy policy in the browser
+(`https://www.georgklock.com/heiko-translate-privacy`) — the in-app policy
+link App Review 5.1.1(i) requires, placed here so the one-button screen
+stays one button (#91).
+
 The pill replaced a gear because the destination is language selection, and
 for a user who reads no English two flags say that better than a cog does.
 It doubles as the only permanent readout of which pair is active.
