@@ -295,7 +295,7 @@ final class GermanUITests: XCTestCase {
         XCTAssertEqual(UIStrings.german.sendLog, "Protokoll an Georg senden")
     }
 
-    /// L1.78 — the privacy-policy row (#91). App Review 5.1.1(i) requires the
+    /// L1.79 — the privacy-policy row (#91). App Review 5.1.1(i) requires the
     /// policy link "within the app in an easily accessible manner"; the app's
     /// answer is a row on the language sheet, one tap from the pill, beside
     /// the log row and under the same reader-language rule. Same shape as
@@ -303,7 +303,7 @@ final class GermanUITests: XCTestCase {
     /// destination must be the ONE canonical URL — the `www.` form the policy
     /// is published under (docs/privacy-policy.md) — so the row and App Store
     /// Connect can never point at different pages.
-    func testL1_78_privacyPolicyRowIsReachableAndCanonical() throws {
+    func testL1_79_privacyPolicyRowIsReachableAndCanonical() throws {
         let sheet = try String(
             contentsOf: repoRoot.appendingPathComponent("HeikoTranslate/LanguageSettingsSheet.swift"),
             encoding: .utf8)

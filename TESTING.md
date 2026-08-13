@@ -317,7 +317,7 @@ consent gate goes on top is the decision #91 stays open for.
 
 | ID | Given | Expect | Rule |
 |---|---|---|---|
-| L1.78 | The language sheet's source | Offers the policy link, labels it from `UIStrings`, and the destination is exactly the published `www.` URL | **#91** |
+| L1.79 | The language sheet's source | Offers the policy link, labels it from `UIStrings`, and the destination is exactly the published `www.` URL | **#91** |
 
 Commit diagnostics. Evidence only — these must never influence which
 transcript `TurnLogic` commits.
