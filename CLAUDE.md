@@ -141,7 +141,12 @@ the point of the project; hiding it is what would look bad.
 - L1 logic tests (fast, no device):
   `xcodebuild test -project HeikoTranslate.xcodeproj -scheme HeikoTranslate -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -quiet`
 - L2 protocol probe (talks to the real API, costs a fraction of a cent):
-  `python3 Tools/livetest.py --text "a test sentence" --target de`
+  `Tools/l2probe.sh de "Where is the train station?"`
+  **Not `Tools/livetest.py`** — the Python twin has been silent server-side
+  since 2026-08-11 (#76: setupComplete, then nothing), so it fails every
+  time and the failure looks exactly like an API outage. `l2probe.sh` rides
+  the Swift `GeminiLiveSession`, which is both working and the path the app
+  actually ships. TESTING.md §L2 has the eliminations.
 - L3 replay tests (recorded audio through the real session + turn logic):
   `Tools/l3replay.sh` (all cases) or `Tools/l3replay.sh TestAudio/en_short.wav`
 - Open a PR for the current branch: `gh pr create`
