@@ -42,10 +42,27 @@ targets:
         CFBundleVersion: "40"
 YML
   cp "$REPO/Tools/deploy.sh" "$REPO/Tools/release.sh" "$REPO/Tools/pull_logs.sh" \
-    "$REPO/Tools/ios_device.sh" "$REPO/Tools/build_number.sh" "$REPO_DIR/Tools/"
+    "$REPO/Tools/ios_device.sh" "$REPO/Tools/build_number.sh" \
+    "$REPO/Tools/secrets_preflight.sh" "$REPO_DIR/Tools/"
   cp "$REPO/Tools/ExportOptions.plist.example" "$REPO/Tools/ExportUpload.plist.example" \
     "$REPO_DIR/Tools/"
-  printf 'Tools/local.env\n' > "$REPO_DIR/.gitignore"
+  # The #89 preflight refuses to build without a plausible bundled key, and
+  # these cases are about the windows AFTER it — give every repo one. The
+  # key is invented; Tools/tests/release-key-preflight.sh owns the refusals.
+  mkdir -p "$REPO_DIR/HeikoTranslate/Resources"
+  cat > "$REPO_DIR/HeikoTranslate/Resources/Secrets.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>GEMINI_API_KEY</key>
+    <string>INVENTED-L0-KEY-000000000000000000000</string>
+    <key>APP_UPDATE_URL</key>
+    <string>https://apps.apple.com/invented-fixture</string>
+</dict>
+</plist>
+PLIST
+  printf 'Tools/local.env\nHeikoTranslate/Resources/Secrets.plist\n' > "$REPO_DIR/.gitignore"
   printf 'DEVICE_UUID="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"\nDEVELOPMENT_TEAM="EXAMPLETEAM"\n' \
     > "$REPO_DIR/Tools/local.env"
   # Exercise the scripts' L1 call without copying the simulator-specific gate
@@ -204,7 +221,20 @@ for arg in "$@"; do json_path="$arg"; done
 
 case "$field" in
   result.devices.*.identifier|result.devices.*.deviceProperties.name) ;;
-  *) exit 1 ;;
+  *)
+    # Any other field is the #89 preflight reading a plist. Its contract,
+    # verified against the real plutil: `-extract <key> raw -o - <file>`
+    # prints the string value (empty string included) and exits 0; a missing
+    # key exits 1. This stub shadows the host plutil for the whole harness,
+    # so it must answer this shape too — and on Linux CI there is no host
+    # plutil to fall back to.
+    [[ "${3:-}" == "raw" && -f "$json_path" ]] || exit 1
+    value_line=$(grep -A1 "<key>$field</key>" "$json_path" | tail -1)
+    if [[ "$value_line" =~ \<string\>(.*)\</string\> ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}"
+      exit 0
+    fi
+    exit 1 ;;
 esac
 index_part="${field#result.devices.}"
 index="${index_part%%.*}"

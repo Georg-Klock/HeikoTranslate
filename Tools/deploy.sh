@@ -15,6 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 source Tools/ios_device.sh
 source Tools/build_number.sh
+source Tools/secrets_preflight.sh
 
 
 # The paired iPhone's UDID identifies a physical device, and the Apple
@@ -63,6 +64,12 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
+
+# The bundle ships whatever Secrets.plist holds; same risk as release.sh at
+# lower stakes (one phone, not every installer). Before the test gate and the
+# bump, so a refusal moves nothing. No APP_UPDATE_URL warning here —
+# development builds omit that key on purpose. GitHub #89.
+assert_secrets_key
 
 # Runs first, before the bump and before any trap is armed: a failing suite
 # should cost nothing and leave nothing to clean up. --no-test exists for the

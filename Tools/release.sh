@@ -19,6 +19,7 @@ cd "$(dirname "$0")/.."
 #   echo 'DEVELOPMENT_TEAM="<team-id>"' >> Tools/local.env
 # Find it in Xcode → Settings → Accounts → your team.
 source Tools/build_number.sh
+source Tools/secrets_preflight.sh
 [ -f Tools/local.env ] && . Tools/local.env
 if [ -z "${DEVELOPMENT_TEAM:-}" ]; then
   echo "No DEVELOPMENT_TEAM. Find it in Xcode → Settings → Accounts, then:" >&2
@@ -85,6 +86,15 @@ if [[ -n "${L3_ALLOW_RAW:-}" || -n "${L3_INJECT_RAW:-}" ]]; then
   exit 2
 fi
 
+
+# The archive ships whatever Secrets.plist holds — the template's REPLACE-ME,
+# a blank key, or no file at all — and no other gate can catch it: L1 never
+# exercises the key, L3 takes its own from Tools/local.env, and the build
+# succeeds regardless. Refuse the states that cannot possibly be right, before
+# the test gate and before the bump, so a refusal moves nothing. Whether the
+# key is LIVE stays L3's and l2probe.sh's job. GitHub #89.
+assert_secrets_key
+warn_if_no_update_url
 
 if [[ "$RUN_TESTS" == "1" ]]; then
   # One definition of "L1 passed", shared with deploy.sh and quoted in PR
