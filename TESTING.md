@@ -982,7 +982,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 197 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService` and `ConversationViewModel` (2026-08-13, on the #87 branch) |
+| L1 | ✅ Built and passing — 202 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService` and `ConversationViewModel` (2026-08-13, on merged `main`) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Partially re-verified on device (2026-08-12): revoked-key recovery passed after four on-device iterations (#9, PR #82); late-fragment filtering (#39), loanword direction (#40) and mic-aware speech end (#36) passed and closed; number transcription measured — shared model-level mis-hearing of German compound numerals, now a decision (#33); code-switching evidence refreshed (#32). Found live: #83, speech resuming in the stopped→commit window is dropped and talked over — the open half of #31. Still owed: the deliberate self-hearing geometry run (#35, case 7), which has fresh incidental evidence (a post-playback fragment recommitted as a small bubble). The ordered plan with per-case log criteria stays on GitHub #71. |
