@@ -748,6 +748,7 @@ Tools/tests/shell-syntax.sh
 Tools/tests/l1-gate-regenerates.sh
 Tools/tests/uitest-accessibility-gate.sh
 Tools/tests/release-rejects-l3-overrides.sh
+Tools/tests/release-key-preflight.sh
 ```
 
 Runs in a couple of seconds and needs nothing installed — it stubs `xcrun`,
@@ -813,6 +814,27 @@ anything, not just `1` — cannot cut a release. `release.sh` refuses outright
 before testing, bumping, or building, and a clean environment sails past the
 guard to the test gate. Same idiom as the build-number cases: the REAL
 `release.sh` in a throwaway repo, no re-implementation.
+
+`release-key-preflight.sh` pins the Secrets preflight (#89): the archive
+ships whatever `HeikoTranslate/Resources/Secrets.plist` contains, and no
+other gate can catch a missing file, a blank `GEMINI_API_KEY`, or the
+template's `REPLACE-ME` — L1 never exercises the key, L3 takes its own from
+`Tools/local.env`, and the build succeeds regardless because the plist is a
+bundled resource, not compiled. `Tools/secrets_preflight.sh` (shared, sourced
+by both scripts the way `build_number.sh` is) makes `release.sh` and
+`deploy.sh` refuse those three states before the test gate and before the
+bump, so a refusal moves nothing and there is nothing to restore; a valid key
+sails through to the test gate. Structural on purpose — whether the key is
+*live* stays L3's and `l2probe.sh`'s job. The suite also asserts what the
+preflight must never do: **print the key's value.** Every case's captured
+output, refusal and pass alike, is swept for the invented fixture key.
+`APP_UPDATE_URL` is pinned as a warning, never a refusal (#9): a release
+without it still reaches the test gate, but is told the revoked-key sentence
+would tap to nowhere. The extraction goes through `plutil -extract … raw`; on
+a machine without a `plutil` (Linux CI) the suite substitutes a stub that
+honours the contract the real tool was verified to have — the same contract
+`build-number-windows.sh`'s plutil stub answers, since that stub shadows the
+host tool for its whole harness.
 
 The invariant under test is the one #16 established and #22 found holes in:
 **every build number that ever reaches a screen or Apple exists in exactly one

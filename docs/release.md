@@ -16,6 +16,17 @@ Tests → bump the build number → archive → export → upload to TestFlight.
 refuses to run on a dirty tree or from a non-`main` branch, because a build
 you cannot identify from a commit is a build you cannot debug later.
 
+It also refuses — before the test gate and before the bump — when the bundled
+`HeikoTranslate/Resources/Secrets.plist` cannot possibly hold a working key:
+missing file, blank `GEMINI_API_KEY`, or the template's `REPLACE-ME` (GitHub
+#89). The archive ships whatever that plist contains, and no other gate can
+catch it: L1 never exercises the key, L3 takes its own from `Tools/local.env`,
+and the build succeeds regardless. The check is structural — whether the key
+is *live* stays L3's and `Tools/l2probe.sh`'s job. A release without
+`APP_UPDATE_URL` gets a warning, not a refusal: the revoked-key sentence would
+show with a tap that goes nowhere (#9). `deploy.sh` runs the same key
+preflight.
+
 Flags: `--no-tests` skips the L1+L3 gate (don't), `--no-l3` runs only L1 when
 you have already run L3 this session, `--dry-run` archives and then restores
 the build number, so a dry run leaves the tree exactly as it found it.
