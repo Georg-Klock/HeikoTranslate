@@ -29,10 +29,27 @@ targets:
         CFBundleShortVersionString: "2.3"
         CFBundleVersion: "40"
 YML
-  cp "$REPO/Tools/release.sh" "$REPO/Tools/build_number.sh" "$REPO_DIR/Tools/"
+  cp "$REPO/Tools/release.sh" "$REPO/Tools/build_number.sh" \
+    "$REPO/Tools/secrets_preflight.sh" "$REPO_DIR/Tools/"
   cp "$REPO/Tools/ExportOptions.plist.example" "$REPO/Tools/ExportUpload.plist.example" \
     "$REPO_DIR/Tools/"
-  printf 'Tools/local.env\n' > "$REPO_DIR/.gitignore"
+  # A plausible bundled key, so the #89 preflight (which sits between the
+  # override guard and the test gate) cannot be what stops these runs. The
+  # key is invented; Tools/tests/release-key-preflight.sh owns the refusals.
+  mkdir -p "$REPO_DIR/HeikoTranslate/Resources"
+  cat > "$REPO_DIR/HeikoTranslate/Resources/Secrets.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>GEMINI_API_KEY</key>
+    <string>INVENTED-L0-KEY-000000000000000000000</string>
+    <key>APP_UPDATE_URL</key>
+    <string>https://apps.apple.com/invented-fixture</string>
+</dict>
+</plist>
+PLIST
+  printf 'Tools/local.env\nHeikoTranslate/Resources/Secrets.plist\n' > "$REPO_DIR/.gitignore"
   printf 'DEVELOPMENT_TEAM="EXAMPLETEAM"\n' > "$REPO_DIR/Tools/local.env"
   # The gate must be the FIRST thing that can fail after the standing guards:
   # a distinctive exit from the L1 stub is how a case proves the run got past
