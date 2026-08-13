@@ -442,10 +442,27 @@ final class ConversationViewModel: ObservableObject {
         }
     }
 
+    /// What `onMicUnrecoverable` runs: the watchdog spent both rebuilds and
+    /// the microphone still delivers nothing, so the service has already torn
+    /// itself down. `stop()` moves the BUTTON to the tap-to-start state (its
+    /// second `stopSession()` is redundant but harmless — same shape as the
+    /// exhausted-pair handler above), and the sentence is the existing
+    /// reviewed one for "the app tried to restart the microphone by itself
+    /// and could not": actionable, because the reader was not at the button
+    /// when this happened. Same errorMessage-over-muted pairing the failed
+    /// automatic resume uses (GitHub #5). No new copy. GitHub #87, SPEC R8.
+    private func handleMicUnrecoverable() {
+        stop()
+        errorMessage = strings.micResumeFailed
+    }
+
     #if DEBUG
     /// Reaching the exhausted state for real needs failed connections
     /// against a live socket. DEBUG-only, same code path.
     func forceSessionsExhaustedForTesting() { handleSessionsExhausted() }
+    /// The mic give-up handler, reachable without a dead audio graph.
+    /// DEBUG-only, same code path. GitHub #87.
+    func forceMicUnrecoverableForTesting() { handleMicUnrecoverable() }
     /// The service-error funnel, reachable without a socket. DEBUG-only.
     func reportServiceErrorForTesting(_ message: String) { handleServiceError(message) }
     /// Lets a test wait for the probe verdict instead of sleeping.
@@ -1201,6 +1218,9 @@ final class ConversationViewModel: ObservableObject {
                     // beside that error was two contradictory claims at once.
                     // GitHub #4, SPEC R8.
                     self?.handleSessionsExhausted()
+                },
+                onMicUnrecoverable: { [weak self] in
+                    self?.handleMicUnrecoverable()
                 },
                 onConnectionQuality: { [weak self] quality in
                     guard let self else { return }
