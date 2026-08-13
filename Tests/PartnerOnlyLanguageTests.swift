@@ -3,9 +3,11 @@ import XCTest
 
 /// GitHub #30 (decision 2026-08-12): Tagalog and Vietnamese are PARTNER-ONLY
 /// — the model translates them (verified live, targetprobe 2026-08-12), but
-/// neither is an app language, so the home side must never become one. Three
+/// neither is an app language, so the home side must never become one. Four
 /// gates enforce it: the home wheel's filter, the collision swap's fallback,
-/// and the home binding's own guard — the last two pinned here.
+/// the home binding's own guard, and init's normalization of a stored value
+/// (#90 — observers do not fire during init). The swap and the binding guard
+/// are pinned here; the init path in `LanguagePairTests` (L1.75c).
 @MainActor
 final class PartnerOnlyLanguageTests: XCTestCase {
 
