@@ -305,6 +305,20 @@ show `speaker resumed during the commit window` instead of losing words.
 | L1.77b | A loud mic buffer while our own translation plays | No un-stop — echo proves nothing | **#35/#83** |
 | L1.77c | A loud buffer on a live turn | Nothing changes | **#83** |
 
+The privacy-policy row (#91, 2026-08-12). App Review 5.1.1(i) requires the
+policy link inside the app; the answer is a `Datenschutz` row on the
+language sheet, beside the log row, labelled from `UIStrings` under the
+reader-language rule (so the label went through L1.43/L1.44 like every
+string), opening the ONE canonical URL the policy is published under —
+the `www.` form, same as App Store Connect carries. The German label and
+the extended mic usage-description sentence (naming Google, 5.1.2(i)) are
+candidates awaiting Georg's review, per the #9 precedent. Whether a
+consent gate goes on top is the decision #91 stays open for.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.79 | The language sheet's source | Offers the policy link, labels it from `UIStrings`, and the destination is exactly the published `www.` URL | **#91** |
+
 Commit diagnostics. Evidence only — these must never influence which
 transcript `TurnLogic` commits.
 
