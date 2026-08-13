@@ -31,9 +31,11 @@ final class ConversationViewModel: ObservableObject {
         didSet {
             guard !isAdjustingPair else { return }
             // Belt to the wheel's own filter (#30): home must never become a
-            // partner-only language, whatever path wrote it — a stored value
-            // from some future migration included. Revert to the previous
-            // home, or the default when that is itself unusable.
+            // partner-only language, whatever runtime path writes it. Revert
+            // to the previous home, or the default when that is itself
+            // unusable. The one path this observer cannot cover — a stored
+            // value arriving through init, where observers do not fire — is
+            // normalized by init itself (#90).
             if !homeLang.canBeHome {
                 withPairAdjustment {
                     homeLang = oldValue.canBeHome ? oldValue : Self.defaultHomeLang
@@ -1120,13 +1122,27 @@ final class ConversationViewModel: ObservableObject {
                              : Self.loadLang("settings.homeLang", default: Self.defaultHomeLang)
         partnerLang = resetPair ? Self.defaultPartnerLang
                                 : Self.loadLang("settings.partnerLang", default: Self.defaultPartnerLang)
+        // The #30 belt in homeLang's didSet cannot cover this path — property
+        // observers do not fire during init — and a stored value is the one
+        // way a partner-only home can actually arrive (a future migration, a
+        // hand-edited container; no shipped build writes one). Normalize it
+        // BEFORE the distinct-pair fix below, so the fallback goes through
+        // the same collision repair as any loaded pair. GitHub #90.
+        let storedHomeWasPartnerOnly = !homeLang.canBeHome
+        if storedHomeWasPartnerOnly {
+            diag("app", "stored home \(homeLang.rawValue) is partner-only — repaired to \(Self.defaultHomeLang.rawValue)")
+            homeLang = Self.defaultHomeLang
+        }
         if homeLang == partnerLang { partnerLang = homeLang == .en ? .de : .en }
-        if resetPair {
+        if resetPair || storedHomeWasPartnerOnly {
             // Property observers do not fire during init, so write it through
-            // by hand — otherwise the reset lasts only for this launch.
+            // by hand — otherwise the reset (or the repair) lasts only for
+            // this launch.
             UserDefaults.standard.set(homeLang.rawValue, forKey: "settings.homeLang")
             UserDefaults.standard.set(partnerLang.rawValue, forKey: "settings.partnerLang")
-            diag("app", "language pair RESET to \(homeLang.rawValue)↔\(partnerLang.rawValue)")
+            if resetPair {
+                diag("app", "language pair RESET to \(homeLang.rawValue)↔\(partnerLang.rawValue)")
+            }
         }
         seedSampleConversationIfRequested()
         startRingDemoIfRequested()

@@ -247,15 +247,18 @@ a test. One campaign exclusion, recorded in the table: a ~300ms utterance
 Partner-only languages (#30, 2026-08-12). Tagalog and Vietnamese are
 selectable as the partner, never as home (`canBeHome`): the wheel filters,
 the SPEC §4.4 collision swap falls back instead of seating them, and the
-home binding refuses them outright. L1.44 encodes the amended rule: a
-partner-only language needs a NAME in every set and falls back to German,
-not a set of its own. Verified live before landing: `targetprobe.sh tl vi`
-translated both.
+home binding refuses them outright. A stored value arrives through `init`,
+where property observers do not fire, so init normalizes it itself (#90).
+L1.44 encodes the amended rule: a partner-only language needs a NAME in
+every set and falls back to German, not a set of its own. Verified live
+before landing: `targetprobe.sh tl vi` translated both.
 
 | ID | Given | Expect | Rule |
 |---|---|---|---|
 | L1.75 | The collision swap with a partner-only old partner | Falls back (default home, or its counterpart on a second collision) — never seats tl/vi on home | **§4.4/#30** |
 | L1.75b | Any write of a partner-only language to the home binding | Refused; previous home survives; the pair stays distinct | **R8/#30** |
+| L1.75c | A persisted partner-only home (`settings.homeLang = "tl"`), fresh init | Repaired to the default home — observers do not fire during init, so the binding guard cannot cover this path. The distinct-pair fix re-runs after the repair, and the STORE is repaired too, or it lasts one launch | **R8/#30/#90** |
+| L1.75d | A legitimate persisted pair (a partner-only PARTNER included) through the same init | Loads unchanged, in memory and in the store — the repair touches exactly one broken state | **§4.1/#30/#90** |
 
 The wheels, for VoiceOver (#14, 2026-08-11). Each language column is ONE
 adjustable element; a swipe steps through the same displayed order the
