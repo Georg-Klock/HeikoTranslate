@@ -72,6 +72,13 @@ struct UIStrings {
     /// the answer sits on the line right under the button he is asking Heiko
     /// to press, so one screenshot answers both questions.
     let sendLogSubtitleFormat: String
+    /// The privacy-policy row on the language sheet (GitHub #91). App Review
+    /// 5.1.1(i) requires the policy link "within the app in an easily
+    /// accessible manner"; this row opens the published policy. The word each
+    /// language uses is the one its websites put on exactly this link — the
+    /// reader is finding a legal page, not learning a coinage. German is a
+    /// CANDIDATE awaiting Georg's review; the other five ride the #6 backlog.
+    let privacyPolicy: String
 
     // Accessibility
     let settingsLabel: String
@@ -122,6 +129,7 @@ struct UIStrings {
         minutesSpokenFormat: "%.0f Minuten gesprochen",
         sendLog: "Protokoll an Georg senden",
         sendLogSubtitleFormat: "Falls etwas nicht klappt · %@",
+        privacyPolicy: "Datenschutz",
         settingsLabel: "Einstellungen",
         startListeningLabel: "Zuhören starten",
         stopListeningLabel: "Zuhören beenden",
@@ -152,6 +160,7 @@ struct UIStrings {
         minutesSpokenFormat: "%.0f minutes spoken",
         sendLog: "Send the log to Georg",
         sendLogSubtitleFormat: "If something isn't working · %@",
+        privacyPolicy: "Privacy policy",
         settingsLabel: "Settings",
         startListeningLabel: "Start listening",
         stopListeningLabel: "Stop listening",
@@ -184,6 +193,7 @@ struct UIStrings {
         minutesSpokenFormat: "%.0f minutos de conversación",
         sendLog: "Enviar el registro a Georg",
         sendLogSubtitleFormat: "Si algo no funciona · %@",
+        privacyPolicy: "Política de privacidad",
         settingsLabel: "Configuración",
         startListeningLabel: "Empezar a escuchar",
         stopListeningLabel: "Dejar de escuchar",
@@ -214,6 +224,7 @@ struct UIStrings {
         minutesSpokenFormat: "%.0f minutes de conversation",
         sendLog: "Envoyer le journal à Georg",
         sendLogSubtitleFormat: "Si quelque chose ne marche pas · %@",
+        privacyPolicy: "Politique de confidentialité",
         settingsLabel: "Réglages",
         startListeningLabel: "Commencer à écouter",
         stopListeningLabel: "Arrêter d'écouter",
@@ -244,6 +255,7 @@ struct UIStrings {
         minutesSpokenFormat: "말한 시간 %.0f분",
         sendLog: "Georg에게 로그 보내기",
         sendLogSubtitleFormat: "문제가 있을 때 · %@",
+        privacyPolicy: "개인정보 처리방침",
         settingsLabel: "설정",
         startListeningLabel: "듣기 시작",
         stopListeningLabel: "듣기 중지",
@@ -274,6 +286,7 @@ struct UIStrings {
         minutesSpokenFormat: "共说了 %.0f 分钟",
         sendLog: "把日志发给 Georg",
         sendLogSubtitleFormat: "如果出了问题 · %@",
+        privacyPolicy: "隐私政策",
         settingsLabel: "设置",
         startListeningLabel: "开始聆听",
         stopListeningLabel: "停止聆听",
