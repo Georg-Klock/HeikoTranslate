@@ -72,6 +72,41 @@ ship without it. A day of review is a day he has no working translator, and
 that cost is far larger than a tidy version number. Ship the fix on the current
 version; bump when he is home.
 
+## When to recapture the store screenshots
+
+The frames in `design/appstore/` are real simulator captures of the app
+driven by its own DEBUG seed (`Tools/appstore-shots.sh`), never mockups or
+composites — every frame is one the shipping app can actually produce. That
+rule is what makes them safe to submit, and it is the reason the **build
+pill stays visible in them**. Hiding it would need either a launch flag that
+suppresses it or a retouched PNG, and both produce a frame the shipping app
+does not draw. A faint version number in the corner is a smaller cost than
+a staged screenshot.
+
+Keeping the pill in frame does **not** mean the screenshots are bound to the
+build number. `deploy.sh` moves that counter on every run, so binding them
+would mean recapturing forever for a grey string no prospective user reads.
+Apple's screenshot rule is about what the app *does* — reviewers do not diff
+version strings — so a stale number is at worst a metadata rejection asking
+for new images: unlikely, about a day, recoverable. A permanent chore is
+not.
+
+**The test is the marketing-version test above.** Would the beta description
+have to change for it to stay true? Then the screenshots are stale too.
+
+| Change | Recapture? |
+|---|---|
+| A new control, or a visibly different interaction | **Yes** — and it earns a marketing bump too |
+| New or changed user-facing copy in frame | **Yes** |
+| Layout, type size, colour | **Yes** |
+| The build number ticking | No |
+| Bug fix, timing tune, logging, docs, tests | No |
+
+One exception, and only for the **first** submission: capture from the
+release candidate if it is convenient. You are building an RC anyway, so it
+costs almost nothing and it makes the initial listing exactly true. Do not
+turn that into a standing obligation for later submissions.
+
 ## After the upload
 
 1. Wait for processing (5–15 min), then the build appears under TestFlight.
