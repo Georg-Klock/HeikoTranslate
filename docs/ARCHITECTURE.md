@@ -230,7 +230,13 @@ continuously while the mic is open and has **no offline mode**.
   enabling voice processing reconfigures the input hardware out from under
   the freshly installed tap. Rebuilding the audio path fixes it instantly,
   which is what the manual mute/unmute ritual was really doing. A watchdog
-  now checks at 0.5s and rebuilds automatically (twice at most).
+  now checks at 0.5s and rebuilds automatically (twice at most). If both
+  rebuilds come up dead — never observed on device; every logged occurrence
+  was fixed by the first — the next check gives up loudly instead of
+  no-opping forever: the run is torn down through the one shared teardown
+  and `onMicUnrecoverable` tells the UI to show the stopped state with the
+  existing "Mikrofon ist aus — bitte antippen." sentence, so a tap starts a
+  fresh run with a fresh watchdog (R8, GitHub #87).
 - **A turn must not end while its translation is still streaming.** Same
   session: `"…wir haben im Moment keine"` committed as one bubble and the
   rest of that sentence, `"Gurken mehr."`, landed in the next one against
