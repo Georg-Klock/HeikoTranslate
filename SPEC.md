@@ -110,16 +110,15 @@ interactive.
 A capsule showing **the two flags of the current pair** — partner left,
 home right, matching the conversation's sides — opens the language sheet:
 two wheel pickers, each parking its selection in a chat bubble on the side
-that language occupies in the conversation, with the quiet rows beneath —
-the text-size slider and the send-log row. Selecting the same language on both
+that language occupies in the conversation. Selecting the same language on both
 sides swaps them. The choice is remembered; changing it mid-conversation
 restarts the translation. This is the ONLY settings surface, deliberately
 quiet — Heiko never needs it.
 
-Below the wheels sit the sheet's three quiet rows, all in the reader's
-language: the text-size slider, the log-share row ("Protokoll an Georg
-senden", the one action he may ever be asked to perform), and a
-**Datenschutz** row that opens the published privacy policy in the browser
+Beneath the wheels sit three quiet rows, all in the reader's language: the
+text-size slider, the log-share row ("Protokoll an Georg senden", the one
+action he may ever be asked to perform), and a **Datenschutz** row that
+opens the published privacy policy in the browser
 (`https://www.georgklock.com/heiko-translate-privacy`) — the in-app policy
 link App Review 5.1.1(i) requires, placed here so the one-button screen
 stays one button (#91).

@@ -16,9 +16,11 @@ targets:
         # The second sentence names Google: App Review 5.1.2(i) requires the
         # third party to be disclosed where permission is asked (GitHub #91).
         # German-only like the rest of this description; the InfoPlist
-        # localization gap is #6's, not this line's. CANDIDATE wording,
-        # Georg's review pending.
-        NSMicrophoneUsageDescription: "Heiko Translate braucht Zugriff auf das Mikrofon, um gesprochene Sprache zu übersetzen. Die Aufnahme wird dazu an Google (Gemini) gesendet."
+        # localization gap is #6's, not this line's. It names the API exactly
+        # as docs/privacy-policy.md does ("an die Google Gemini API"), so the
+        # dialog and the published policy cannot describe the same transfer
+        # in two ways. German approved by Georg 2026-08-13 (GitHub #91).
+        NSMicrophoneUsageDescription: "Heiko Translate braucht Zugriff auf das Mikrofon, um gesprochene Sprache zu übersetzen. Die Sprachaufnahme wird dazu an die Google Gemini API gesendet."
         # Shown (very quietly) in the UI corner: one plain number, no build
         # in parentheses. Bump BOTH on every install to a real device, so
         # "is my phone current?" is answerable at a glance.
