@@ -105,6 +105,10 @@ write_plist() { # write_plist <state> <path>
       rm -f "$path" ;;
     blank)
       plist_body "" > "$path" ;;
+    whitespace)
+      plist_body "   " > "$path" ;;
+    template_trailing)
+      plist_body "REPLACE-ME " > "$path" ;;
     template)
       # The literal template, byte for byte — the exact artifact a fresh
       # checkout is told to copy into place, and the state #89 describes.
@@ -181,6 +185,13 @@ run_case release.sh missing  2 yes
 run_case release.sh blank    2 yes
 run_case release.sh template 2 yes
 run_case release.sh valid   55 no
+
+# Whitespace is not a key. A whitespace-only value slipped past the plain
+# emptiness check, and REPLACE-ME with a trailing space slipped past the
+# exact comparison — both found by review against the real plutil, which
+# preserves the whitespace faithfully. The preflight trims before checking.
+run_case release.sh whitespace        2 yes
+run_case release.sh template_trailing 2 yes
 
 # deploy.sh shares the preflight: same three refusals, and the same proof
 # that a valid key reaches its L1 gate.
