@@ -14,11 +14,19 @@ import Foundation
 /// every string. A missing translation is a build error.
 ///
 /// **Review status.** German is the reviewed original (see `GermanUITests`).
-/// English was written alongside it. **Spanish, French, Korean and Chinese are
-/// unreviewed translations** — they are complete and idiomatic as far as I can
-/// judge, but nobody who speaks those languages has read them, and this is an
-/// app whose users by definition cannot check a translation themselves. They
-/// should have a native reader before anyone relies on them.
+/// English was written alongside it. **Spanish, French, Korean and Chinese
+/// have still never been read by a speaker of them** — that is what #6 asks
+/// for and this is not it.
+///
+/// What they have had is a second AI pass (2026-08-13, decision on #6): every
+/// string re-rendered independently and the reading kept that most of those
+/// renderings agreed on, with a set's own established phrasing as the
+/// tiebreaker — so `micDenied`'s "…tap to open Settings" pattern is what
+/// `micResumeFailed` was made to match in Korean, rather than an outside
+/// idea of good Korean. Consensus between AI renderings is a check on
+/// carelessness, not on correctness: it catches a string nobody thought
+/// about, and cannot catch four renderings that are wrong the same way.
+/// Treat these as better than they were and still unverified.
 struct UIStrings {
     // Status line
     let connecting: String
@@ -38,6 +46,11 @@ struct UIStrings {
     /// Also shown when the mic watchdog spends both rebuilds on a dead
     /// microphone and gives up (GitHub #87) — the same contract holds: the
     /// app tried by itself, could not, and a tap is the recovery.
+    ///
+    /// The four unreviewed sets all said some form of "tap the screen"
+    /// until 2026-08-13, which is both vaguer than the contract (the tap
+    /// that recovers is on the button) and drops the *why*. They now name
+    /// the outcome — turn it back on — the way English does. #6.
     let micResumeFailed: String
     let connectionError: String
     /// The key this build shipped with has been revoked — rotation after
@@ -178,7 +191,7 @@ struct UIStrings {
         tapToSpeak: "Toca para hablar",
         micDenied: "Sin acceso al micrófono. Toca para abrir Configuración.",
         micFailed: "No se pudo iniciar el micrófono.",
-        micResumeFailed: "El micrófono está apagado — toca la pantalla.",
+        micResumeFailed: "El micrófono está apagado — toca para reactivarlo.",
         connectionError: "Error de conexión. Inténtalo de nuevo.",
         updateRequired: "Esta versión de la app ya no funciona. Toca para actualizar.",
         poorConnection: "Mala conexión — la traducción puede verse afectada.",
@@ -209,7 +222,7 @@ struct UIStrings {
         tapToSpeak: "Touchez pour parler",
         micDenied: "Pas d'accès au microphone. Touchez pour ouvrir les Réglages.",
         micFailed: "Impossible de démarrer le microphone.",
-        micResumeFailed: "Le microphone est coupé — touchez l'écran, s'il vous plaît.",
+        micResumeFailed: "Le microphone est coupé — touchez pour le réactiver.",
         connectionError: "Problème de connexion. Veuillez réessayer.",
         updateRequired: "Cette version de l'app ne fonctionne plus. Touchez pour mettre à jour.",
         poorConnection: "Connexion faible — la traduction peut s'en ressentir.",
@@ -240,7 +253,7 @@ struct UIStrings {
         tapToSpeak: "탭하여 말하기",
         micDenied: "마이크 접근 권한이 없습니다. 설정을 열려면 탭하세요.",
         micFailed: "마이크를 시작할 수 없습니다.",
-        micResumeFailed: "마이크가 꺼져 있습니다 — 화면을 탭하세요.",
+        micResumeFailed: "마이크가 꺼져 있습니다 — 다시 켜려면 탭하세요.",
         connectionError: "연결 오류입니다. 다시 시도해 주세요.",
         updateRequired: "이 버전은 더 이상 작동하지 않습니다. 업데이트하려면 탭하세요.",
         poorConnection: "연결 상태가 좋지 않습니다 — 번역 품질이 떨어질 수 있습니다.",
@@ -271,7 +284,7 @@ struct UIStrings {
         tapToSpeak: "轻点开始说话",
         micDenied: "无法访问麦克风。轻点前往设置。",
         micFailed: "无法启动麦克风。",
-        micResumeFailed: "麦克风已关闭，请轻点屏幕。",
+        micResumeFailed: "麦克风已关闭，轻点重新开启。",
         connectionError: "连接出错，请重试。",
         updateRequired: "此版本已无法使用。轻点前往更新。",
         poorConnection: "连接不佳，翻译质量可能会受影响。",
