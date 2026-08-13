@@ -464,6 +464,86 @@ final class LanguagePairTests: XCTestCase {
                                        hasEverStarted: vm.hasEverStarted))
     }
 
+    // MARK: - GitHub #90
+
+    /// Seeds the persisted pair and returns the undo. The keys are
+    /// process-wide — every test in this process reads the same
+    /// `UserDefaults.standard` — so a seeded value must not outlive its
+    /// test. Call the returned closure in a `defer`.
+    private func seedStoredPair(home: String, partner: String) -> () -> Void {
+        let defaults = UserDefaults.standard
+        let prior = [("settings.homeLang", defaults.string(forKey: "settings.homeLang")),
+                     ("settings.partnerLang", defaults.string(forKey: "settings.partnerLang"))]
+        defaults.set(home, forKey: "settings.homeLang")
+        defaults.set(partner, forKey: "settings.partnerLang")
+        return {
+            for (key, value) in prior {
+                if let value { defaults.set(value, forKey: key) }
+                else { defaults.removeObject(forKey: key) }
+            }
+        }
+    }
+
+    /// L1.75c — a PERSISTED partner-only home is repaired during init.
+    ///
+    /// The #30 belt in `homeLang`'s `didSet` reverts a partner-only write —
+    /// but property observers do not fire during `init`, and init is the one
+    /// path a bad STORED value actually arrives by. Not reachable by any
+    /// shipped build (the didSet reverts before anything persists); this is
+    /// defense-in-depth for future migrations and hand-edited containers.
+    /// GitHub #90.
+    func testL1_75c_aPersistedPartnerOnlyHomeIsRepairedAtInit() {
+        let restore = seedStoredPair(home: "tl", partner: "en")
+        defer { restore() }
+
+        let vm = ConversationViewModel()
+        XCTAssertEqual(vm.homeLang, ConversationViewModel.defaultHomeLang,
+                       "a stored tl home must not seat — it has no UI set")
+        XCTAssertEqual(vm.partnerLang, .en,
+                       "the partner side was valid and is not the repair's business")
+        // And the repair must reach the STORE, or it lasts exactly one launch.
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.homeLang"),
+                       vm.homeLang.rawValue, "the persisted home is repaired too")
+
+        // Same repair when the fallback COLLIDES with the stored partner:
+        // the distinct-pair fix must re-run after it, and the store must end
+        // up with the pair that is actually on screen. (The outer restore
+        // still holds the true priors, so this seed's undo can be dropped.)
+        _ = seedStoredPair(home: "vi", partner: "de")
+        let vm2 = ConversationViewModel()
+        XCTAssertEqual(vm2.homeLang, ConversationViewModel.defaultHomeLang)
+        XCTAssertNotEqual(vm2.homeLang, vm2.partnerLang,
+                          "the distinct-pair fix must re-run after the repair")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.homeLang"),
+                       vm2.homeLang.rawValue)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.partnerLang"),
+                       vm2.partnerLang.rawValue,
+                       "the store must match the screen, or next launch re-repairs forever")
+    }
+
+    /// L1.75d — a legitimate persisted pair rides through the same init path
+    /// untouched, in memory AND in the store. A partner-only PARTNER is a
+    /// legitimate state — tl on the partner side is exactly where it belongs
+    /// — so the repair must not so much as rewrite it. GitHub #90.
+    func testL1_75d_aLegitimatePersistedPairLoadsUnchanged() {
+        let restore = seedStoredPair(home: "es", partner: "fr")
+        defer { restore() }
+
+        let vm = ConversationViewModel()
+        XCTAssertEqual(vm.homeLang, .es)
+        XCTAssertEqual(vm.partnerLang, .fr)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.homeLang"), "es",
+                       "a valid stored value is not rewritten")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.partnerLang"), "fr")
+
+        _ = seedStoredPair(home: "de", partner: "tl")
+        let vm2 = ConversationViewModel()
+        XCTAssertEqual(vm2.homeLang, .de)
+        XCTAssertEqual(vm2.partnerLang, .tl,
+                       "partner-only means partner is allowed — the repair is home-side only")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.partnerLang"), "tl")
+    }
+
     /// L1.29e — the pair is never left with both sides equal, whichever wheel
     /// moved. R-invariant behind the swap: two identical sessions would both
     /// claim every turn.
