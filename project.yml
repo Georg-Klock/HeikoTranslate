@@ -24,7 +24,7 @@ targets:
         # Shown (very quietly) in the UI corner: one plain number, no build
         # in parentheses. Bump BOTH on every install to a real device, so
         # "is my phone current?" is answerable at a glance.
-        CFBundleShortVersionString: "2.3"
+        CFBundleShortVersionString: "2.4"
         CFBundleVersion: "49"
         # The app only uses the OS's own HTTPS/TLS, which is exempt. Without
         # this key App Store Connect asks the export-compliance question on
