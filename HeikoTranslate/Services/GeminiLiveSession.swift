@@ -133,6 +133,18 @@ final class GeminiLiveSession: NSObject {
         case inputTranscript(String)
         case outputTranscript(String)
         case turnComplete
+        /// The server abandoned the response it was streaming: the audio
+        /// chunks sent for it are superseded, and a replacement follows.
+        ///
+        /// Recognised but ignored until 2026-08-14 — which is exactly why
+        /// #112 exists. Every chunk of an abandoned rendering stays in
+        /// `pendingOutput` and is played at commit, so the listener hears a
+        /// false start and then the correction. Surfaced now to establish
+        /// whether this preview model sends the signal at all; its
+        /// neighbours `turnComplete` and `generationComplete` are documented
+        /// above as unreliable on this model, and nothing can be built on it
+        /// until that is known.
+        case interrupted
         /// Token accounting for this session, as sent by the server.
         case usage([String: Any])
         case raw(String)
@@ -353,6 +365,16 @@ final class GeminiLiveSession: NSObject {
         "turnComplete", "generationComplete", "interrupted"
     ]
 
+    #if DEBUG
+    /// Drive the real server-message parser from a test, without a socket.
+    /// The parser is where `interrupted` is either recognised or lost, and
+    /// a frame that is silently swallowed looks exactly like a model that
+    /// never sent one — which is the confusion #112 was stuck in. Same
+    /// method the socket calls. Excluded from the swiftc harnesses, which
+    /// do not define DEBUG.
+    func handleServerMessageForTesting(_ text: String) { handleServerMessage(text) }
+    #endif
+
     private func handleServerMessage(_ text: String) {
         guard let data = text.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -440,6 +462,15 @@ final class GeminiLiveSession: NSObject {
         if (serverContent["turnComplete"] as? Bool) == true
             || (serverContent["generationComplete"] as? Bool) == true {
             onEvent(.turnComplete)
+        }
+
+        // The response being streamed was abandoned; what follows replaces
+        // it. Surfaced so the orchestrator can drop the superseded audio it
+        // is holding (#112) — but first, so the log can answer whether this
+        // model sends the signal at all. It sits in `knownServerContentKeys`
+        // and has therefore been arriving silently all along.
+        if (serverContent["interrupted"] as? Bool) == true {
+            onEvent(.interrupted)
         }
 
         // Surface only genuinely unfamiliar serverContent shapes — an empty

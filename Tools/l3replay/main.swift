@@ -165,6 +165,8 @@ final class ReplayRunner {
     private var releaseArmed = false
     private var releaseDeferredSince: Date?
     private(set) var releaseCount = 0
+    /// How many times the server abandoned a response mid-stream (#112).
+    private(set) var interruptedEvents = 0
     private var lastTranslatorAudioAt: Date?
     private var streamEndedAt: Date?
     /// Set while a finalize is waiting for a late translation — see
@@ -295,6 +297,15 @@ final class ReplayRunner {
             lastOutputAt = Date()
         case .turnComplete:
             break
+        case .interrupted:
+            // #112: the server abandoned the response it was streaming, so
+            // the audio already sent for it is superseded. The service holds
+            // every chunk until commit and plays all of them, which is the
+            // stutter. Printed here because L3 drives the real session
+            // against the live API — so a replay answers whether this model
+            // sends the signal at all, without needing a device.
+            interruptedEvents += 1
+            print("    (interrupted) [\(lang.rawValue)] server abandoned its response at \(elapsed())")
         case .usage(let usage):
             if ProcessInfo.processInfo.environment["L3_USAGE"] != nil {
                 let json = (try? JSONSerialization.data(withJSONObject: usage, options: [.sortedKeys]))

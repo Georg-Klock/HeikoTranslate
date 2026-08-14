@@ -324,6 +324,34 @@ consent gate goes on top is the decision #91 stays open for.
 |---|---|---|---|
 | L1.79 | The language sheet's source | Offers the policy link, labels it from `UIStrings`, and the destination is exactly the published `www.` URL | **#91** |
 
+The `interrupted` signal (#112, 2026-08-14). The spoken translation stutters
+— a false start, then the corrected sentence — while the written bubble is
+always right. Cause, established by reading the code rather than by
+instrumenting: every audio chunk of a turn is held in `pendingOutput` and
+**all** of them are played at commit, filtered only by RMS, so a rendering
+the model abandoned is replayed before its replacement. The server says
+when it abandons one — `serverContent.interrupted` — and that key sat in
+`knownServerContentKeys` as "known-benign", read by nothing. It has been
+arriving silently all along.
+
+These rows pin the parser end only. **No behaviour changed**: nothing is
+discarded yet, because `turnComplete` and `generationComplete` are
+documented as unreliable on this preview model and `interrupted` may be
+too. The diagnostic exists to answer that from a device log, since a frame
+that is silently swallowed looks identical to a model that never sends one.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.80 | A `serverContent.interrupted: true` frame | Surfaces as `.interrupted` — reaching the orchestrator at all | **#112** |
+| L1.80b | `interrupted: false` | NOT an interruption — read as a boolean, not as key presence, or the fix on top of this would discard good audio | **#112** |
+| L1.80c | `interrupted` sharing a frame with an `outputTranscription` | Both survive — this is the shape the real frame arrives in | **#112** |
+| L1.80d | `turnComplete`, a plain transcript, `setupComplete` | No interruption signalled, so a line in a device log means something | **#112** |
+| L1.80e | The same interrupted frame | Not ALSO surfaced as `.raw` — it stays a known key | **#112** |
+
+Verified fail-first: with the parser regressed to main's behaviour, L1.80
+and L1.80c fail. L1.80b/d/e pass both ways by design — they pin invariants
+that were already true and must survive the fix that comes next.
+
 Commit diagnostics. Evidence only — these must never influence which
 transcript `TurnLogic` commits.
 
