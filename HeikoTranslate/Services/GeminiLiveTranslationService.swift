@@ -1533,12 +1533,35 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// and not already committed.
     private func emitUtterance() {
         let outputSummary = outputs.keys.sorted { $0.rawValue < $1.rawValue }.map { "\($0.rawValue)=\((outputs[$0] ?? "").count)" }.joined(separator: " ")
+        // #32: which of several mutually exclusive reasons produced this
+        // direction. On device the log showed only that `direction → home`
+        // never fired, which cannot tell a partner settle barring home from
+        // the home session producing a real translation from no plurality
+        // inside the settle window — and those want opposite fixes. The
+        // ratio is the one `homeIsRealTranslation` actually weighs, printed
+        // beside the floor it is compared against, so the log says whether
+        // that branch decided rather than leaving it to be inferred.
+        let homeLen = (outputs[turn.home] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count
+        let partnerLen = (outputs[turn.partner] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).count
+        let ratio = partnerLen > 0 ? Double(homeLen) / Double(partnerLen) : Double.infinity
+        let floor = TurnLogic.floors(for: turn.home).ratio
+        // Read AFTER `commit`, not before: commit is what resolves the
+        // direction, so a summary taken beforehand would describe the state
+        // going in rather than the one that produced the outcome — and on a
+        // rejection the two differ.
+        func why() -> String {
+            "  why: \(turn.decisionSummary) "
+                + "outLen[home=\(homeLen) partner=\(partnerLen)] "
+                + "ratio=\(partnerLen > 0 ? String(format: "%.2f", ratio) : "n/a") floor=\(String(format: "%.2f", floor))"
+        }
         guard let bubble = turn.commit(inputs: inputs, outputs: outputs) else {
             diag("turn", "commit REJECTED: \(turn.lastRejectReason ?? "?") (outputs \(outputSummary), direction \(String(describing: turn.direction)))")
+            diag("turn", why())
             return
         }
         diag("turn", "commit \(bubble.isHome ? "RIGHT/home" : "LEFT/foreign") via \(turn.translator?.rawValue ?? "?") | \(bubble.original.prefix(60)) → \(bubble.translation.prefix(60))")
         diag("turn", Self.inputTranscriptDiagnosticLine(inputs: inputs, sessions: activePair))
+        diag("turn", why())
         onUtterance?(bubble.original, bubble.translation, bubble.isHome)  // R2: side from spoken language
     }
 
