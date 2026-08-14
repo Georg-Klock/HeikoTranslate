@@ -71,9 +71,8 @@ This file is **setup only**. The other documents each own one thing:
 Before any human-with-a-phone testing, L1–L3 must pass (`TESTING.md`):
 
 ```
-xcodebuild test -project HeikoTranslate.xcodeproj -scheme HeikoTranslate \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -quiet   # L1
-python3 Tools/livetest.py --text "a test sentence" --target de       # L2
+Tools/l1.sh                                                          # L1
+Tools/l2probe.sh de "Where is the train station?"                    # L2
 Tools/l3replay.sh                                                    # L3
 ```
 
@@ -112,7 +111,7 @@ HeikoTranslate/
   Resources/
     Secrets.plist.example        Template — copy to Secrets.plist, add your key
 Tests/                           L1 unit tests (run via xcodebuild test)
-Tools/                           livetest.py (L2), L3 replay harness
+Tools/                           l2probe.sh (L2), L3 replay harness
 TestAudio/                       Recorded utterances for L3 replay
 docs/                            ARCHITECTURE.md, history.md
 design/                          Icon sources and design iterations
