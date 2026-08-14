@@ -55,6 +55,30 @@ say -v "$DE_VOICE" "${FMT[@]}" -o TestAudio/_song_tail_long.wav \
 say -v "$EN_VOICE" "${FMT[@]}" -o TestAudio/en_entities.wav \
   "Apple, Google, Netflix and Amazon."
 
+# GitHub #32/#83: genuinely FOREIGN speech carrying proper nouns, which
+# survive translation and therefore inflate the home output's overlap with
+# its own input. This is the population a fix for #32 must not misclassify —
+# the 2026-08-14 threshold attempt did exactly that and dropped a real turn
+# ("A boy named Sue…", echo share exactly 0.300, L1.91).
+#
+# en_entities above is one point at 0.80. These spread the density between
+# that and the ~0.0 of entity-free English, so the discriminator is designed
+# against a range rather than two points. English voice on purpose: a German
+# speaker's English is transcribed AS GERMAN by the de session (measured on
+# device 2026-08-14, ten turns, said[de] empty on every one), so a human
+# German speaker cannot produce this side of the data at all.
+say -v "$EN_VOICE" "${FMT[@]}" -o TestAudio/en_song_cash.wav \
+  "A boy named Sue is my favorite song by Johnny Cash."
+
+say -v "$EN_VOICE" "${FMT[@]}" -o TestAudio/en_series_ny.wav \
+  "I watched Breaking Bad in New York last summer."
+
+say -v "$EN_VOICE" "${FMT[@]}" -o TestAudio/en_band_queen.wav \
+  "My favorite band is Queen and the best song is Bohemian Rhapsody."
+
+say -v "$EN_VOICE" "${FMT[@]}" -o TestAudio/en_apple_google.wav \
+  "Apple and Google are both in California."
+
 # 60 words — the R5 truncation test.
 say -v "$EN_VOICE" "${FMT[@]}" -o TestAudio/en_long.wav \
   "Yesterday afternoon my wife and I walked through the old market square, \
