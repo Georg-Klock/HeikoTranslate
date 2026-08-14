@@ -196,14 +196,30 @@ struct TurnLogic {
     /// bubble's large line; the second passed by landing exactly ON the
     /// threshold, which is not a margin.
     ///
-    /// The principle the number encodes: a home output that reuses a
-    /// substantial part of the input verbatim has NOT translated that part,
-    /// so the input was at least partly home speech. Genuine foreign speech
-    /// gets translated whole and reuses almost nothing — the measured
-    /// 0.00–0.17. 0.3 is the midpoint between that ceiling and the 0.429
-    /// floor of the mixed-language population, so both keep ~0.13 of margin,
-    /// and the 0.80–1.00 echo population is untouched.
-    static let echoShareThreshold = 0.3
+    /// **0.3 was tried on 2026-08-14 and REVERTED the same hour.** It fixed
+    /// #32's half-translation (0.429) and immediately broke a genuine one:
+    /// "A boy named Sue is my favorite song by Johnny Cash." → "Ein Junge
+    /// namens Sue ist mein Lieblingslied von Johnny Cash." scores **exactly
+    /// 0.300** — the proper nouns Sue / Johnny / Cash survive translation, as
+    /// proper nouns do. At 0.3 that read as an echo, so the home session was
+    /// judged never to have translated, direction never resolved, and the
+    /// codes-veto dropped the turn entirely. No bubble at all, which is worse
+    /// than #32's wrong-side bubble.
+    ///
+    /// That is #83's failure with a different sentence, and this file already
+    /// named the shape: "Apple Google Netflix and Amazon" → "… und Amazon"
+    /// scores 0.80 and is a correct translation.
+    ///
+    /// The lesson is about the KIND of number this is. A single overlap
+    /// scalar cannot separate the two populations, because they interleave:
+    /// a half-translation shares the home FUNCTION words it left alone (ist,
+    /// mein), while a genuine translation shares the NAMES that survive it
+    /// (Sue, Johnny, Cash). 0.429 against 0.300 is not a gap, it is two
+    /// points, and any threshold between them is fitted to those two points.
+    /// Fixing #32 needs a discriminator over WHICH tokens are shared, not a
+    /// better cut-off. Pinned by L1.86/87 (still expected-to-fail) and
+    /// L1.91.
+    static let echoShareThreshold = 0.6
     /// Echo judgments need at least this many tokens on BOTH sides — a short
     /// identical output is a cognate, number, or name ("Navigator",
     /// "14 Euro"), which legitimately survives translation and must keep
