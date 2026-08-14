@@ -138,4 +138,45 @@ final class SongTitleDirectionTests: XCTestCase {
                               input: english),
             "names surviving translation are not an echo — dropping this turn loses the bubble entirely")
     }
+
+    /// L1.92 — **the proof that no threshold on `echoShare` can fix #32.**
+    ///
+    /// Two utterances that score *identically* and require *opposite*
+    /// answers. Measured 2026-08-14 against the real `echoShare`:
+    ///
+    ///   "Apple and Google are both in California."
+    ///     → "Apple und Google sind beide in Kalifornien."   share = 0.429
+    ///     genuinely FOREIGN — must read as a real translation
+    ///
+    ///   "We will rock you. ist mein Lieblingslied."
+    ///     → "Wir werden euch rocken ist mein Lieblingslied." share = 0.429
+    ///     genuinely HOME — must NOT read as a real translation
+    ///
+    /// Not "the gap is narrow". The same number, opposite truths. Any cut-off
+    /// classifies both the same way and is therefore wrong about one of them,
+    /// whatever value it takes. That is why the 0.6 → 0.3 attempt broke
+    /// L1.91 the moment it fixed L1.86.
+    ///
+    /// What separates them is WHICH tokens overlap: the foreign pair shares
+    /// proper nouns that survive translation (Apple, Google), the home pair
+    /// shares German function words the model left alone (ist, mein). A fix
+    /// for #32 has to read that distinction. This test does not assert a
+    /// direction — it asserts the metric cannot tell them apart, and it
+    /// should FAIL the day a discriminator makes them distinguishable, which
+    /// is exactly when it should be revisited.
+    func testL1_92_echoShareCannotSeparateTheTwoPopulations() {
+        let foreignIn  = "Apple and Google are both in California."
+        let foreignOut = "Apple und Google sind beide in Kalifornien."
+        let homeIn     = "We will rock you. ist mein Lieblingslied."
+        let homeOut    = "Wir werden euch rocken ist mein Lieblingslied."
+
+        let foreignShare = TurnLogic.echoShare(of: foreignOut,
+                                               inputs: [.de: foreignIn, .en: foreignIn])
+        let homeShare = TurnLogic.echoShare(of: homeOut,
+                                            inputs: [.de: homeIn, .en: homeIn])
+
+        XCTAssertEqual(foreignShare, homeShare, accuracy: 0.001,
+                       "these two score identically — 0.429 — and need OPPOSITE answers, "
+                       + "so no threshold on this metric can be right about both")
+    }
 }

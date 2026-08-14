@@ -381,7 +381,39 @@ points, and any threshold between them is fitted to those two points.
 Fixing #32 needs a discriminator over WHICH tokens are shared, not a
 better cut-off.
 
-L1.91 is that dropped turn, and it is the guard the next attempt has to
+**Measured 2026-08-14, both populations, real `echoShare`.** Genuinely
+foreign speech was generated with the ENGLISH voice, because a German
+speaker cannot produce this side: on device, ten English utterances spoken
+by a German speaker were transcribed AS GERMAN by the de session
+(`said[de]` empty on every turn, both sessions voting `de`), so the
+`homeIsRealTranslation` branch was never even reached.
+
+| utterance | share | truth |
+|---|---|---|
+| "Where is the train station, please?" | 0.000 | foreign |
+| "A boy named Sue …" (device, L1.91) | **0.300** | foreign |
+| "My favorite band is Queen …" | 0.364 | foreign |
+| "And Sue is my favorite song …" | 0.375 | foreign |
+| **"Apple and Google are both in California."** | **0.429** | **foreign** |
+| "I watched Breaking Bad in New York …" | 0.500 | foreign |
+| "Google, Netflix and Amazon." | 0.750 | foreign |
+| **"We will rock you. ist mein Lieblingslied."** | **0.429** | **home** |
+| "Happy Birthday ist mein Lieblingslied." | 1.000 | home |
+| "We will rock you ist mein Lieblingslied." | 1.000 | home |
+
+**The two 0.429 rows are the result.** Identical scores, opposite correct
+answers. This is not a narrow gap to be split more carefully — it is a
+proof that **no cut-off on this metric can be right about both**, which is
+why the 0.3 attempt broke L1.91 the instant it fixed L1.86. Pinned by
+L1.92, which asserts the collision rather than a direction and should fail
+the day a discriminator makes the two separable.
+
+What distinguishes them is WHICH tokens overlap: the foreign rows share
+proper nouns that survive translation (Apple, Google, Sue, Johnny, Queen),
+the home rows share German function words the model left alone (*ist*,
+*mein*). That is the signal a fix has to read.
+
+L1.91 is the dropped turn, and it is the guard the next attempt has to
 satisfy before anything else. L1.90 was meant to represent this case and
 could not: its sentence shares no tokens at all, so it stayed green
 throughout. L1.86/87 are back under `XCTExpectFailure`.

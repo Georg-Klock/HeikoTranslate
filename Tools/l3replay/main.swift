@@ -69,6 +69,15 @@ let expectations: [String: [ExpectedBubble]] = [
     // token-overlap rule dropped this turn (codes settled) or committed it
     // as a RIGHT/home bubble (codes unsettled).
     "en_entities": [ExpectedBubble(isHome: false, translator: .de)],
+    // GitHub #32/#83: genuinely foreign speech carrying proper nouns. All
+    // four MUST land foreign — they are the population a #32 fix must not
+    // misclassify as an echo, and "A boy named Sue…" is the exact turn the
+    // reverted threshold dropped (L1.91). Opt-in, like the de_song_lead
+    // pair: they exist to be measured, and L3's default run stays a gate.
+    "en_song_cash": [ExpectedBubble(isHome: false, translator: .de)],
+    "en_series_ny": [ExpectedBubble(isHome: false, translator: .de)],
+    "en_band_queen": [ExpectedBubble(isHome: false, translator: .de)],
+    "en_apple_google": [ExpectedBubble(isHome: false, translator: .de)],
     "en_long": [ExpectedBubble(isHome: false, translator: .de, minOriginalWords: 50)],
     "de_after_en": [ExpectedBubble(isHome: false, translator: .de),
                     ExpectedBubble(isHome: true, translator: .en)],
