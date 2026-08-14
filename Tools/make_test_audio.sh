@@ -22,6 +22,32 @@ say -v "$DE_VOICE" "${FMT[@]}" -o TestAudio/de_short.wav \
 say -v "$ES_VOICE" "${FMT[@]}" -o TestAudio/es_short.wav \
   "¿Dónde está la estación de tren, por favor?"
 
+# GitHub #32, measured on device 2026-08-14: a SHORT German sentence that
+# OPENS with an English song title flips the direction — the bubble lands on
+# the foreign side and the "translation" is German rendered back into German
+# ("Wir werden dich rocken ist mein Lieblingslied"). Both sessions transcribe
+# the German correctly and both report the language as de; what fails is that
+# the home session produces a real translation of the English opening, which
+# `homeIsRealTranslation` reads as proof of foreign speech.
+#
+# The pair below is the whole finding: same title, same speaker, same voice.
+# Leading and short flips; the identical sentence extended past the title
+# holds. Keeping both is what makes this a regression test rather than an
+# anecdote — a fix that repairs the first must not break the second.
+# The title is spoken by the ENGLISH voice and the rest by the German one,
+# then joined with no gap into one utterance. Letting `say -v Anna` read the
+# English text does not reproduce the condition: German phonetics turn "We
+# will rock you" into something the model transcribes as "Wie viel Rock you"
+# — German words — so the opening is never English and the direction
+# correctly stays home. Measured 2026-08-14; the first version of this
+# fixture passed for exactly that wrong reason.
+say -v "$EN_VOICE" "${FMT[@]}" -o TestAudio/_song_title.wav \
+  "We will rock you"
+say -v "$DE_VOICE" "${FMT[@]}" -o TestAudio/_song_tail_short.wav \
+  "ist mein Lieblingslied."
+say -v "$DE_VOICE" "${FMT[@]}" -o TestAudio/_song_tail_long.wav \
+  "ist mein absolutes Lieblingslied von Queen."
+
 # The #77-review entity list (#83): every content word survives translation
 # into German except "and", so a token-overlap echo rule reads the genuine
 # translation as an echo. Names, brands, numbers — the app's load-bearing
@@ -98,6 +124,10 @@ write("TestAudio/de_after_es.wav", es, gap, de_long, silence(1.0))
 # utterance at 1.8s.
 pa, pb = read("TestAudio/de_pause_a.wav"), read("TestAudio/de_pause_b.wav")
 write("TestAudio/de_pause.wav", pa, silence(1.8), pb, silence(1.0))
+# GitHub #32: one utterance, English title then German remainder, no gap.
+title = read("TestAudio/_song_title.wav")
+write("TestAudio/de_song_lead.wav", title, read("TestAudio/_song_tail_short.wav"), silence(1.0))
+write("TestAudio/de_song_lead_long.wav", title, read("TestAudio/_song_tail_long.wav"), silence(1.0))
 write("TestAudio/silence.wav", silence(5.0))
 write("TestAudio/noise.wav", noise(5.0))
 print("composite + silence/noise files written")
