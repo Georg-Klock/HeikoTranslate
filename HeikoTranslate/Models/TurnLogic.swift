@@ -347,6 +347,41 @@ struct TurnLogic {
         return tally.allSatisfy { $0.key == home.rawValue || $0.value < homeCount }
     }
 
+    /// Why direction is what it is, in one line, for a device log (#32).
+    ///
+    /// The log says `direction → home` or nothing at all; it never says
+    /// which of several mutually exclusive reasons produced that. On device
+    /// (2026-08-14) a short German sentence opening with an English song
+    /// title committed to the FOREIGN side twice, and the log could not
+    /// distinguish "the codes settled on the partner, so the veto barred
+    /// home" from "the home session produced a real translation, which is
+    /// read as proof of foreign speech" from "no plurality inside the
+    /// settle window". Those want opposite fixes.
+    ///
+    /// State lives here, so the summary is built here rather than
+    /// reconstructed by a caller that would have to be given access to
+    /// everything. Read-only and allocation-light; nothing decides on it.
+    var decisionSummary: String {
+        let global = votes
+            .sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { "\($0.key.rawValue)×\($0.value)" }
+            .joined(separator: ",")
+        let perSession = sessionVotes
+            .sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { session, tally in
+                let inner = tally.sorted { $0.key < $1.key }
+                    .map { "\($0.key)×\($0.value)" }.joined(separator: "/")
+                return "\(session.rawValue)[\(inner)]"
+            }
+            .joined(separator: " ")
+        return "settled=\(spokenLang?.rawValue ?? "none") "
+            + "direction=\(direction.map { $0 == .homeSpoken ? "home" : "foreign" } ?? "nil") "
+            + "votes=\(global.isEmpty ? "-" : global) "
+            + "sessions=\(perSession.isEmpty ? "-" : perSession) "
+            + "partnerHeardHome=\(partnerHeardHome) "
+            + "crossed=\(homeSettleWithCrossedEvidence)"
+    }
+
     /// The code-only half of the crossed pattern. This is deliberately
     /// stronger than `partnerHeardHome`: late partner-session noise cannot
     /// rewrite a foreign verdict it never helped form.
