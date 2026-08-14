@@ -180,8 +180,30 @@ struct TurnLogic {
     /// names and cognates — while every echo scored 0.80–1.00, including the
     /// one misattributed turn (0.85: German misheard as Spanish, the pseudo-
     /// Spanish opening translated back into German, the rest repeated
-    /// verbatim). 0.6 sits between the populations with margin both ways.
-    static let echoShareThreshold = 0.6
+    /// verbatim). 0.6 sat between those two populations with margin both ways.
+    ///
+    /// **Re-calibrated 2026-08-14 (#32).** That measurement saw two
+    /// populations. Device turns on 2.4.52 found a third, sitting in the gap
+    /// the threshold had been placed in: a German sentence containing an
+    /// English fragment, where the home session translates the fragment and
+    /// echoes the rest. Measured shares — 0.429 for
+    /// "Wir werden euch rocken ist mein Lieblingslied." against
+    /// "We will rock you. ist mein Lieblingslied.", and 0.600 for the same
+    /// shape with a different title.
+    ///
+    /// At 0.6 the first read as a genuine translation and the turn committed
+    /// to the FOREIGN side, showing German-into-German nonsense in the
+    /// bubble's large line; the second passed by landing exactly ON the
+    /// threshold, which is not a margin.
+    ///
+    /// The principle the number encodes: a home output that reuses a
+    /// substantial part of the input verbatim has NOT translated that part,
+    /// so the input was at least partly home speech. Genuine foreign speech
+    /// gets translated whole and reuses almost nothing — the measured
+    /// 0.00–0.17. 0.3 is the midpoint between that ceiling and the 0.429
+    /// floor of the mixed-language population, so both keep ~0.13 of margin,
+    /// and the 0.80–1.00 echo population is untouched.
+    static let echoShareThreshold = 0.3
     /// Echo judgments need at least this many tokens on BOTH sides — a short
     /// identical output is a cognate, number, or name ("Navigator",
     /// "14 Euro"), which legitimately survives translation and must keep

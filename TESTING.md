@@ -352,14 +352,26 @@ are the real values rather than plausible ones.
 | L1.89 | The same shape, a different title (`home=38 partner=35`) | Still an echo — not specific to one song | **#32** |
 | L1.90 | Genuinely foreign speech, home session produces real German | STILL a real translation | **#83/#75** |
 
-L1.86 and L1.87 assert the CORRECT outcome and are marked
-`XCTExpectFailure`, because #32 is not fixed: L1 stays green, and the day
-the guard is fixed XCTest reports an unexpected pass and the markers come
-off. L1.88–90 are plain assertions — a fix must not buy the flips by
-breaking them, and **L1.90 is the one that matters most**: loosening the
-echo detector far enough to catch a half translation is exactly how #32's
-fix becomes #83's regression, with a foreign speaker's words landing in
-Heiko's own bubble.
+**Fixed 2026-08-14** by re-calibrating `echoShareThreshold` from 0.6 to
+0.3. The 2026-08-07 calibration measured two populations — genuine
+translations 0.00–0.17, echoes 0.80–1.00 — and placed 0.6 in the gap
+between them. Mixed-language utterances are a third population that sits
+in that gap: measured 0.429 and 0.600. At 0.6 the first read as a genuine
+translation and flipped the turn, and the second passed by landing exactly
+ON the threshold, which is not a margin. 0.3 is the midpoint between the
+0.17 ceiling and the 0.429 floor, so both keep ~0.13 either way.
+
+L1.86/87 were written under `XCTExpectFailure`; the markers came off when
+they started passing, which is how the fix announced itself rather than
+being asserted. **L1.90 is the guard that mattered**: loosening the echo
+detector far enough to catch a half translation is exactly how this fix
+could have become #83's regression, with a foreign speaker's words in
+Heiko's own bubble. It passes, as do L1.88/89.
+
+Verified beyond L1: **L3 89/89 against the live API** — including the
+de↔es misattribution replays the echo threshold exists to protect — and
+both `de_song_lead` fixtures now commit RIGHT/home with correct
+translations.
 
 The `interrupted` signal (#112, 2026-08-14). The spoken translation stutters
 — a false start, then the corrected sentence — while the written bubble is

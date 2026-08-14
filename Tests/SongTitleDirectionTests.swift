@@ -23,11 +23,13 @@ import XCTest
 /// from the log, and each one's length matches the `outLen[...]` that turn
 /// recorded, so these are the real values rather than plausible ones.
 ///
-/// The two flip cases assert the CORRECT outcome and are marked
-/// `XCTExpectFailure`: #32 is not fixed, so L1 stays green, and the day the
-/// guard is fixed XCTest reports an unexpected pass and these markers come
-/// off. The holds are plain assertions — a fix must not buy the flips by
-/// breaking them.
+/// FIXED 2026-08-14 by re-calibrating `echoShareThreshold` from 0.6 to 0.3
+/// — see the constant's own comment for the three measured populations. The
+/// two flip cases were written under `XCTExpectFailure` and the markers came
+/// off when they started passing, which is how the fix announced itself.
+/// L1.88–90 are the guards the fix had to keep: a full echo, a second title,
+/// and — the one that matters — a genuinely foreign turn that must still
+/// read as a real translation (#83).
 final class SongTitleDirectionTests: XCTestCase {
 
     private let spokenInput = "We will rock you. ist mein Lieblingslied."
@@ -51,12 +53,10 @@ final class SongTitleDirectionTests: XCTestCase {
     /// The speaker is German throughout; the title is a name, not a change of
     /// language. So this must not count as evidence of foreign speech.
     func testL1_86_aHalfTranslatedTitleIsNotEvidenceOfForeignSpeech() {
-        XCTExpectFailure("#32 unfixed: a partial translation is not recognised as an echo") {
-            XCTAssertFalse(
-                isRealTranslation(homeOut: "Wir werden euch rocken ist mein Lieblingslied.",
-                                  partnerOut: "is my favorite song."),
-                "the de session translating only the English title is not a foreign turn")
-        }
+        XCTAssertFalse(
+            isRealTranslation(homeOut: "Wir werden euch rocken ist mein Lieblingslied.",
+                              partnerOut: "is my favorite song."),
+            "the de session translating only the English title is not a foreign turn")
     }
 
     /// L1.87 — the flip at 15:18:07. Same half translation, but the partner
@@ -64,13 +64,11 @@ final class SongTitleDirectionTests: XCTestCase {
     /// 1.24). Included because it rules out the partner's truncation (#115)
     /// as the cause: the flip happens with a full partner output too.
     func testL1_87_theFlipIsNotCausedByTheTruncatedPartnerOutput() {
-        XCTExpectFailure("#32 unfixed") {
-            XCTAssertFalse(
-                isRealTranslation(homeOut: "Wir werden euch rocken ist mein Lieblingslied.",
-                                  partnerOut: "We will rock you is my favorite song.",
-                                  input: "We will rock you ist mein Lieblingslied."),
-                "a complete partner output does not make the half translation foreign either")
-        }
+        XCTAssertFalse(
+            isRealTranslation(homeOut: "Wir werden euch rocken ist mein Lieblingslied.",
+                              partnerOut: "We will rock you is my favorite song.",
+                              input: "We will rock you ist mein Lieblingslied."),
+            "a complete partner output does not make the half translation foreign either")
     }
 
     /// L1.88 — the hold at 15:17:12. Identical sentence, but the home session
