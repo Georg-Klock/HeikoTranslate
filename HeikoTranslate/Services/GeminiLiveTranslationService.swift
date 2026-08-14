@@ -995,6 +995,16 @@ final class GeminiLiveTranslationService: ObservableObject {
             reportDirectionIfChanged()
         case .turnComplete:
             break
+        case .interrupted:
+            // Diagnostic only, deliberately: this changes no behaviour yet.
+            // The count is the whole point — it says how much superseded
+            // audio is sitting in the queue at the moment the server says
+            // it is superseded, which is what will be heard as a false
+            // start when the turn commits. A line with a non-zero count is
+            // #112 caught in the act; no lines at all means this model does
+            // not send the signal and the fix must come from somewhere
+            // else. GitHub #112.
+            diag("turn", "[\(lang.rawValue)] server INTERRUPTED its response — \(pendingOutput[lang]?.count ?? 0) held chunks now superseded")
         case .usage:
             // Recorded upstream in makeSession's callback (the one recording
             // point — GitHub #4); here a usage frame only proves liveness.
