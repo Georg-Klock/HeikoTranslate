@@ -25,7 +25,15 @@ PLIST="HeikoTranslate/Resources/Secrets.plist"
 PB=/usr/libexec/PlistBuddy
 # The probe is injectable so Tools/tests/rotate-key-windows.sh can drive
 # both outcomes without the network; the default is the real L2 probe.
-PROBE="${ROTATE_PROBE_CMD:-python3 Tools/livetest.py --text \"Two coffees, please.\" --target de --tail 5}"
+#
+# l2probe.sh, NOT livetest.py: the Python probe has returned setupComplete
+# and then silence since 2026-08-11 (#76), so it would have failed here on a
+# perfectly good key — reporting a botched rotation at the exact moment
+# someone is responding to a compromised one. l2probe.sh rides the Swift
+# GeminiLiveSession, and its key comes from loadAPIKey(), which reads this
+# same $PLIST — so it verifies the key that was just written rather than
+# some other copy.
+PROBE="${ROTATE_PROBE_CMD:-Tools/l2probe.sh de \"Two coffees, please.\"}"
 
 [[ -f "$PLIST" ]] || { echo "No $PLIST — nothing to rotate. See README for first-time setup." >&2; exit 1; }
 if git ls-files --error-unmatch "$PLIST" >/dev/null 2>&1; then
