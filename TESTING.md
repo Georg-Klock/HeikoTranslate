@@ -324,6 +324,43 @@ consent gate goes on top is the decision #91 stays open for.
 |---|---|---|---|
 | L1.79 | The language sheet's source | Offers the policy link, labels it from `UIStrings`, and the destination is exactly the published `www.` URL | **#91** |
 
+The direction decision, and the song-title flip (#32, 2026-08-14). Eight
+device turns on build 2.4.52 were captured with a new `why:` diagnostic
+(`TurnLogic.decisionSummary` plus the output lengths and ratio). Three
+flipped to the foreign side, showing German-into-German nonsense in the
+bubble's large line.
+
+The discriminator is neither the settle nor the size ratio: five of the
+eight settled on `en` and only three flipped, and every turn cleared the
+0.40 floor. It is **what the home session produced**. On a flip the `de`
+session TRANSLATED the English title and echoed the German tail — a half
+translation, which `isRoundTripEcho` does not catch because too much
+changed — so `homeIsRealTranslation` reads it as a genuine translation of
+foreign speech. On a hold the `de` session echoed the whole utterance and
+the guard fired.
+
+L1.86–90 drive `homeIsRealTranslation` directly (it is pure, and it is the
+branch the evidence implicates). Every string is reconstructed from the log
+and each one's length matches that turn's recorded `outLen[...]`, so these
+are the real values rather than plausible ones.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.86 | Home output half-translates the title, echoes the German (`home=46 partner=20`) | NOT a real translation — the speaker was German throughout | **#32** |
+| L1.87 | The same, with a COMPLETE partner output (`home=46 partner=37`) | The same — rules out #115's truncation as the cause | **#32** |
+| L1.88 | Home output is a full echo of the input (`home=40 partner=37`) | Not a translation; the turn stays home. The control: same words, same settle, opposite home output | **#32** |
+| L1.89 | The same shape, a different title (`home=38 partner=35`) | Still an echo — not specific to one song | **#32** |
+| L1.90 | Genuinely foreign speech, home session produces real German | STILL a real translation | **#83/#75** |
+
+L1.86 and L1.87 assert the CORRECT outcome and are marked
+`XCTExpectFailure`, because #32 is not fixed: L1 stays green, and the day
+the guard is fixed XCTest reports an unexpected pass and the markers come
+off. L1.88–90 are plain assertions — a fix must not buy the flips by
+breaking them, and **L1.90 is the one that matters most**: loosening the
+echo detector far enough to catch a half translation is exactly how #32's
+fix becomes #83's regression, with a foreign speaker's words landing in
+Heiko's own bubble.
+
 The `interrupted` signal (#112, 2026-08-14). The spoken translation stutters
 — a false start, then the corrected sentence — while the written bubble is
 always right. Cause, established by reading the code rather than by
