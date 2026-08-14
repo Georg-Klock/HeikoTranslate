@@ -689,6 +689,26 @@ script checking `$?` saw green on a completely failed probe). The pass/fail
 predicate is pure and pinned by `Tools/tests/livetest-validation.py`, which
 needs no network and runs with the other L0 scripts.
 
+`Tools/numberprobe.sh` measures whether spoken numbers survive translation
+(#33), on the wire path the app ships: ten German sentences through `say`
+and the real `GeminiLiveSession`, checked for the value coming back. It
+accepts any faithful rendering — `185`, "one hundred eighty-five", and
+`4:42 PM` for *sechzehn Uhr zweiundvierzig* all count, because the question
+is whether the VALUE survived, not how it was spelled. The first version
+checked digits only and scored 8/10 by calling a correct 12-hour conversion
+and a correctly spelled "nine" failures; a harness that overstates the bug
+it measures is worse than none.
+
+**Measured 2026-08-14: 10/10, including `hundertfünfundachtzig` → 185** —
+the exact compound that failed on device at build 2.3.46 (#33). So German
+compound numerals are composed correctly through this path, and the device
+failure is not a flat model inability. What this does **not** establish is
+that #33 is gone: `say` output is far cleaner than a real voice through a
+phone microphone in a room with other people in it. It bounds the problem
+to acoustic conditions or the specific session and direction, rather than
+to numeral composition as such — which is where device evidence should now
+look.
+
 The probe also **cannot outlive its session** (#65): one hard deadline
 covers connect, send and tail (default 4× the audio length + tail + 30s,
 floor 60s; `--deadline` overrides), because a runaway generation — 2355
