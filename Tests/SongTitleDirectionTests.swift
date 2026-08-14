@@ -23,13 +23,15 @@ import XCTest
 /// from the log, and each one's length matches the `outLen[...]` that turn
 /// recorded, so these are the real values rather than plausible ones.
 ///
-/// FIXED 2026-08-14 by re-calibrating `echoShareThreshold` from 0.6 to 0.3
-/// — see the constant's own comment for the three measured populations. The
-/// two flip cases were written under `XCTExpectFailure` and the markers came
-/// off when they started passing, which is how the fix announced itself.
-/// L1.88–90 are the guards the fix had to keep: a full echo, a second title,
-/// and — the one that matters — a genuinely foreign turn that must still
-/// read as a real translation (#83).
+/// The two flip cases assert the CORRECT outcome under `XCTExpectFailure`:
+/// #32 is NOT fixed, so L1 stays green, and a fix reports an unexpected pass.
+///
+/// **A fix was attempted and reverted on 2026-08-14.** Lowering
+/// `echoShareThreshold` to 0.3 turned L1.86/87 green and dropped a real turn
+/// on device within the hour — L1.91 is that turn, and it is now the guard
+/// that the next attempt has to satisfy first. L1.90's zero-overlap sentence
+/// was not strict enough to catch it; L1.91 is, because its overlap comes
+/// from proper nouns that legitimately survive translation.
 final class SongTitleDirectionTests: XCTestCase {
 
     private let spokenInput = "We will rock you. ist mein Lieblingslied."
@@ -53,10 +55,12 @@ final class SongTitleDirectionTests: XCTestCase {
     /// The speaker is German throughout; the title is a name, not a change of
     /// language. So this must not count as evidence of foreign speech.
     func testL1_86_aHalfTranslatedTitleIsNotEvidenceOfForeignSpeech() {
-        XCTAssertFalse(
-            isRealTranslation(homeOut: "Wir werden euch rocken ist mein Lieblingslied.",
-                              partnerOut: "is my favorite song."),
-            "the de session translating only the English title is not a foreign turn")
+        XCTExpectFailure("#32 unfixed: see echoShareThreshold — 0.3 fixed this and broke L1.91") {
+            XCTAssertFalse(
+                isRealTranslation(homeOut: "Wir werden euch rocken ist mein Lieblingslied.",
+                                  partnerOut: "is my favorite song."),
+                "the de session translating only the English title is not a foreign turn")
+        }
     }
 
     /// L1.87 — the flip at 15:18:07. Same half translation, but the partner
@@ -64,11 +68,13 @@ final class SongTitleDirectionTests: XCTestCase {
     /// 1.24). Included because it rules out the partner's truncation (#115)
     /// as the cause: the flip happens with a full partner output too.
     func testL1_87_theFlipIsNotCausedByTheTruncatedPartnerOutput() {
-        XCTAssertFalse(
-            isRealTranslation(homeOut: "Wir werden euch rocken ist mein Lieblingslied.",
-                              partnerOut: "We will rock you is my favorite song.",
-                              input: "We will rock you ist mein Lieblingslied."),
-            "a complete partner output does not make the half translation foreign either")
+        XCTExpectFailure("#32 unfixed") {
+            XCTAssertFalse(
+                isRealTranslation(homeOut: "Wir werden euch rocken ist mein Lieblingslied.",
+                                  partnerOut: "We will rock you is my favorite song.",
+                                  input: "We will rock you ist mein Lieblingslied."),
+                "a complete partner output does not make the half translation foreign either")
+        }
     }
 
     /// L1.88 — the hold at 15:17:12. Identical sentence, but the home session
@@ -105,5 +111,31 @@ final class SongTitleDirectionTests: XCTestCase {
                               partnerOut: "Where is the train station, please?",
                               input: "Where is the train station, please?"),
             "a real translation of real foreign speech must keep counting as one")
+    }
+
+    /// L1.91 — the turn a threshold change dropped, measured on device
+    /// 2026-08-14 at build 2.4.53.
+    ///
+    /// "A boy named Sue is my favorite song by Johnny Cash." spoken in
+    /// English. The `de` session translates it properly — "Ein Junge namens
+    /// Sue ist mein Lieblingslied von Johnny Cash." (60 chars, matching the
+    /// turn's logged `outLen[home=60]`) — and the proper nouns Sue, Johnny
+    /// and Cash survive, as proper nouns do. Echo share: **exactly 0.300**.
+    ///
+    /// At `echoShareThreshold` 0.3 that read as an echo, so the home session
+    /// was judged never to have translated, direction never resolved, and the
+    /// codes-veto dropped the turn four times over. No bubble at all — worse
+    /// than the wrong-side bubble the change was made to fix.
+    ///
+    /// This is the case L1.90 was meant to represent and could not, because
+    /// its sentence shares no tokens at all. Any future fix for #32 must keep
+    /// THIS one passing.
+    func testL1_91_aTranslationCarryingProperNounsIsStillATranslation() {
+        let english = "A boy named Sue is my favorite song by Johnny Cash."
+        XCTAssertTrue(
+            isRealTranslation(homeOut: "Ein Junge namens Sue ist mein Lieblingslied von Johnny Cash.",
+                              partnerOut: "A boy named Sue is my favorite song by Johnny Cash.",
+                              input: english),
+            "names surviving translation are not an echo — dropping this turn loses the bubble entirely")
     }
 }
