@@ -46,6 +46,24 @@ let expectations: [String: [ExpectedBubble]] = [
     "en_short": [ExpectedBubble(isHome: false, translator: .de)],
     "de_short": [ExpectedBubble(isHome: true, translator: .en)],
     "es_short": [ExpectedBubble(isHome: false, translator: .de)],
+    // GitHub #32, from device evidence 2026-08-14. Pure German speech that
+    // OPENS with an English song title. The home side is the correct answer
+    // in BOTH: the speaker is German throughout, and the title is a name
+    // rather than a change of language.
+    //
+    // Both PASS today, and that is the finding: measured 2026-08-14, the
+    // device flip does NOT reproduce through synthesized audio. The
+    // transcript here matches the device turn word for word — "We will rock
+    // you ist mein Lieblingslied." — and the direction still resolves home,
+    // both from a cold turn and after a preceding German one. So whatever
+    // flips it on device is not the sentence, and not session warmth; the
+    // remaining difference is a human voice.
+    //
+    // They stay as REGRESSION guards, not as a repro: English-leading German
+    // must keep landing home, and a future fix for #32 must not buy the
+    // short case by breaking these.
+    "de_song_lead": [ExpectedBubble(isHome: true, translator: .en)],
+    "de_song_lead_long": [ExpectedBubble(isHome: true, translator: .en)],
     // Entity-preserving translation (#83): the German translation keeps
     // every name, so it must still count as a translation — the shipped
     // token-overlap rule dropped this turn (codes settled) or committed it

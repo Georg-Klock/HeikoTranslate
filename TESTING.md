@@ -776,10 +776,31 @@ Recordings live in `TestAudio/` and are regenerated reproducibly by
 `Tools/make_test_audio.sh` (macOS `say`, 16kHz 16-bit mono — the app's mic
 format):
 
+**A TTS fixture cannot reproduce #32**, and the two `de_song_lead` files are
+the record of establishing that. On device (2026-08-14) a short German
+sentence opening with an English song title flipped to the foreign side
+twice, committing a German-into-German "translation". Both replays land
+home, from a cold turn and after a preceding German one, with a transcript
+identical to the device turn — `"We will rock you ist mein Lieblingslied."`
+
+Two things had to be got right before that negative meant anything. The
+first version let `say -v Anna` read the English title, and German phonetics
+turned it into `"Wie viel Rock you"` — German words, so the opening was
+never English and the case passed for the wrong reason. The fixture now
+splices the ENGLISH voice for the title onto the German voice for the
+remainder, one utterance, no gap, and the transcript matches the device.
+
+So the sentence is not what flips it, and neither is session warmth. The
+remaining difference is a human voice. These cases stay as regression
+guards — English-leading German must keep landing home, and a fix for #32
+must not buy the short case by breaking them.
+
 | File | Contains | Tests |
 |---|---|---|
 | `en_short.wav` | "Hello Heiko, how are you?" | Basic English→German |
 | `de_short.wav` | "Mir geht es gut, danke." | Basic German→English |
+| `de_song_lead.wav` | "We will rock you ist mein Lieblingslied." | English-leading German stays home (#32) |
+| `de_song_lead_long.wav` | same, extended past the title | The same, when the German outweighs the title (#32) |
 | `es_short.wav` | "¿Dónde está la estación de tren?" | Spanish→German |
 | `en_long.wav` | 60-word English sentence | **R5** truncation |
 | `de_after_en.wav` | German following English | Direction memory |
