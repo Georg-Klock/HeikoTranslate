@@ -1553,14 +1553,38 @@ final class GeminiLiveTranslationService: ObservableObject {
             "  why: \(turn.decisionSummary) "
                 + "outLen[home=\(homeLen) partner=\(partnerLen)] "
                 + "ratio=\(partnerLen > 0 ? String(format: "%.2f", ratio) : "n/a") floor=\(String(format: "%.2f", floor))"
+                + " echoShare=\(String(format: "%.3f", TurnLogic.echoShare(of: outputs[turn.home] ?? "", inputs: inputs)))"
+        }
+        // What each session SAID, beside what each HEARD. The heard[] line
+        // has existed for a while; the outputs were only ever logged as
+        // lengths, and length is the one thing that cannot answer #32.
+        //
+        // The open question there is not how MUCH the home output overlaps
+        // its input but WHICH tokens do: a half-translation shares the home
+        // function words it left alone (ist, mein), a genuine translation
+        // shares the names that survived it (Sue, Johnny, Cash). Both score
+        // in the same band — 0.429 against 0.300 — which is why the 2026-08-14
+        // threshold attempt failed and had to be reverted. Deciding between
+        // them needs the words, so the words are logged.
+        //
+        // Same escaping and quoting as the heard[] line, so an empty or
+        // multi-line output stays one entry.
+        func said() -> String {
+            let parts = activePair.sorted { $0.rawValue < $1.rawValue }.map { lang in
+                "said[\(lang.rawValue)] \"\(Self.escapedDiagnosticTranscript(outputs[lang] ?? ""))\""
+            }.joined(separator: "   ")
+            return "  \(parts)"
         }
         guard let bubble = turn.commit(inputs: inputs, outputs: outputs) else {
             diag("turn", "commit REJECTED: \(turn.lastRejectReason ?? "?") (outputs \(outputSummary), direction \(String(describing: turn.direction)))")
+            diag("turn", Self.inputTranscriptDiagnosticLine(inputs: inputs, sessions: activePair))
+            diag("turn", said())
             diag("turn", why())
             return
         }
         diag("turn", "commit \(bubble.isHome ? "RIGHT/home" : "LEFT/foreign") via \(turn.translator?.rawValue ?? "?") | \(bubble.original.prefix(60)) → \(bubble.translation.prefix(60))")
         diag("turn", Self.inputTranscriptDiagnosticLine(inputs: inputs, sessions: activePair))
+        diag("turn", said())
         diag("turn", why())
         onUtterance?(bubble.original, bubble.translation, bubble.isHome)  // R2: side from spoken language
     }
