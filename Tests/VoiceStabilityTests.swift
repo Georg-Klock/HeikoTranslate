@@ -67,7 +67,7 @@ final class VoiceStabilityTests: XCTestCase {
     /// words outward; the one translating into the home language carries a
     /// stranger's words to him. Giving both the same voice would make every
     /// stranger sound exactly like Heiko, which is worse than the bug this
-    /// fixes. Georg's call, 2026-08-14.
+    /// fixes. Decided 2026-08-14.
     func testL1_97_eachDirectionHasItsOwnVoice() {
         let outward = GeminiLiveTranslationService.voiceName(for: .en, home: .de)
         let inward = GeminiLiveTranslationService.voiceName(for: .de, home: .de)
