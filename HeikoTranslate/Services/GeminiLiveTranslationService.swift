@@ -199,20 +199,28 @@ final class GeminiLiveTranslationService: ObservableObject {
     ///   **Heiko's** words to the other person — male, because he is
     ///   (decided 2026-08-14)
     /// - the session translating INTO the home language is speaking the
-    ///   **other person's** words to Heiko. Their gender is unknown and
-    ///   changes every conversation, so this deliberately does NOT match
-    ///   Heiko's voice: a stranger sounding exactly like him is worse than a
-    ///   stranger sounding like a stranger.
+    ///   **other person's** words to Heiko. A different voice, so the
+    ///   direction is audible before a word is understood — the same job the
+    ///   sides and colours do for the eye.
     ///
-    /// Two distinct voices also mean the direction is audible before a word
-    /// is understood, which is the same job the sides and colours do for the
-    /// eye. What must never happen again is the voice changing on its own
-    /// between turns — that is what an absent `speechConfig` produced.
+    /// **Both are male** (decided 2026-08-14, after hearing the first
+    /// version on device). The first attempt paired a male voice with a
+    /// female one, which separated the directions loudly but told the
+    /// listener something untrue: it implied the other speaker's gender,
+    /// which changes every conversation and which the app cannot know. Two
+    /// male voices of different timbre keep the direction distinguishable
+    /// while claiming nothing about who is on the other side.
+    ///
+    /// What must never happen again is the voice changing on its own between
+    /// turns — that is what an absent `speechConfig` produced.
     ///
     /// Names are Gemini prebuilt voices. If either sounds wrong on device,
-    /// change it here: it is one string, and nothing else depends on it.
-    static let heikoVoice = "Charon"     // speaks Heiko's words outward
-    static let partnerVoice = "Aoede"    // speaks the other person's words to Heiko
+    /// change it here: it is one string, and nothing else depends on it. Note
+    /// that an INVALID name fails silently — the server falls back to a
+    /// default rather than erroring — so a name change is only confirmed by
+    /// listening, never by a green test.
+    static let heikoVoice = "Charon"    // speaks Heiko's words outward
+    static let partnerVoice = "Puck"    // speaks the other person's words to Heiko
 
     static func voiceName(for target: Lang, home: Lang) -> String {
         target == home ? partnerVoice : heikoVoice
