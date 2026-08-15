@@ -337,6 +337,68 @@ struct TurnLogic {
     /// enforced only on the output side until the #77 review caught the gap:
     /// four output tokens judged against one heard token is a ratio built
     /// on nothing, not an echo.
+    /// Function words of the HOME language that cannot be mistaken for the
+    /// same word in English. Deliberately small, and admitted under
+    /// `FillerWords`' rule: a token belongs here only if it is unambiguously
+    /// a function word of this language AND not an English word AND not a
+    /// name. `in`, `an`, `am`, `so`, `man`, `will`, `was`, `hat`, `die` are
+    /// all excluded for exactly that reason — every one of them is also
+    /// English, and `in` in particular is shared by two of the measured
+    /// FOREIGN turns ("Apple and Google are both **in** California").
+    ///
+    /// German only. The other home languages return an empty set, so the
+    /// rule below is inert for them — no new behaviour for a shipped
+    /// language rather than untested behaviour. Populating them needs the
+    /// same kind of measured corpus German now has (#32).
+    static func homeFunctionWords(for home: Lang) -> Set<String> {
+        switch home {
+        case .de:
+            return ["ist", "sind", "war", "waren", "mein", "meine", "meinen",
+                    "meinem", "und", "nicht", "ich", "wir", "ihr", "der",
+                    "das", "den", "dem", "des", "ein", "eine", "einen",
+                    "einem", "kein", "keine", "für", "über", "auch", "noch",
+                    "schon", "sehr", "mit", "von", "zum", "zur", "aus",
+                    "nach", "bei", "vom", "beim", "dass", "weil", "aber",
+                    "oder", "wenn"]
+        default:
+            return []
+        }
+    }
+
+    /// Whether the home output reuses the home language's own function words
+    /// from the input — the tell that the input contained home speech.
+    ///
+    /// **Why this is a separate signal and not a lower echo threshold.**
+    /// `echoShare` provably cannot separate these populations: measured
+    /// 2026-08-14, "Apple and Google are both in California." → "Apple und
+    /// Google sind beide in Kalifornien." scores **0.429** and is genuinely
+    /// FOREIGN, while "We will rock you. ist mein Lieblingslied." → "Wir
+    /// werden euch rocken ist mein Lieblingslied." scores **0.429** and is
+    /// genuinely HOME. Identical score, opposite truth, so no cut-off can be
+    /// right about both — L1.92 pins that, and a threshold attempt that
+    /// ignored it dropped a real turn on device the same day.
+    ///
+    /// WHICH tokens overlap separates them cleanly, because the two reuse
+    /// different things. A genuine translation reuses names that survive
+    /// translation — Apple, Google, Sue, Johnny, Queen — and cannot reuse
+    /// German function words, since the input had none. A partial
+    /// translation reuses exactly those, because it left the German alone.
+    /// Measured over the ten labelled turns: **0 for every foreign turn, 2
+    /// for every home turn.** Not a threshold on a continuum — a gap with
+    /// nothing in it.
+    ///
+    /// The floor is two rather than one so a single cognate or transcription
+    /// slip cannot flip a turn on its own.
+    static func sharesHomeFunctionWords(_ output: String, inputs: [Lang: String],
+                                        home: Lang) -> Bool {
+        let function = homeFunctionWords(for: home)
+        guard !function.isEmpty else { return false }
+        var heard = Set<String>()
+        for text in inputs.values { heard.formUnion(tokens(text)) }
+        let sharedFunction = Set(tokens(output).filter { heard.contains($0) && function.contains($0) })
+        return sharedFunction.count >= 2
+    }
+
     static func isRoundTripEcho(_ output: String, inputs: [Lang: String]) -> Bool {
         var heard = Set<String>()
         for text in inputs.values { heard.formUnion(tokens(text)) }
@@ -553,6 +615,15 @@ struct TurnLogic {
         // turns all show the partner session hearing exactly that, while the
         // 50 genuinely-foreign turns never do.
         if partnerHomeEvidence, isRoundTripEcho(homeText, inputs: inputs) { return false }
+        // #32: the home output reused the home language's own function words,
+        // so the input contained home speech and this is at most a PARTIAL
+        // translation — the model rendering a foreign fragment while leaving
+        // the German alone. Same verdict as an echo: not evidence that the
+        // speech was foreign. See `sharesHomeFunctionWords` for why this is a
+        // separate signal rather than a lower echo threshold.
+        if partnerHomeEvidence, sharesHomeFunctionWords(homeText, inputs: inputs, home: home) {
+            return false
+        }
         let partnerCount = text(partner).count
         if partnerCount > 0 {
             // Plenty long relative to the echo — decisive on its own.

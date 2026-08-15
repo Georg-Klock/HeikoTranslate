@@ -55,12 +55,10 @@ final class SongTitleDirectionTests: XCTestCase {
     /// The speaker is German throughout; the title is a name, not a change of
     /// language. So this must not count as evidence of foreign speech.
     func testL1_86_aHalfTranslatedTitleIsNotEvidenceOfForeignSpeech() {
-        XCTExpectFailure("#32 unfixed: see echoShareThreshold — 0.3 fixed this and broke L1.91") {
-            XCTAssertFalse(
-                isRealTranslation(homeOut: "Wir werden euch rocken ist mein Lieblingslied.",
-                                  partnerOut: "is my favorite song."),
-                "the de session translating only the English title is not a foreign turn")
-        }
+        XCTAssertFalse(
+            isRealTranslation(homeOut: "Wir werden euch rocken ist mein Lieblingslied.",
+                              partnerOut: "is my favorite song."),
+            "the de session translating only the English title is not a foreign turn")
     }
 
     /// L1.87 — the flip at 15:18:07. Same half translation, but the partner
@@ -68,13 +66,11 @@ final class SongTitleDirectionTests: XCTestCase {
     /// 1.24). Included because it rules out the partner's truncation (#115)
     /// as the cause: the flip happens with a full partner output too.
     func testL1_87_theFlipIsNotCausedByTheTruncatedPartnerOutput() {
-        XCTExpectFailure("#32 unfixed") {
-            XCTAssertFalse(
-                isRealTranslation(homeOut: "Wir werden euch rocken ist mein Lieblingslied.",
-                                  partnerOut: "We will rock you is my favorite song.",
-                                  input: "We will rock you ist mein Lieblingslied."),
-                "a complete partner output does not make the half translation foreign either")
-        }
+        XCTAssertFalse(
+            isRealTranslation(homeOut: "Wir werden euch rocken ist mein Lieblingslied.",
+                              partnerOut: "We will rock you is my favorite song.",
+                              input: "We will rock you ist mein Lieblingslied."),
+            "a complete partner output does not make the half translation foreign either")
     }
 
     /// L1.88 — the hold at 15:17:12. Identical sentence, but the home session
@@ -178,5 +174,94 @@ final class SongTitleDirectionTests: XCTestCase {
         XCTAssertEqual(foreignShare, homeShare, accuracy: 0.001,
                        "these two score identically — 0.429 — and need OPPOSITE answers, "
                        + "so no threshold on this metric can be right about both")
+    }
+
+    /// L1.93 — the whole labelled corpus, with each turn's OWN evidence.
+    ///
+    /// Seven genuinely foreign turns and three home ones, measured
+    /// 2026-08-14. `echoShare` cannot separate them (L1.92). Shared home
+    /// function words do: 0 for every foreign turn, 2 for every home turn.
+    ///
+    /// `partnerHomeEvidence` is passed per turn rather than forced true,
+    /// because it is the gate on the whole echo branch and the turns differ:
+    ///
+    /// - the three home turns and `sue` logged `partnerHeardHome=true` on
+    ///   device, so they are tested that way — and `sue` is the turn the
+    ///   reverted threshold dropped, so it is the strict one that matters
+    /// - the remaining foreign turns come from L3 replays, where a genuinely
+    ///   foreign turn does not produce partner-home evidence (the measured
+    ///   rule this file documents: in 50 foreign turns the partner session
+    ///   never read home)
+    ///
+    /// One pre-existing acceptance is recorded rather than papered over:
+    /// `entities` ("Google, Netflix and Amazon." → "Google, Netflix und
+    /// Amazon.") scores 0.750 and WOULD be misread as an echo if partner-home
+    /// evidence ever appeared on it. That is #83's known 0.80 case, it
+    /// behaves identically with and without this fix (verified against main),
+    /// and it is out of scope here.
+    func testL1_93_theLabelledCorpusIsClassifiedCorrectly() {
+        // name, input, home output, partnerHomeEvidence
+        let foreign: [(String, String, String, Bool)] = [
+            ("bahnhof", "Where is the train station, please?", "Wo ist der Bahnhof, bitte?", false),
+            ("sue", "A boy named Sue is my favorite song by Johnny Cash.",
+             "Ein Junge namens Sue ist mein Lieblingslied von Johnny Cash.", true),
+            ("queen", "My favorite band is Queen and the best song is Bohemian Rhapsody.",
+             "Meine Lieblingsband ist Queen und der beste Song ist Bohemian Rhapsody.", false),
+            ("cash", "And Sue is my favorite song by Johnny Cash.",
+             "Und Sue ist mein Lieblingslied von Johnny Cash.", false),
+            ("apple", "Apple and Google are both in California.",
+             "Apple und Google sind beide in Kalifornien.", false),
+            ("series", "I watched Breaking Bad in New York last summer.",
+             "Ich habe Breaking Bad letzten Sommer in New York gesehen.", false),
+            ("entities", "Google, Netflix and Amazon.", "Google, Netflix und Amazon.", false),
+        ]
+        let home: [(String, String, String)] = [
+            ("rockyou", "We will rock you. ist mein Lieblingslied.",
+             "Wir werden euch rocken ist mein Lieblingslied."),
+            ("fullecho", "We will rock you ist mein Lieblingslied.",
+             "We will rock you ist mein Lieblingslied."),
+            ("happybday", "Happy Birthday ist mein Lieblingslied.",
+             "Happy birthday ist mein Lieblingslied."),
+        ]
+        for (name, input, out, evidence) in foreign {
+            XCTAssertTrue(
+                TurnLogic.homeIsRealTranslation([.de: out, .en: input], inputs: [.de: input, .en: input],
+                                                home: .de, partner: .en,
+                                                spokenLang: .en, partnerHomeEvidence: evidence),
+                "\(name): genuinely foreign speech must read as a real translation")
+        }
+        for (name, input, out) in home {
+            XCTAssertFalse(isRealTranslation(homeOut: out, partnerOut: "irrelevant", input: input),
+                           "\(name): home speech must not read as a translation of foreign speech")
+        }
+    }
+
+    /// L1.94 — the discriminator itself, stated as the rule rather than as
+    /// its consequences: foreign turns share NO home function words, home
+    /// turns share two. A gap with nothing in it, which is what makes this a
+    /// classification rather than a threshold.
+    func testL1_94_sharedHomeFunctionWordsSeparateThePopulations() {
+        let foreign = [
+            ("Apple and Google are both in California.", "Apple und Google sind beide in Kalifornien."),
+            ("A boy named Sue is my favorite song by Johnny Cash.",
+             "Ein Junge namens Sue ist mein Lieblingslied von Johnny Cash."),
+            ("I watched Breaking Bad in New York last summer.",
+             "Ich habe Breaking Bad letzten Sommer in New York gesehen."),
+        ]
+        for (input, out) in foreign {
+            XCTAssertFalse(TurnLogic.sharesHomeFunctionWords(out, inputs: [.de: input, .en: input], home: .de),
+                           "a genuine translation cannot reuse German function words the input never had")
+        }
+        let mixed = "We will rock you. ist mein Lieblingslied."
+        XCTAssertTrue(
+            TurnLogic.sharesHomeFunctionWords("Wir werden euch rocken ist mein Lieblingslied.",
+                                              inputs: [.de: mixed, .en: mixed], home: .de),
+            "a half translation reuses the German it left alone")
+
+        // Inert for languages with no measured list, rather than guessing.
+        XCTAssertFalse(
+            TurnLogic.sharesHomeFunctionWords("Apple und Google sind beide in Kalifornien.",
+                                              inputs: [.de: mixed, .en: mixed], home: .ko),
+            "no list for ko means the rule does not fire there")
     }
 }
