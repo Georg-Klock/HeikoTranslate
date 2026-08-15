@@ -803,7 +803,25 @@ struct TurnLogic {
             // to overturn this settle (L1.25), because it is an independent
             // witness rather than the potentially echoed partner stream.
             if settled == partner, spoken == home, session == partner {
-                contradiction = nil
+                // Decline to COUNT it — but leave the counter alone. Clearing
+                // it here erased the HOME session's own accumulated
+                // contradiction, and the two streams interleave, so a home
+                // vote followed by a partner vote reset the tally on every
+                // other event and it could never reach `overturnVotes`.
+                //
+                // Measured on device 2026-08-14: pure German, transcribed
+                // correctly and identically by both sessions, translated
+                // correctly by the partner session — and thrown away, because
+                // the codes had settled `en` on the opening three votes and
+                // nine home `de` votes could never overturn it
+                // (`sessions=de[de×9/en×3] en[de×9/en×3]`, four rejections, no
+                // bubble at all). Reproduced in pure logic: six home votes
+                // alone overturn; the same six interleaved with partner votes
+                // do not.
+                //
+                // #83's rule is preserved exactly — a partner-only stream of
+                // home reports still never overturns, because it still never
+                // increments. Only the erasure goes.
                 return nil
             }
             // The settle is not immutable: a run of unanimous disagreement
