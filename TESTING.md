@@ -413,6 +413,36 @@ proper nouns that survive translation (Apple, Google, Sue, Johnny, Queen),
 the home rows share German function words the model left alone (*ist*,
 *mein*). That is the signal a fix has to read.
 
+**Fixed 2026-08-14 — by a different signal, not a better cut-off.**
+`sharesHomeFunctionWords`: among the tokens the home output shares with the
+input, how many are unambiguously function words of the HOME language. A
+genuine translation of foreign speech cannot reuse them, because the input
+had none; a partial translation reuses exactly those, because it left the
+home-language part alone.
+
+Measured over the ten labelled turns: **0 shared home function words for
+every foreign turn, 2 for every home turn.** A gap with nothing in it,
+which is what makes this a classification rather than a threshold — and
+why it succeeds where every cut-off on `echoShare` provably fails.
+
+The word list is admitted under `FillerWords`' rule: unambiguously a
+function word of that language, not an English word, not a name. `in`,
+`an`, `am`, `so`, `will`, `was`, `hat`, `die` are all excluded for being
+English too — `in` in particular is shared by two of the FOREIGN turns.
+German only; other home languages get an empty set and the rule is inert
+for them rather than guessing.
+
+L1.86/87 pass without their markers. L1.93 runs the whole corpus with each
+turn's OWN `partnerHomeEvidence` (device turns logged it true; L3 foreign
+turns do not produce it), and L1.94 states the rule directly. `echoShare`
+and its 0.6 threshold are untouched, so the 0.80–1.00 echo population and
+every #83/#75/#23 guard behave exactly as before.
+
+One pre-existing acceptance recorded rather than papered over: `entities`
+("Google, Netflix and Amazon.") scores 0.750 and would be misread as an
+echo if partner-home evidence ever appeared on it. That is #83's known
+0.80 case; verified identical with and without this fix.
+
 L1.91 is the dropped turn, and it is the guard the next attempt has to
 satisfy before anything else. L1.90 was meant to represent this case and
 could not: its sentence shares no tokens at all, so it stayed green
