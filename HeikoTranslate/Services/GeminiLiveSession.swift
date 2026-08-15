@@ -170,13 +170,6 @@ final class GeminiLiveSession: NSObject {
 
     private let targetLanguageCode: String
     private let apiKey: String
-    /// Which prebuilt voice this session speaks with. Sent in `setup`, and
-    /// NOT optional: the app used to send no `speechConfig` at all, so the
-    /// server chose per session and the spoken translation switched gender
-    /// between turns (reported on device 2026-08-14: "mostly male, sometimes
-    /// female"). A voice that changes on its own contradicts the one thing
-    /// this app spends its whole design on — saying who is speaking.
-    private let voiceName: String
     private let onEvent: (Event) -> Void
 
     private var urlSession: URLSession!
@@ -209,18 +202,9 @@ final class GeminiLiveSession: NSObject {
         task = new
     }
 
-    /// The voice the standalone probes and replay harnesses use. They score
-    /// transcripts, not audio, so any stable name will do — but it must be
-    /// a name, not an omission, or they stop exercising the same setup frame
-    /// the app sends.
-    static let defaultVoice = "Charon"
-
-    init(targetLanguageCode: String, apiKey: String,
-         voiceName: String = GeminiLiveSession.defaultVoice,
-         onEvent: @escaping (Event) -> Void) {
+    init(targetLanguageCode: String, apiKey: String, onEvent: @escaping (Event) -> Void) {
         self.targetLanguageCode = targetLanguageCode
         self.apiKey = apiKey
-        self.voiceName = voiceName
         self.onEvent = onEvent
         super.init()
         // A delegate-backed session (rather than the default shared-style
@@ -300,28 +284,11 @@ final class GeminiLiveSession: NSObject {
     // MARK: - Outgoing
 
     private func sendSetup() {
-        send(json: setupPayload())
-    }
-
-    /// The setup frame, built where a test can read it. Extracted so L1 can
-    /// assert what actually goes on the wire rather than that some code
-    /// intended to put it there — the voice was missing from this frame for
-    /// the app's whole life and nothing noticed, because nothing looked.
-    func setupPayload() -> [String: Any] {
-        [
+        send(json: [
             "setup": [
                 "model": "models/gemini-3.5-live-translate-preview",
                 "generationConfig": [
                     "responseModalities": ["AUDIO"],
-                    // Ask for a specific voice, every time. Without this the
-                    // server picks one per session and it is not stable
-                    // across reconnects — the same conversation came back
-                    // male on one turn and female on the next.
-                    "speechConfig": [
-                        "voiceConfig": [
-                            "prebuiltVoiceConfig": ["voiceName": voiceName]
-                        ]
-                    ],
                     "translationConfig": [
                         "targetLanguageCode": targetLanguageCode,
                         "echoTargetLanguage": false
@@ -335,7 +302,7 @@ final class GeminiLiveSession: NSObject {
                 "inputAudioTranscription": [String: Any](),
                 "outputAudioTranscription": [String: Any]()
             ]
-        ]
+        ])
     }
 
     private func send(json: [String: Any]) {
