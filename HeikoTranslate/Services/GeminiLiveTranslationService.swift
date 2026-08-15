@@ -197,7 +197,7 @@ final class GeminiLiveTranslationService: ObservableObject {
     ///
     /// - the session translating INTO the partner's language is speaking
     ///   **Heiko's** words to the other person — male, because he is
-    ///   (Georg's call, 2026-08-14)
+    ///   (decided 2026-08-14)
     /// - the session translating INTO the home language is speaking the
     ///   **other person's** words to Heiko. Their gender is unknown and
     ///   changes every conversation, so this deliberately does NOT match
