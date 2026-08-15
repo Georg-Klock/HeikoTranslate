@@ -185,8 +185,39 @@ final class GeminiLiveTranslationService: ObservableObject {
         #if DEBUG
         if let factory = sessionFactoryForTesting { return factory(lang, onEvent) }
         #endif
-        return GeminiLiveSession(targetLanguageCode: lang.rawValue, apiKey: apiKey, onEvent: onEvent)
+        return GeminiLiveSession(targetLanguageCode: lang.rawValue, apiKey: apiKey,
+                                 voiceName: Self.voiceName(for: lang, home: turn.home),
+                                 onEvent: onEvent)
     }
+    /// Which prebuilt voice each side speaks with.
+    ///
+    /// The two sessions speak two different people's words, and the voice is
+    /// the only cue the listener gets while the phone is on a table between
+    /// them:
+    ///
+    /// - the session translating INTO the partner's language is speaking
+    ///   **Heiko's** words to the other person — male, because he is
+    ///   (Georg's call, 2026-08-14)
+    /// - the session translating INTO the home language is speaking the
+    ///   **other person's** words to Heiko. Their gender is unknown and
+    ///   changes every conversation, so this deliberately does NOT match
+    ///   Heiko's voice: a stranger sounding exactly like him is worse than a
+    ///   stranger sounding like a stranger.
+    ///
+    /// Two distinct voices also mean the direction is audible before a word
+    /// is understood, which is the same job the sides and colours do for the
+    /// eye. What must never happen again is the voice changing on its own
+    /// between turns — that is what an absent `speechConfig` produced.
+    ///
+    /// Names are Gemini prebuilt voices. If either sounds wrong on device,
+    /// change it here: it is one string, and nothing else depends on it.
+    static let heikoVoice = "Charon"     // speaks Heiko's words outward
+    static let partnerVoice = "Aoede"    // speaks the other person's words to Heiko
+
+    static func voiceName(for target: Lang, home: Lang) -> String {
+        target == home ? partnerVoice : heikoVoice
+    }
+
     /// The two languages this run is supposed to be running, and the ONLY
     /// ones any code here may connect. `Lang.allCases` is the settings menu
     /// (six languages), never the session set — conflating them made the
