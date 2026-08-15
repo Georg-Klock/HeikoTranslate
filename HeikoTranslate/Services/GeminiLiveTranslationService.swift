@@ -185,47 +185,8 @@ final class GeminiLiveTranslationService: ObservableObject {
         #if DEBUG
         if let factory = sessionFactoryForTesting { return factory(lang, onEvent) }
         #endif
-        return GeminiLiveSession(targetLanguageCode: lang.rawValue, apiKey: apiKey,
-                                 voiceName: Self.voiceName(for: lang, home: turn.home),
-                                 onEvent: onEvent)
+        return GeminiLiveSession(targetLanguageCode: lang.rawValue, apiKey: apiKey, onEvent: onEvent)
     }
-    /// Which prebuilt voice each side speaks with.
-    ///
-    /// The two sessions speak two different people's words, and the voice is
-    /// the only cue the listener gets while the phone is on a table between
-    /// them:
-    ///
-    /// - the session translating INTO the partner's language is speaking
-    ///   **Heiko's** words to the other person — male, because he is
-    ///   (decided 2026-08-14)
-    /// - the session translating INTO the home language is speaking the
-    ///   **other person's** words to Heiko. A different voice, so the
-    ///   direction is audible before a word is understood — the same job the
-    ///   sides and colours do for the eye.
-    ///
-    /// **Both are male** (decided 2026-08-14, after hearing the first
-    /// version on device). The first attempt paired a male voice with a
-    /// female one, which separated the directions loudly but told the
-    /// listener something untrue: it implied the other speaker's gender,
-    /// which changes every conversation and which the app cannot know. Two
-    /// male voices of different timbre keep the direction distinguishable
-    /// while claiming nothing about who is on the other side.
-    ///
-    /// What must never happen again is the voice changing on its own between
-    /// turns — that is what an absent `speechConfig` produced.
-    ///
-    /// Names are Gemini prebuilt voices. If either sounds wrong on device,
-    /// change it here: it is one string, and nothing else depends on it. Note
-    /// that an INVALID name fails silently — the server falls back to a
-    /// default rather than erroring — so a name change is only confirmed by
-    /// listening, never by a green test.
-    static let heikoVoice = "Charon"    // speaks Heiko's words outward
-    static let partnerVoice = "Puck"    // speaks the other person's words to Heiko
-
-    static func voiceName(for target: Lang, home: Lang) -> String {
-        target == home ? partnerVoice : heikoVoice
-    }
-
     /// The two languages this run is supposed to be running, and the ONLY
     /// ones any code here may connect. `Lang.allCases` is the settings menu
     /// (six languages), never the session set — conflating them made the
