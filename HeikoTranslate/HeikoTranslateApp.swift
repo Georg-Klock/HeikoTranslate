@@ -7,6 +7,12 @@ struct HeikoTranslateApp: App {
         // where the user opens the app and does nothing — "it did nothing" is
         // exactly the report we need evidence for.
         diag("app", "process start")
+        // One line answering "which languages can the referee actually work
+        // on THIS phone" (#135). Without it the answer only arrives for the
+        // pair currently selected, so learning it for six languages meant six
+        // pair switches and six conversations. Capability queries only — no
+        // authorization prompt, no audio, no recognition.
+        LanguageReferee.logOnDeviceCapability()
     }
 
     /// The in-app text-size setting, applied HERE rather than inside

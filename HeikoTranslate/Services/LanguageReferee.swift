@@ -63,6 +63,33 @@ final class LanguageReferee: @unchecked Sendable {
         }
     }
 
+    /// Log, once per launch, which languages this device can actually run
+    /// on-device recognition for.
+    ///
+    /// The first device run (#135, 2026-08-17) found only `de` and `en`
+    /// available on an iPhone 14 Pro — leaving the referee inert for exactly
+    /// the pairs that carry the bugs. That answer only appeared for whichever
+    /// pair happened to be selected, so establishing it for six languages
+    /// meant six pair switches. One launch should answer it.
+    ///
+    /// `supportsOnDeviceRecognition` reports whether the model is INSTALLED,
+    /// not whether the hardware could run it, so this is also the readout for
+    /// whether enabling a dictation language in Settings changed anything.
+    ///
+    /// Capability queries only: no authorization request, no audio, no
+    /// recognition task. Safe to call before the user has granted anything.
+    static func logOnDeviceCapability() {
+        let states = Lang.allCases.map { lang -> String in
+            let identifier = RefereeEvidence.speechLocaleIdentifier(for: lang)
+            guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: identifier)) else {
+                return "\(lang.rawValue)=no-recognizer"
+            }
+            return "\(lang.rawValue)=\(recognizer.supportsOnDeviceRecognition ? "on-device" : "NO-MODEL")"
+        }
+        DiagnosticLog.shared.log("referee", "on-device capability: " + states.joined(separator: " ")
+            + " | auth=\(describe(SFSpeechRecognizer.authorizationStatus()))")
+    }
+
     static func describe(_ status: SFSpeechRecognizerAuthorizationStatus) -> String {
         switch status {
         case .authorized: return "authorized"
