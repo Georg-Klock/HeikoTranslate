@@ -36,6 +36,7 @@ final class TranscriberReferee: @unchecked Sendable {
         let lang: Lang
         var availability: RefereeEvidence.Availability = .ready
         var text: String = ""
+        var confidence: Double = 0
         var continuation: AsyncStream<AnalyzerInput>.Continuation?
         var analyzer: SpeechAnalyzer?
         var consumer: Task<Void, Never>?
@@ -69,14 +70,35 @@ final class TranscriberReferee: @unchecked Sendable {
         // es_419 asset, and the installed list is the authority.
         let installed = await SpeechTranscriber.installedLocales.map(\.identifier)
         let code = String(identifier.prefix(2))
-        guard let resolved = installed.first(where: { $0.hasPrefix(code) }) else {
+        // Prefer the EXACT locale, then the language's own country, then any
+        // regional variant. The first device run picked `de_CH` and `de_AT`
+        // for German and `fr_CH` for French, because the installed list is
+        // alphabetical and `first(where: hasPrefix)` took whatever sorted
+        // first — a Swiss German model on standard German speech. Regional
+        // models are not interchangeable, and this is a transcription-quality
+        // bug hiding as a locale-string detail.
+        let wantedUnderscored = identifier.replacingOccurrences(of: "-", with: "_")
+        let resolvedOrNil = installed.first { $0 == wantedUnderscored }
+            ?? installed.first { $0 == code + "_" + code.uppercased() }
+            ?? installed.first { $0.hasPrefix(code) }
+        guard let resolved = resolvedOrNil else {
             setAvailability(.noOnDeviceModel, for: lang)
             DiagnosticLog.shared.log("referee", "[\(lang.rawValue)] no installed locale for \(code) — inert")
             return
         }
 
-        let transcriber = SpeechTranscriber(locale: Locale(identifier: resolved),
-                                            preset: .progressiveTranscription)
+        // Confidence has to be REQUESTED — the presets do not carry it, which
+        // is why the first run reported 0.00 on every turn. It is the missing
+        // discriminator: the run that broke "longer transcript wins" had the
+        // English recogniser emit 207 characters of fluent nonsense
+        // ("Hello, is Bengal, conditioner, to Ghana…") against 36 characters
+        // of correct German, so length cannot tell confident from garbled and
+        // a per-run score might.
+        let transcriber = SpeechTranscriber(
+            locale: Locale(identifier: resolved),
+            transcriptionOptions: [],
+            reportingOptions: [.volatileResults],
+            attributeOptions: [.transcriptionConfidence])
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
             setAvailability(.failed("no compatible audio format"), for: lang)
             return
@@ -92,7 +114,9 @@ final class TranscriberReferee: @unchecked Sendable {
             do {
                 for try await result in transcriber.results {
                     guard let self else { return }
-                    self.setText(String(result.text.characters), for: lang)
+                    self.setReading(text: String(result.text.characters),
+                                    confidence: Self.meanConfidence(of: result.text),
+                                    for: lang)
                 }
             } catch {
                 self?.setAvailability(.failed(error.localizedDescription), for: lang)
@@ -212,18 +236,30 @@ final class TranscriberReferee: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard order.count == 2, let h = sides[order[0]], let p = sides[order[1]] else { return nil }
-        // Confidence is an AttributedString attribute on this API rather than a
-        // scalar per segment, and the old path's confidence was measured
-        // useless anyway (0.94 on a foreign word against 0.62 on a correct
-        // native sentence). Reported as 0 and deliberately not used: the
-        // question this port answers is whether the TEXT is better.
-        return (RefereeEvidence.Reading(lang: h.lang, availability: h.availability, text: h.text, confidence: 0),
-                RefereeEvidence.Reading(lang: p.lang, availability: p.availability, text: p.text, confidence: 0))
+        return (RefereeEvidence.Reading(lang: h.lang, availability: h.availability, text: h.text, confidence: h.confidence),
+                RefereeEvidence.Reading(lang: p.lang, availability: p.availability, text: p.text, confidence: p.confidence))
     }
 
-    private func setText(_ text: String, for lang: Lang) {
+    private func setReading(text: String, confidence: Double, for lang: Lang) {
         lock.lock(); defer { lock.unlock() }
         sides[lang]?.text = text
+        sides[lang]?.confidence = confidence
+    }
+
+    /// Mean `transcriptionConfidence` across the runs that carry one, weighted
+    /// by run length so a one-word run cannot outvote a clause.
+    static func meanConfidence(of text: AttributedString) -> Double {
+        var weighted = 0.0
+        var characters = 0
+        for run in text.runs {
+            guard let score = run.transcriptionConfidence else { continue }
+            let n = text[run.range].characters.count
+            guard n > 0 else { continue }
+            weighted += score * Double(n)
+            characters += n
+        }
+        guard characters > 0 else { return 0 }
+        return weighted / Double(characters)
     }
 
     private func setAvailability(_ a: RefereeEvidence.Availability, for lang: Lang) {
