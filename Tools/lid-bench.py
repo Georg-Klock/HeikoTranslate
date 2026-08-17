@@ -188,38 +188,80 @@ class Silero:
     breakdown, and the model was deprecated in April 2023 — which matters for
     support, not for a frozen artifact. Whether it holds up at 1-3s is exactly
     what this bench exists to find out.
+
+    LOADED AS ONNX FROM A MIRROR, and both halves of that are forced rather
+    than chosen:
+
+    - The classifier was dropped from the repo in v5 (June 2024), so
+      `torch.hub.load` against master fails outright with "Cannot find callable
+      silero_lang_detector_95 in hubconf". Only the v4.0 tag still declares it.
+    - v4.0's hubconf then fetches weights from `models.silero.ai`, which does
+      not respond at all (measured 2026-08-17: connection timeout, no HTTP
+      status). The vendor host for a deprecated model is not a dependency worth
+      having.
+
+    So this reads the 17MB ONNX and the label dictionary from the `deepghs`
+    mirror on HuggingFace. That is also the artifact you would ship — MIT,
+    4.2M params, no torch at inference — so the bench and any eventual
+    integration measure the same file.
     """
 
     name = "silero"
+    MIRROR = "https://huggingface.co/deepghs/silero-lang95-onnx/resolve/main"
 
     def __init__(self):
         try:
-            import torch
+            import onnxruntime
         except ImportError as exc:
-            raise NotInstalled("pip install torch") from exc
+            raise NotInstalled("pip install onnxruntime") from exc
+
+        cache = REPO / ".build" / "silero-lang95"
         try:
-            self.model, self.lang_dict, self.lang_group_dict, self.utils = torch.hub.load(
-                repo_or_dir="snakers4/silero-vad",
-                model="silero_lang_detector_95",
-                onnx=False,
-                trust_repo=True,
-            )
+            model_path = self._fetch("lang_classifier_95.onnx", cache)
+            dict_path = self._fetch("lang_dict_95.json", cache)
         except Exception as exc:
-            raise NotInstalled(f"torch.hub could not fetch the model: {exc}") from exc
-        self.torch = torch
+            raise NotInstalled(f"could not fetch from the mirror: {exc}") from exc
+
+        # The graph has two heads: output 0 is the 95-language classifier
+        # (verified shape (batch, 95)), output 1 is a 58-way language-GROUP
+        # head exported with a frozen batch of 8. Only the first is read here.
+        # The second makes onnxruntime warn once per clip that {8,58} does not
+        # match {1,58}; it is an export artifact of a deprecated model, not a
+        # problem with the result, so the log level is raised rather than
+        # letting 19 identical warnings bury the table.
+        options = onnxruntime.SessionOptions()
+        options.log_severity_level = 3
+        self.session = onnxruntime.InferenceSession(
+            str(model_path), options, providers=["CPUExecutionProvider"])
+        self.input_name = self.session.get_inputs()[0].name
+        self.lang_dict = json.loads(dict_path.read_text())
+
+    @staticmethod
+    def _fetch(name: str, cache: Path) -> Path:
+        import urllib.request
+        cache.mkdir(parents=True, exist_ok=True)
+        target = cache / name
+        if not target.exists() or target.stat().st_size == 0:
+            urllib.request.urlretrieve(f"{Silero.MIRROR}/{name}", target)
+        return target
 
     def probs(self, audio, rate: int) -> dict[str, float]:
         import numpy as np
-        tensor = self.torch.from_numpy(np.ascontiguousarray(audio))
-        with self.torch.no_grad():
-            logits = self.model(tensor.unsqueeze(0))
-        scores = self.torch.softmax(logits, dim=-1)[0]
+
+        batch = np.ascontiguousarray(audio, dtype="float32").reshape(1, -1)
+        logits = self.session.run(None, {self.input_name: batch})[0][0]
+        # The ONNX graph emits raw logits; softmax here rather than trusting
+        # the export to have baked one in.
+        shifted = np.exp(logits - np.max(logits))
+        scores = shifted / shifted.sum()
+
         out: dict[str, float] = {}
         for index, prob in enumerate(scores.tolist()):
-            label = self.lang_dict.get(str(index), "")
-            code = label.split(",")[0].strip().lower()[:2]
+            # Labels look like "de, German" — the ISO code is the first field.
+            label = str(self.lang_dict.get(str(index), ""))
+            code = label.split(",")[0].strip().lower()
             if code in LANGS:
-                out[code] = out.get(code, 0.0) + prob
+                out[code] = out.get(code, 0.0) + float(prob)
         return out
 
 

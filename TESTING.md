@@ -1177,24 +1177,60 @@ witness, it is a second opinion from the same one — which is the failure #125
 measured (6/10 against a 5/10 baseline) and which marginal accuracy cannot
 reveal.
 
-First run, 2026-08-17, `TestAudio` (19 labelled TTS clips), whisper-tiny via
-faster-whisper:
+First run, 2026-08-17, `TestAudio` (19 labelled TTS clips), all three
+candidates. Pair-restricted accuracy, 12 scorable clips for de/es and 18 for
+de/en — so one clip is 8.3 and 5.6 points respectively, and none of these gaps
+is more than two clips wide:
 
-| Clip length | Open-set | Pair-restricted (de/es) |
-|---|---|---|
-| full | 89.5% | **100%** |
-| 2.0 s | 78.9% | 83.3% |
-| 1.0 s | 68.4% | 66.7% |
+| Clip length | silero | ecapa | whisper |
+|---|---|---|---|
+| full (de/es) | **100%** | **100%** | **100%** |
+| 3.0 s (de/es) | 83.3% | **91.7%** | 83.3% |
+| 2.0 s (de/es) | 83.3% | **91.7%** | 83.3% |
+| 1.5 s (de/es) | 83.3% | **91.7%** | 83.3% |
+| 1.0 s (de/es) | 66.7% | **75.0%** | 66.7% |
+| 2.0 s (de/en) | 88.9% | 88.9% | 77.8% |
+| 1.0 s (de/en) | 72.2% | **83.3%** | 66.7% |
 
-Restriction does exactly what the theory says at full length: both German
-clips misheard as English come back, because English is not in the pair. It
-stops rescuing at 1 s, where the remaining errors are inside the pair.
+Three things this shows and one it does not.
+
+**Restriction does what the theory says at full length.** Every candidate goes
+to 100%, and all three make the same two open-set errors — German heard as
+English on `de_after_en` and `de_song_lead`, which are the fixtures that
+deliberately OPEN with an English song title (#32). That is the audio, not the
+models, and it is exactly the error restriction is supposed to absorb: English
+is not in a de/es pair, so it cannot be the answer.
+
+**ECAPA is ahead everywhere it is not tied**, and holds 91.7% from 3 s down to
+1.5 s where the other two sit at 83.3%. That is the direction the literature
+predicted — it carries the only independently measured short-utterance number
+in the field (6.54% error at avg 2.54 s over 107 languages, arXiv:2303.16511)
+— but one to two clips is not a result, and 85 MB against Silero's 17 MB is a
+real cost on an A13. This ranks the candidates for the next measurement; it
+does not pick one.
+
+**Restriction stops rescuing at 1 s.** The gap between the open-set and
+restricted columns narrows and, for whisper on de/en, inverts: by then the
+surviving errors are inside the pair, which is the case no amount of masking
+can help. Whichever model wins, the app should prefer to decide on more than a
+second of speech.
 
 **Read that table as a lower bound on nothing and an upper bound on nothing.**
 It is macOS `say` output — no disfluency, no breath, no room — and this file
 already records that a TTS fixture could not reproduce #32. It proves the
 harness works and the restriction has the predicted shape; it does not tell
 you what happens in a kitchen.
+
+**Silero cannot be loaded the documented way, and that is a fact about
+shipping it rather than a local hiccup.** `torch.hub.load` against the repo's
+master fails outright — the classifier was dropped in v5 (June 2024) and only
+the v4.0 tag still declares it — and v4.0 then fetches weights from
+`models.silero.ai`, which does not respond at all (measured 2026-08-17:
+connection timeout, no HTTP status). The bench reads the 17 MB ONNX and its
+label dictionary from the `deepghs` mirror on HuggingFace instead, which is
+also the artifact that would ship. A model whose vendor host is gone is
+usable, because MIT weights do not expire; it just cannot be a live
+dependency, and anything depending on it must vendor the file.
 
 **The scoring bug worth recording**, because it made the bench read backwards
 before it read right: clips whose language is not in the configured pair were
