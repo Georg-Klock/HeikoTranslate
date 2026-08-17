@@ -7,7 +7,7 @@ accuracy question is open.** Measured on device 2026-08-17. Nothing ships yet.
 
 This document previously said the experiment was refuted because no API lets an
 app install a speech model, so coverage was a property of how the owner had
-configured their phone — and a setup step on Heiko's phone is refused.
+configured their phone — and a setup step on the owner's phone is refused.
 
 **That is false on iOS 26.** Measured on device (build 2.4.60, iPhone15,2,
 iOS 26.5.2):
@@ -41,7 +41,7 @@ against `SFSpeechRecognizer` and would have to move to
 shape (an actor with an async input stream rather than a callback task).
 
 The product decision that produced the refutation still stands and is worth
-keeping: **a setup step on Heiko's phone is refused.** He never opens settings,
+keeping: **a setup step on the owner's phone is refused.** He never opens settings,
 and the one action he may ever be asked to perform is a single German-labelled
 row that shares a log. What changed is that iOS 26 does not require one.
 
@@ -129,7 +129,8 @@ failed to separate these populations. Confidence *and* length may separate them
 (one token vs eight), but that is a hypothesis at n=2 and fitting it now would
 repeat the mistake this project already documented twice.
 
-Full tables in #135's Phase 1 comment; raw evidence in `logs/20260817-111322/`.
+Full tables in #135's Phase 1 comment; raw evidence in the pulled device log
+for that build.
 
 ## Deploying it
 
