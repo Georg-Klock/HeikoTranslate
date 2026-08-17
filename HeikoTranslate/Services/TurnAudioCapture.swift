@@ -45,21 +45,35 @@ final class TurnAudioCapture: @unchecked Sendable {
 
     typealias Lang = TurnLogic.Lang
 
-    /// Whether to capture at all, read once. Absent key means off, which is
-    /// what every build that is not a measurement build has.
+    /// Whether to capture at all, read once from the bundle.
     static let isEnabled: Bool = {
         guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
               let data = try? Data(contentsOf: url),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
         else { return false }
-        // Accept a real boolean or the string "YES", because a plist edited by
+        return captureFlag(in: plist)
+    }()
+
+    /// The rule, separated from where the plist comes from.
+    ///
+    /// Tested directly (L1.104a) rather than through `isEnabled`, because
+    /// `isEnabled` reads whatever `Secrets.plist` this machine happens to have
+    /// — and that file is gitignored and legitimately carries the flag during a
+    /// measurement run. A test asserting on it turns L1 red for a reason that
+    /// has nothing to do with the code, on the one machine that is mid-
+    /// experiment. What must actually hold is this: **an absent key is off**,
+    /// so a build with no such entry — every build made from a clean checkout,
+    /// and every CI run, which has no `Secrets.plist` at all — cannot capture.
+    static func captureFlag(in plist: [String: Any]?) -> Bool {
+        guard let plist else { return false }
+        // Accept a real boolean or the string form, because a plist edited by
         // hand acquires whichever the editor felt like writing.
         if let flag = plist["CAPTURE_TURN_AUDIO"] as? Bool { return flag }
         if let flag = plist["CAPTURE_TURN_AUDIO"] as? String {
             return ["YES", "true", "1"].contains(flag)
         }
         return false
-    }()
+    }
 
     /// The wire format, restated here so the WAV header cannot drift from it.
     /// If `GeminiLiveTranslationService`'s `targetFormat` ever changes, this
@@ -86,12 +100,22 @@ final class TurnAudioCapture: @unchecked Sendable {
     private let directory: URL
     private let manifestURL: URL
 
-    init(directory: URL? = nil) {
+    /// Whether THIS instance captures. Defaults to the plist flag, so the app
+    /// is off unless deliberately switched on; tests inject `true` with a
+    /// temporary directory so the real type is exercised rather than a copy of
+    /// its logic. Without this seam `isEnabled` is a `Bundle.main` read that no
+    /// test can reach, and a WAV header is exactly the kind of thing that is
+    /// wrong silently — every captured file would measure as a different
+    /// language and a whole device session would be wasted before anyone knew.
+    private let enabled: Bool
+
+    init(directory: URL? = nil, enabled: Bool = TurnAudioCapture.isEnabled) {
         let base = directory
             ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("turn-audio", isDirectory: true)
         self.directory = base
         self.manifestURL = base.appendingPathComponent("manifest.jsonl")
+        self.enabled = enabled
     }
 
     // MARK: - Lifecycle
@@ -99,7 +123,7 @@ final class TurnAudioCapture: @unchecked Sendable {
     /// Begin a capture session for one language pair. Safe to call when
     /// disabled; it does nothing.
     func start(home: Lang, partner: Lang) {
-        guard Self.isEnabled else { return }
+        guard enabled else { return }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
@@ -116,7 +140,7 @@ final class TurnAudioCapture: @unchecked Sendable {
     }
 
     func stop() {
-        guard Self.isEnabled else { return }
+        guard enabled else { return }
         lock.lock()
         home = nil
         partner = nil
@@ -131,7 +155,7 @@ final class TurnAudioCapture: @unchecked Sendable {
     /// append, no formatting, no file I/O, no allocation beyond the buffer's
     /// own growth.
     func append(_ chunk: Data) {
-        guard Self.isEnabled else { return }
+        guard enabled else { return }
         lock.lock()
         defer { lock.unlock() }
         guard home != nil else { return }
@@ -152,7 +176,7 @@ final class TurnAudioCapture: @unchecked Sendable {
     /// two would make every bench score the app against itself and report
     /// perfect agreement.
     func finish(decision: String) {
-        guard Self.isEnabled else { return }
+        guard enabled else { return }
         lock.lock()
         let audio = pcm
         let wasTruncated = truncated
@@ -192,7 +216,7 @@ final class TurnAudioCapture: @unchecked Sendable {
     /// run into the next one. The referee's `rotate()` rule, for the same
     /// reason: one turn's audio must not become another turn's evidence.
     func rotate() {
-        guard Self.isEnabled else { return }
+        guard enabled else { return }
         lock.lock()
         pcm.removeAll(keepingCapacity: true)
         truncated = false

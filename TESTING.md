@@ -1252,6 +1252,25 @@ same trap "Who is speaking, and why it changes what the evidence means"
 describes for the failure rates themselves, and it bites the candidate and the
 baseline in the same direction.
 
+The capture is covered at L1 because its failure mode is silent — a wrong WAV
+header does not crash anything, it just makes every clip play at the wrong
+speed and measure as a different language, and that costs a whole device
+session before anyone notices:
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.104 | Capture disabled | Not one byte written — not even the directory | **#135** |
+| L1.104a | No plist, no key, `false`, `"NO"`, `0` | Off. Only an explicit `true`/`"YES"` captures — tested on the parse, never on this machine's `Secrets.plist` | **#135** |
+| L1.104b | Two committed turns | One WAV and one manifest row each | **#135** |
+| L1.104c | A finished turn | Every header field matches the wire format: PCM, mono, 16 kHz, 16-bit, byte rate, block align, and both length fields | **#135** |
+| L1.104d | Appended bytes | Byte-identical in the file — nothing resampled or re-encoded behind the measurement | **#135** |
+| L1.104e | Any turn | `decision` recorded, `truth` **null** — the app's verdict is under test and must never be stored as the answer | **#135** |
+| L1.104f | A reject reason with a quote and a backslash | The row still parses as JSON | **#135** |
+| L1.104g | A turn that ended without a commit | Its audio is discarded, not prepended to the next | **#135/R8** |
+| L1.104h | A turn with no audio | Nothing written, and no row pointing at no file | **#135** |
+| L1.104i | 70 s against the 60 s cap | Bounded, and flagged `truncated` so it is not scored as a whole turn | **#135** |
+| L1.104j | Audio arriving after `stop` | Dropped — it belongs to no turn | **#135/R8** |
+
 | ID | Given | Expect | Rule |
 |---|---|---|---|
 | L1.95 | Exactly one recognizer produced words | That language — the one categorical case, and #125's shape | **#135** |
