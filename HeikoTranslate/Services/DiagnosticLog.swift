@@ -64,7 +64,26 @@ final class DiagnosticLog {
         let short = (info?["CFBundleShortVersionString"] as? String) ?? "?"
         let build = (info?["CFBundleVersion"] as? String) ?? "?"
         let version = "\(short).\(build.count == 1 ? "0" + build : build)"
-        log("app", "=== launch: Heiko Translate \(version), iOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        // The hardware identifier, because a log that cannot say WHICH phone
+        // it came from cannot answer a per-device question — and the two in
+        // play differ sharply: the 14 Pro this is developed on
+        // ("iPhone15,2") against the SE 2nd gen in the field ("iPhone12,8"),
+        // which has half the memory and a four-year-older SoC. #135's
+        // on-device recognizers are the first feature whose viability plausibly
+        // differs between them, and `supportsOnDeviceRecognition` is a runtime
+        // per-device, per-locale fact that no amount of reasoning settles.
+        // `utsname.machine` is the model, not a serial: it identifies the
+        // hardware generation and nothing about its owner.
+        var system = utsname()
+        uname(&system)
+        // `withUnsafeBytes(of:)` takes the tuple by value; the `inout` pointer
+        // form reads `system.machine` while `system` is still exclusively
+        // borrowed and does not compile.
+        let machine = withUnsafeBytes(of: system.machine) { raw -> String in
+            guard let base = raw.baseAddress else { return "?" }
+            return String(cString: base.assumingMemoryBound(to: CChar.self))
+        }
+        log("app", "=== launch: Heiko Translate \(version), \(machine), iOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
     }
 
     /// The log carries both speakers' words, and `Documents/` rides iCloud
