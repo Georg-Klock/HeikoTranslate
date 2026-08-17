@@ -1,42 +1,89 @@
 # Experiment — an independent language witness (#135)
 
-Branch: `experiment/lid-referee`. Status: **refuted on measurement, 2026-08-17.**
-Kept for reproducibility. Nothing from it ships.
+Branch: `experiment/lid-referee`. Status: **the coverage blocker is GONE; the
+accuracy question is open.** Measured on device 2026-08-17. Nothing ships yet.
 
-## Why it is refuted
+## The refutation was wrong, and this is what replaced it
 
-`supportsOnDeviceRecognition` reports whether a speech model is **installed**,
-and no API lets an app install one. The only route is the owner enabling that
-language for dictation in Settings, which on iOS means carrying its keyboard.
-The referee's coverage is therefore a property of how the owner configured
-their phone, and nothing the app can arrange.
+This document previously said the experiment was refuted because no API lets an
+app install a speech model, so coverage was a property of how the owner had
+configured their phone — and a setup step on Heiko's phone is refused.
 
-**A setup step on Heiko's phone was refused as a product decision** (Georg,
-2026-08-17): the app's premise is that he never opens settings, and the one
-action he may ever be asked to perform is a single German-labelled row that
-shares a log. "First install these keyboards" is a larger imposition than the
-feature was going to buy him.
+**That is false on iOS 26.** Measured on device (build 2.4.60, iPhone15,2,
+iOS 26.5.2):
 
-What follows is decisive. The referee can only use models already present — on
-a German phone, German and perhaps English. So it is inert for exactly #125's
-de↔es and for the de↔fr collapse measured in the same session, and available
-only for de↔en, which committed 10 of 10 turns on the same build. **It cannot
-address the bug it was proposed for.**
+```
+SpeechTranscriber supported=30 installed=12 maxReserved=5
+assets  es[new:sup/notinst]  fr[new:sup/notinst]  ko[new:sup/notinst]  zh[new:sup/notinst]
+install: requesting fr_FR …
+install: DONE — installedLocales now …,fr_BE,fr_CA,fr_CH,fr_FR      ← 29 seconds
+install: old API after install — de=on-device fr=STILL-NO
+```
 
-That is #135's §7 kill criterion reached from a direction the plan did not
-anticipate: it expected to be beaten by the discriminator failing to separate,
-and was beaten by coverage the app does not control.
+Three facts, all decisive:
 
-A home-only variant (one German recognizer, no setup, since German is the
-device language) is **not** proposed: the same run has that recognizer
-producing `"Bonjour"` at 0.94 on French speech, which is the confident-wrong
-reading the two-sided design existed to catch. Reviving it would need its own
-measured corpus and a new issue.
+1. **Spanish, French, Korean and Chinese are all supported** by
+   `SpeechTranscriber` — 30 locales including `es_MX`, the app's actual
+   Spanish target. Only Tagalog and Vietnamese are genuinely absent, which
+   matches their partner-only status.
+2. **The app installed French itself, in 29 seconds, with no user interaction
+   at all** — no Settings, no keyboard, no dialog, nothing visible on the
+   phone. `maxReserved=5` against a pair's 2, so the reservation cap is not a
+   constraint either.
+3. **The old `SFSpeechRecognizer` API is unaffected** (`fr=STILL-NO`). The two
+   frameworks keep separate assets.
 
-The valuable output of this experiment is not the referee. It is the evidence
-it collected on the way — above all that **#125 is not Spanish-specific**
-(8 of 8 de↔fr turns dropped against 10 of 10 de↔en, one session, one build),
-now recorded on that issue.
+So the coverage problem — the thing that made this experiment useless for
+exactly the pairs that carry the bugs — is solved, and solved without asking
+Heiko for anything. What it costs is a **port**: `LanguageReferee` is written
+against `SFSpeechRecognizer` and would have to move to
+`SpeechAnalyzer`/`SpeechTranscriber`, which is iOS 26+ only and a different
+shape (an actor with an async input stream rather than a callback task).
+
+The product decision that produced the refutation still stands and is worth
+keeping: **a setup step on Heiko's phone is refused.** He never opens settings,
+and the one action he may ever be asked to perform is a single German-labelled
+row that shares a log. What changed is that iOS 26 does not require one.
+
+## The open question is now accuracy, not coverage
+
+Porting buys coverage. It does **not** buy a working discriminator, and the
+device evidence on that is not encouraging. On de↔en — the one pair where the
+referee could testify — it agreed with the app on 2 turns of 6:
+
+| # | referee | app | evidence |
+|---|---|---|---|
+| 3 | en | RIGHT/home | `heard[en] "Hamburger new coffin it has a extra bacon and a McFlurry" conf=0.24`, de empty |
+| 5 | en | LEFT/foreign | `heard[en] "OK that's going to be 1740 do you wanna pay by card" conf=0.83` ✓ |
+| 6 | de | RIGHT/home | `heard[de] "Kein Problem wo muss ich das dran halten" conf=0.62` ✓ |
+
+`onlyOne=true` on 18 of 18 turns — the two recognisers never both produced
+text, so the categorical rule decided everything, and it decided by which
+recogniser stayed silent. A silent recogniser is usually one that gave up, not
+evidence the language was absent. Confidence does not rescue it either:
+`"Bonjour"` scored **0.94** on a French turn against **0.62** for a full
+correct German sentence, which is the #32 collision in a third metric.
+
+So the case for porting rests on a bet: that `SpeechTranscriber`, a
+substantially newer and better model than `SFSpeechRecognizer`, produces
+readings clean enough that the discriminator problem shrinks. That is plausible
+and unmeasured. **It should be measured on one language pair before the whole
+referee is rewritten.**
+
+Also unresolved: iOS 26 is a hard floor for this path, and whether the field
+device (an iPhone SE 2nd generation) runs iOS 26 has not been checked.
+
+## What the experiment has produced regardless
+
+- The measurement discipline in TESTING.md on single-tester bilingual audio,
+  which changes how every existing failure rate in this project should be read.
+- A correction to #125's rate: `commit REJECTED` lines are deferral retries,
+  not turns, and counting them overstated the de↔fr failure rate by 2–3×. The
+  real figure is roughly 3 dropped utterances against 8–10 committed.
+- A second, distinct de↔fr mechanism, recorded on #125: both sessions
+  transcribe the French correctly and agree on it, and neither produces any
+  translation at all (`outLen[home=0 partner=0]`). The arbitration is correct
+  to refuse that turn; the model simply returned nothing.
 
 ---
 
