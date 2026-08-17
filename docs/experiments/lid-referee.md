@@ -1,9 +1,51 @@
 # Experiment — an independent language witness (#135)
 
-Branch: `experiment/lid-referee`. Status: **Phase 1 — observe-only, deployable
-by cable.** The referee runs on the phone and writes one log line per turn.
-**No app behaviour changes:** nothing it produces is read by `TurnLogic`, the
-direction, the commit, or the audio gate.
+Branch: `experiment/lid-referee`. Status: **Phase 1 measured — mostly negative,
+one cheap thing left to try.** The referee runs on the phone and writes one log
+line per turn. **No app behaviour changes:** nothing it produces is read by
+`TurnLogic`, the direction, the commit, or the audio gate.
+
+## The first device result (build 2.4.58, iPhone 14 Pro, iOS 26.5.2)
+
+18 turns: 10 committed, 8 rejected. Three findings, in order of how much they
+matter.
+
+**1. On-device model coverage is the binding constraint.** Only German and
+English came up `ready`; `es`, `fr`, `zh` and `vi` all reported
+`NO-ON-DEVICE-MODEL`. The referee is therefore inert for exactly the pairs
+that have the bugs — #125's de↔es and de↔fr — and active only for de↔en, which
+already works. **All 8 rejected turns were de↔fr**, so every turn the app
+dropped was a turn the referee could not testify on.
+
+The sharpest case: a turn the app dropped outright, where Gemini's `de` session
+read the German as French garbage and its `fr` session read it correctly. The
+referee's German recognizer had it verbatim at **0.98 confidence** — and had to
+report inconclusive, because a verdict needs both sides.
+
+Not yet a refutation: `supportsOnDeviceRecognition` reflects which dictation
+models the device has *downloaded*, not what the hardware can do. Enabling those
+languages under Settings → General → Keyboard → Dictation Languages may flip
+them. Untested, nearly free, and the next thing to do. If it works it becomes a
+setup step — fine on a measurement phone, a real burden on Heiko's.
+
+**2. The structural rule is unreliable, measured.** `onlyOne=true` on 18 of 18
+turns: the two recognizers never both produced text, so L1.95c's "both produced
+words" case does not arise in practice and the categorical rule decides
+everything. It decided wrongly on 4 of 6 de↔en turns, because *empty does not
+mean "not this language"* — on one turn German was spoken, the German
+recognizer produced nothing, and the English one produced phonetic garbage
+("Hamburger new coffin it has a extra bacon and a McFlurry"). A silent
+recognizer is usually one that gave up, not a witness for the other side.
+
+**3. Confidence is not the fix — the same collision as `echoShare`.** "Bonjour"
+heard by the German recognizer scored **0.94** on a French turn; a full correct
+German sentence scored **0.62**. Any cut-off between them is wrong about one.
+That is the #32 result in a new metric, and the third time a single scalar has
+failed to separate these populations. Confidence *and* length may separate them
+(one token vs eight), but that is a hypothesis at n=2 and fitting it now would
+repeat the mistake this project already documented twice.
+
+Full tables in #135's Phase 1 comment; raw evidence in `logs/20260817-111322/`.
 
 ## Deploying it
 
