@@ -386,18 +386,44 @@ final class TurnAudioCapture: @unchecked Sendable {
         }
         let frameCount = samples.count / frame
 
-        var first: Int?
-        var last: Int?
+        var loud = [Bool](repeating: false, count: frameCount)
         for index in 0..<frameCount {
             let slice = samples[(index * frame)..<((index + 1) * frame)]
             var sum = 0.0
             for sample in slice { sum += Double(sample) * Double(sample) }
-            if (sum / Double(frame)).squareRoot() > speechRMSFloor {
-                if first == nil { first = index }
-                last = index
-            }
+            loud[index] = (sum / Double(frame)).squareRoot() > speechRMSFloor
         }
-        guard let first, let last else { return nil }
+
+        // Speech is a RUN of loud frames, not a loud frame.
+        //
+        // Measured 2026-08-17 (build 2.4.66): a clip that was near-silent for
+        // its first 5.5 s and loud thereafter was not trimmed at all, because
+        // first-loud-to-last-loud is defeated by one 20 ms transient near the
+        // start — a chair, a tap on the phone, a door. A single frame kept
+        // twelve seconds of silence and the clip went into the corpus at its
+        // full length. Requiring `minRun` consecutive frames costs nothing and
+        // makes the bound depend on the speech rather than on the loudest
+        // accident in the room.
+        let minRun = 5                                   // 100 ms
+        /// The frame where a run of `minRun` loud frames begins, in the
+        /// direction of travel. Scanning forwards that is the run's first
+        /// frame; scanning backwards it is the run's LAST frame going
+        /// forwards, so the offset is added rather than subtracted — getting
+        /// that sign wrong silently shortened every clip by 160 ms at the
+        /// tail, which the fixture caught only because it asserts a duration.
+        func runEdge(_ range: some Sequence<Int>, forwards: Bool) -> Int? {
+            var count = 0
+            for index in range {
+                count = loud[index] ? count + 1 : 0
+                if count == minRun {
+                    return forwards ? index - (minRun - 1) : index + (minRun - 1)
+                }
+            }
+            return nil
+        }
+        guard let first = runEdge(0..<frameCount, forwards: true),
+              let last = runEdge((0..<frameCount).reversed(), forwards: false)
+        else { return nil }
 
         // BYTE offsets, not sample indices — the caller slices `Data`. Returning
         // sample indices silently halved every clip, keeping the first half of

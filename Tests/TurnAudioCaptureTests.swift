@@ -318,6 +318,26 @@ final class TurnAudioCaptureTests: XCTestCase {
                        "the clip must be the utterance, not the turn window")
     }
 
+    /// A single transient must not defeat the trim. Measured 2026-08-17
+    /// (build 2.4.66): a clip near-silent for 5.5 s then loud to the end came
+    /// out untrimmed at its full 12.99 s, because one 20 ms spike near the
+    /// start anchored the lower bound. A chair or a tap on the phone was
+    /// keeping twelve seconds of silence in the corpus.
+    func testL1_104r_ignoresIsolatedTransients() throws {
+        var buffer = Data()
+        buffer.append(pcm(seconds: 0.02, value: 9000))   // one 20ms click
+        buffer.append(pcm(seconds: 5.0, value: 0))       // then real silence
+        buffer.append(pcm(seconds: 1.0, value: 6000))    // then the utterance
+        buffer.append(pcm(seconds: 3.0, value: 0))
+
+        let bounds = try XCTUnwrap(TurnAudioCapture.speechBounds(in: buffer))
+        let startSeconds = Double(bounds.lowerBound / 2) / Double(TurnAudioCapture.sampleRate)
+        XCTAssertGreaterThan(startSeconds, 4.0,
+                             "the click must not anchor the bound at zero")
+        let seconds = Double(bounds.count / 2) / Double(TurnAudioCapture.sampleRate)
+        XCTAssertEqual(seconds, 1.5, accuracy: 0.15, "the utterance plus its margins")
+    }
+
     /// The margin is not decoration: a hard cut at the first loud frame clips
     /// word onsets, and onset is what a phonotactic classifier reads.
     func testL1_104l_keepsMarginAroundTheSpeech() throws {

@@ -130,6 +130,19 @@ echo "Say the GERMAN line after each partner line — it is a cue, not a script.
 echo "Leave about a second of silence either side so it lands as its OWN turn."
 echo "The point is a native partner voice against your native German."
 echo
+# The whole German side up front, because the cue printed mid-run is on the
+# LAPTOP and the tester is holding the PHONE. Measured 2026-08-17: a ten-line
+# run produced one German turn — the per-line cues were never seen, and the
+# corpus came out as one-sided as the run that had no cues at all. Read these
+# once before starting, or say your own; either beats reading nothing.
+if [ -z "${1:-}" ] || [ "${1:-}" = "--auto" ]; then
+  echo "The German side, in order — glance at this now, then watch the phone:"
+  j=0
+  for p in "${PHRASES[@]}"; do
+    case "$p" in *"|"*) j=$((j + 1)); printf '  %2d. %s\n' "$j" "${p#*|}" ;; esac
+  done
+  echo
+fi
 i=0
 for p in "${PHRASES[@]}"; do
   i=$((i + 1))
