@@ -1273,6 +1273,50 @@ The mic heartbeat is the key line for the launch bug: it distinguishes "the
 room was quiet" from "the microphone was dead", which no amount of staring
 at the screen can.
 
+### Who is speaking, and why it changes what the evidence means
+
+**Speaker identity is not language identity, in either direction.** Recorded
+because a routing idea was built on the opposite assumption and reverted the
+same hour (2026-08-17, #135 side quest: cluster turns by voice pitch, since
+"who spoke" looked better-posed than "which language").
+
+Two real cases break it:
+
+- **Two people, one language.** Heiko and his wife both speak German, to one
+  foreign-language speaker. Two voices, one home language — a speaker-based
+  router flips sides between two people who belong on the same side.
+- **One person, two languages.** Which is how this app is *tested*. One voice,
+  both languages — a speaker-based router cannot see the switch at all.
+
+The second case is the one with teeth beyond that experiment, because **every
+device measurement this project has is single-tester bilingual audio**, and
+that is systematically harder than the real thing:
+
+- The second language carries the tester's accent. TESTING.md already records
+  the consequence — ten English utterances spoken by a German speaker were
+  transcribed **as German** by the `de` session, `said[de]` empty on every
+  turn, so `homeIsRealTranslation` was never reached. A native English speaker
+  would not produce that audio.
+- The de↔es and de↔fr collapses (#125) were measured the same way. Some part
+  of that failure rate may be accent rather than arbitration, and nothing
+  currently separates the two.
+
+Two consequences for how evidence is read:
+
+1. A measured failure rate from single-tester audio is an **upper bound** on
+   the failure rate Heiko will see, not an estimate of it. Do not quote it as
+   the latter.
+2. Before a fix is judged, ask whether its evidence needs a second speaker. A
+   fix aimed at the accent artifact and a fix aimed at the arbitration look
+   identical in single-tester logs.
+
+Getting a native speaker of the partner language in front of the phone for one
+session would be worth more than several more solo runs. The `de_song_lead`
+fixtures already carry this lesson in miniature: the first version let the
+German voice read the English title, German phonetics turned it into German
+words, and the case passed for the wrong reason until the fixture spliced in an
+actual English voice.
+
 ### Reporting a failure
 Give: which test ID, what appeared on screen (screenshot), what you heard,
 and the last words shown before it stopped. That is enough to locate the bug
