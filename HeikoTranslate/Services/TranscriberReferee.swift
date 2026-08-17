@@ -172,7 +172,15 @@ final class TranscriberReferee: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard running else { return }
-        for side in sides.values { side.text = "" }
+        // Confidence must be cleared WITH the text, not left behind. Device
+        // evidence (2.4.62): a turn logged `heard[en] "" conf=0.93` — an empty
+        // reading carrying the previous turn's score, which reads as strong
+        // testimony for a side that said nothing at all. Two fields, one
+        // lifetime.
+        for side in sides.values {
+            side.text = ""
+            side.confidence = 0
+        }
     }
 
     // MARK: - Audio
