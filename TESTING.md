@@ -1317,6 +1317,32 @@ German voice read the English title, German phonetics turned it into German
 words, and the case passed for the wrong reason until the fixture spliced in an
 actual English voice.
 
+### A native partner voice, without a second person
+
+`Tools/l4-partner.sh es` (or `fr`, `en`) plays the partner side from the
+laptop in a natively-trained voice — `Paulina` (es_MX, the app's Spanish
+target), `Jacques` (fr_FR), `Daniel` (en_GB) — while the tester answers in
+their own native German. That is the real configuration, native against
+native, and it is the cheapest way to remove the accent artifact above from a
+de↔es or de↔fr measurement.
+
+One line per Enter by default, so the pace stays human: the turn clock is 1.4s
+of transcript idle plus a mic veto, and a machine-gun sequence measures
+something else. `--auto N` runs hands-free.
+
+**The two outcomes are not symmetric, and this is the whole point of using it.**
+Synthetic speech is cleaner than a human — no disfluency, no breath, steady
+prosody — and this file already records that a TTS fixture could not reproduce
+#32, "the remaining difference is a human voice". So:
+
+| Result | What it means |
+|---|---|
+| The turns still collapse | **The bug is real** and is not about accent. The strong result, and the one worth having. |
+| The turns come out clean | Accent is implicated but NOT proven — TTS removed several human qualities at once. A lead, not a verdict. |
+
+Place the phone roughly where a mouth would be relative to the laptop speakers,
+at conversational volume; too loud clips the mic and measures the wrong thing.
+
 ### Reporting a failure
 Give: which test ID, what appeared on screen (screenshot), what you heard,
 and the last words shown before it stopped. That is enough to locate the bug
