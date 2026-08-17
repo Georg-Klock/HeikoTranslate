@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.klock.heikotranslate.lidprobe</string>
+	<key>CFBundleName</key>
+	<string>lidprobe</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Measures on-device language identification against recorded test fixtures (GitHub #135, Phase 0). Recognition is on-device only; no audio leaves this machine.</string>
+</dict>
+</plist>

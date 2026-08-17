@@ -39,10 +39,15 @@ if [ "${#TURN_SOURCES[@]}" -gt 0 ]; then
 else
   fail "TURN_SOURCES is empty"
 fi
+if [ "${#REFEREE_SOURCES[@]}" -gt 0 ]; then
+  pass "REFEREE_SOURCES is non-empty (${#REFEREE_SOURCES[@]} files)"
+else
+  fail "REFEREE_SOURCES is empty"
+fi
 
 # Every file named in the shared list must exist. A typo here breaks all
 # four harnesses at once, which is the whole point of having one list.
-for f in "${SESSION_SOURCES[@]}" "${TURN_SOURCES[@]}"; do
+for f in "${SESSION_SOURCES[@]}" "${TURN_SOURCES[@]}" "${REFEREE_SOURCES[@]}"; do
   if [ -f "$f" ]; then
     pass "listed source exists: $f"
   else

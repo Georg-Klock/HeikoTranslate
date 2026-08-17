@@ -39,3 +39,12 @@ TURN_SOURCES=(
   HeikoTranslate/Models/FinalizePolicy.swift
   HeikoTranslate/Models/SpeechEndPolicy.swift
 )
+
+# The independent language witness (GitHub #135). Only lidprobe.sh needs it,
+# and it needs TURN_SOURCES alongside for `TurnLogic.Lang`. Listed here for
+# the same reason as the other two arrays: the experiment is only worth
+# keeping if it still compiles against a moving main, and a private copy of
+# this one file is exactly how #103's four harnesses drifted apart.
+REFEREE_SOURCES=(
+  HeikoTranslate/Models/RefereeEvidence.swift
+)

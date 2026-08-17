@@ -1105,6 +1105,57 @@ ubuntu runner. Verified fail-first by deleting `KeyCheck.swift` from the
 shared list: all four fail with the original `cannot find 'KeyCheck' in
 scope`, which is the signal that was missing in #82.
 
+### The language-referee experiment (#135, branch `experiment/lid-referee`)
+
+The experiment carries a fifth harness, `Tools/lidprobe.sh`, and it is wired
+into the two gates above on purpose. An experiment branch that only compiles
+on the day it was written is not evidence of anything later, and this repo has
+the receipts: #103's four harnesses drifted apart exactly that way. So
+`RefereeEvidence` lives in the app target (compiled by every build, covered by
+`Tools/l1.sh`, L1.95–L1.97b), and `lidprobe.sh` takes its sources from
+`Tools/session_sources.sh` — which `harness-sources-shared.sh` now discovers
+and checks like the other four, `REFEREE_SOURCES` included. Rebasing onto a
+moved `main` therefore breaks loudly rather than silently.
+
+**Phase 0's corpus measurement does not run on macOS, and that is a finding
+rather than a setback.** `SFSpeechRecognizer.requestAuthorization` from a
+`swiftc`-built tool is terminated by TCC before any of our code runs:
+
+```
+namespace TCC — "This app has crashed because it attempted to access
+privacy-sensitive data without a usage description. The app's Info.plist
+must contain an NSSpeechRecognitionUsageDescription key…"
+```
+
+Measured 2026-08-17 in four configurations, sandboxed and not: plain CLI;
+CLI with the description linked into `__TEXT,__info_plist` (present, verified
+with `otool -s __TEXT __info_plist`); the same ad-hoc code-signed; and a real
+`.app` bundle with `CFBundleExecutable`/`CFBundlePackageType` set and signed.
+SIGABRT every time. TCC wants a LaunchServices launch and a human at the
+prompt, which a measurement harness has neither of.
+
+So `lidprobe` reads the authorization status and refuses rather than asking —
+a sentence instead of an unexplained abort — and the corpus measurement moves
+to iOS, where the app bundle carries the usage description and the grant is a
+real dialog. That is where the referee has to work anyway, so the constraint
+costs the experiment nothing except the illusion that it could be measured
+offline. The compile still earns its keep every run: it type-checks
+`RefereeEvidence` against the app's real sources.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.95 | Exactly one recognizer produced words | That language — the one categorical case, and #125's shape | **#135** |
+| L1.95b | Neither produced words | Inconclusive — silence is not evidence for either side | **#135** |
+| L1.95c | Both produced words | Inconclusive. A discriminator here is Phase 0's *deliverable*, not an assumption — the #32 revert one phase earlier | **#135/#32** |
+| L1.95d | A recognizer that could not run, with stale text attached | Inert, never decisive — no on-device model, unauthorized, or failed | **R8/#135** |
+| L1.95e | Whitespace-only output | Not testimony; must not win by default against a silent partner | **#135** |
+| L1.95f | Every combination | The verdict names only a language in the pair — a third would be #125 again | **#135** |
+| L1.96 | The reported scores | Computed and printed, never thresholded, so the lidprobe table means one thing run to run | **#135** |
+| L1.96b | An empty side | Ratio collapses to 0 rather than dividing by zero; flagged categorical | **#135** |
+| L1.96c | The sides swapped | Delta negates, ratio holds — home is a product decision, not an acoustic one | **#135** |
+| L1.97 | Every app language | A distinct, non-empty recognition locale; the switch is exhaustive so a new `Lang` breaks the build | **#135/#30** |
+| L1.97b | en and es | `en-US` and `es-MX` — the regions the flags already encode | **#135** |
+
 The invariant under test is the one #16 established and #22 found holes in:
 **every build number that ever reaches a screen or Apple exists in exactly one
 commit, and no number is ever reverted once it has been seen.** That only
