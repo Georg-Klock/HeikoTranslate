@@ -1273,6 +1273,45 @@ The mic heartbeat is the key line for the launch bug: it distinguishes "the
 room was quiet" from "the microphone was dead", which no amount of staring
 at the screen can.
 
+### The impossible settle (#125, measured 2026-08-17)
+
+The codes can settle on a language that is in **neither side of the pair**, and
+the turn is then dropped by the codes-veto. Measured on device (build 2.4.63,
+logs `20260817-132840`) on the **default de↔en pair**, with Korean:
+
+```
+commit REJECTED: codes-veto: settled ko, home session never translated
+  why: settled=ko votes=en×1,ko×2 sessions=de[ko×12] en[de×11/en×1]
+       outLen[home=153 partner=149] ratio=1.0
+```
+
+Ordinary German. The home session voted Korean twelve times; the **partner**
+session read it as German eleven times and was right; both sessions produced
+full-length output. The evidence to route the turn was present and unused.
+
+The rule: **a settle naming a language neither side speaks is not a verdict,
+it is proof the pool is corrupt** — and where the pool is corrupt the
+per-session votes are better evidence than the pool containing them. It fires
+only on positive testimony, at the same quorum and strict plurality
+`partnerHeardHome` uses everywhere else.
+
+Why the partner's reading is independent here when L1.64e established it is
+not for a partner settle: an impossible settle is formed from votes for a
+THIRD language, which the partner's home-reading never contributed to, so it
+cannot be the same noise counted twice. A settle on the partner language keeps
+the stricter full-crossed-shape yield, pinned by L1.100e.
+
+Verified fail-first: with the rule removed, L1.100 and L1.100d fail; L1.100e
+passes both ways, since it guards a path this must not touch.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.100 | The measured Korean turn: impossible settle, partner votes home ×11, both sessions output | Commits RIGHT/home via the partner session — not dropped | **#125** |
+| L1.100b | The same settle with NO partner reading of home | No yield. (Also documents a separate pre-existing defect: the home echo commits FOREIGN as its own translation, because `isRoundTripEcho` is gated behind `partnerHomeEvidence`) | **#125** |
+| L1.100c | Two partner votes for home — under the quorum | No yield; a lone stray is not testimony | **#125** |
+| L1.100d | The yield fires but the partner produced no translation | Still refused — the yield decides the SIDE, it does not invent a translation (SPEC §5.1) | **R3** |
+| L1.100e | A settle on the PARTNER language, L1.64e's shape | Unaffected — that path keeps the stricter crossed-shape yield | **R2** |
+
 ### Who is speaking, and why it changes what the evidence means
 
 **Speaker identity is not language identity, in either direction.** Recorded
