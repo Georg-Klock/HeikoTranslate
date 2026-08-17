@@ -225,6 +225,130 @@ final class TurnAudioCaptureTests: XCTestCase {
         XCTAssertTrue(manifestLines().isEmpty, "and must not leave a row pointing at no file")
     }
 
+    // MARK: - L1.104o–p: our own voice is not evidence
+
+    /// Measured 2026-08-17 (build 2.4.64): captured clips contained TWO
+    /// languages — the app's German translation of the previous turn, leaking
+    /// past the echo canceller into the start of the buffer, then the French
+    /// that was actually spoken. `turn-0001`'s envelope showed 600–2000 RMS
+    /// from 8.75 s to 12.5 s, then real speech at 4400 from 13.25 s. A clip
+    /// carrying both is not mislabelled by a model that reads the German —
+    /// the clip is wrong, and no trim can separate them.
+    func testL1_104o_dropsAudioWhileTheAppIsSpeaking() throws {
+        let capture = TurnAudioCapture(directory: directory, enabled: true)
+        capture.start(home: .de, partner: .fr)
+
+        capture.setPlayingOutput(true)
+        capture.append(pcm(seconds: 2.0, value: 6000))   // our own output
+        capture.setPlayingOutput(false)
+        // The tail after playback is dropped too — our output is still
+        // decaying in the room and the AEC's estimate lags.
+        capture.append(pcm(seconds: 0.2, value: 6000))
+
+        XCTAssertNil(TurnAudioCapture.speechBounds(in: Data()),
+                     "sanity: no speech in nothing")
+        capture.finish(decision: "fr")
+        XCTAssertTrue(wavFiles().isEmpty,
+                      "a turn that only contains our own voice is not a clip")
+    }
+
+    /// And the gate must open again, or the capture silently records nothing
+    /// for the rest of the session — a failure that looks exactly like a
+    /// capture that was never enabled.
+    func testL1_104p_recordsAgainAfterPlaybackTailPasses() throws {
+        let capture = TurnAudioCapture(directory: directory, enabled: true)
+        capture.start(home: .de, partner: .fr)
+
+        capture.setPlayingOutput(true)
+        capture.append(pcm(seconds: 1.0, value: 6000))
+        capture.setPlayingOutput(false)
+
+        // Past the 0.4s tail.
+        Thread.sleep(forTimeInterval: 0.45)
+        capture.append(pcm(seconds: 1.0, value: 6000))
+        capture.finish(decision: "fr")
+
+        let file = try Data(contentsOf: try XCTUnwrap(wavFiles().first))
+        let seconds = Double((file.count - 44) / 2) / Double(TurnAudioCapture.sampleRate)
+        XCTAssertEqual(seconds, 1.0, accuracy: 0.1,
+                       "only the audio after the tail, and all of it")
+    }
+
+    // MARK: - L1.104k–n: the trim, measured on device before it existed
+
+    /// Silence either side of the speech must go. Measured 2026-08-17 (build
+    /// 2.4.64): the first real capture run produced five clips of 16.5–18.8 s
+    /// that were 5–20% speech, because a turn's buffer runs from the previous
+    /// commit and carries every second of silence since. A clip that is nine
+    /// parts room tone measures room tone.
+    func testL1_104k_trimsSilenceToTheUtterance() throws {
+        var buffer = Data()
+        buffer.append(pcm(seconds: 8.0, value: 0))        // dead air before
+        buffer.append(pcm(seconds: 1.0, value: 6000))     // the utterance
+        buffer.append(pcm(seconds: 7.0, value: 0))        // dead air after
+
+        let capture = TurnAudioCapture(directory: directory, enabled: true)
+        capture.start(home: .de, partner: .fr)
+        capture.append(buffer)
+        capture.finish(decision: "fr")
+
+        let file = try Data(contentsOf: try XCTUnwrap(wavFiles().first))
+        let seconds = Double((file.count - 44) / 2) / Double(TurnAudioCapture.sampleRate)
+        // 1 s of speech plus 0.25 s margin either side, and nothing like 16 s.
+        XCTAssertEqual(seconds, 1.5, accuracy: 0.1,
+                       "the clip must be the utterance, not the turn window")
+    }
+
+    /// The margin is not decoration: a hard cut at the first loud frame clips
+    /// word onsets, and onset is what a phonotactic classifier reads.
+    func testL1_104l_keepsMarginAroundTheSpeech() throws {
+        var buffer = Data()
+        buffer.append(pcm(seconds: 2.0, value: 0))
+        buffer.append(pcm(seconds: 0.5, value: 6000))
+        buffer.append(pcm(seconds: 2.0, value: 0))
+
+        let bounds = try XCTUnwrap(TurnAudioCapture.speechBounds(in: buffer))
+        let startSeconds = Double(bounds.lowerBound / 2) / Double(TurnAudioCapture.sampleRate)
+        XCTAssertEqual(startSeconds, 1.75, accuracy: 0.05, "0.25 s kept before the onset")
+        XCTAssertGreaterThan(bounds.count, 0)
+    }
+
+    /// A turn that never crossed the mic floor is not a clip. It would enter
+    /// the corpus as a labellable file with nothing in it to label.
+    func testL1_104m_dropsTurnsWithNoSpeech() {
+        let capture = TurnAudioCapture(directory: directory, enabled: true)
+        capture.start(home: .de, partner: .fr)
+        capture.append(pcm(seconds: 12.0, value: 0))
+        capture.finish(decision: "fr")
+
+        XCTAssertTrue(wavFiles().isEmpty, "room tone is not an utterance")
+        XCTAssertTrue(manifestLines().isEmpty)
+        XCTAssertNil(TurnAudioCapture.speechBounds(in: pcm(seconds: 1.0, value: 0)))
+    }
+
+    /// Both durations are recorded, so the trim is auditable. A clip whose raw
+    /// span was 18 s and whose speech was 1 s is a different turn from one that
+    /// was 1 s all along, and only the pair distinguishes them.
+    func testL1_104n_manifestKeepsRawAndTrimmedDurations() throws {
+        var buffer = Data()
+        buffer.append(pcm(seconds: 6.0, value: 0))
+        buffer.append(pcm(seconds: 1.0, value: 6000))
+
+        let capture = TurnAudioCapture(directory: directory, enabled: true)
+        capture.start(home: .de, partner: .fr)
+        capture.append(buffer)
+        capture.finish(decision: "fr")
+
+        let row = try XCTUnwrap(manifestLines().first)
+        let data = try XCTUnwrap(row.data(using: .utf8))
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let seconds = Double(try XCTUnwrap(object["seconds"] as? String)) ?? 0
+        let raw = Double(try XCTUnwrap(object["rawSeconds"] as? String)) ?? 0
+        XCTAssertEqual(raw, 7.0, accuracy: 0.05, "the whole turn window")
+        XCTAssertLessThan(seconds, 1.6, "the speech inside it")
+        XCTAssertGreaterThan(raw, seconds, "and the pair shows the trim happened")
+    }
+
     /// `append` runs on the audio render thread, so an unbounded buffer is a
     /// memory bug on a 3 GB phone. The cap must hold and must be recorded, so a
     /// truncated clip is not silently scored as a whole turn.

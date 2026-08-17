@@ -528,6 +528,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         reportedQuality = .good
         goodBeats = 0
         isPlayingOutput = false
+        capture.setPlayingOutput(false)
 
         // Audio first: if the engine can't start, we throw before any
         // session connects, so a failure leaks no live, billed WebSockets.
@@ -653,6 +654,9 @@ final class GeminiLiveTranslationService: ObservableObject {
         stopDirectionRecheck()
         lingeringTranslator = nil
         isPlayingOutput = false
+        // Mirror every reset, not just the timer's: a capture left believing
+        // we are still speaking drops audio forever, and fails silently.
+        capture.setPlayingOutput(false)
         outputActivityTimer?.invalidate()
         outputActivityTimer = nil
         stopAudioIO()
@@ -1560,6 +1564,9 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// `finalizeTurn` for cleanup.
     private func markOutputActive() {
         isPlayingOutput = true
+        // The capture must not record us talking: our own translation leaks
+        // past the AEC and lands in the clip as a second language (#135).
+        capture.setPlayingOutput(true)
         setActivity(.translating)
         outputActivityTimer?.invalidate()
         outputActivityTimer = Timer.scheduledTimer(withTimeInterval: outputTailTimeout, repeats: false) { [weak self] _ in
@@ -1570,6 +1577,7 @@ final class GeminiLiveTranslationService: ObservableObject {
                     return
                 }
                 self.isPlayingOutput = false
+                self.capture.setPlayingOutput(false)
                 self.finalizeTurn()
             }
         }
