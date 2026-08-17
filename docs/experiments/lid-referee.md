@@ -1,9 +1,46 @@
 # Experiment — an independent language witness (#135)
 
-Branch: `experiment/lid-referee`. Status: **Phase 1 measured — mostly negative,
-one cheap thing left to try.** The referee runs on the phone and writes one log
-line per turn. **No app behaviour changes:** nothing it produces is read by
-`TurnLogic`, the direction, the commit, or the audio gate.
+Branch: `experiment/lid-referee`. Status: **refuted on measurement, 2026-08-17.**
+Kept for reproducibility. Nothing from it ships.
+
+## Why it is refuted
+
+`supportsOnDeviceRecognition` reports whether a speech model is **installed**,
+and no API lets an app install one. The only route is the owner enabling that
+language for dictation in Settings, which on iOS means carrying its keyboard.
+The referee's coverage is therefore a property of how the owner configured
+their phone, and nothing the app can arrange.
+
+**A setup step on Heiko's phone was refused as a product decision** (Georg,
+2026-08-17): the app's premise is that he never opens settings, and the one
+action he may ever be asked to perform is a single German-labelled row that
+shares a log. "First install these keyboards" is a larger imposition than the
+feature was going to buy him.
+
+What follows is decisive. The referee can only use models already present — on
+a German phone, German and perhaps English. So it is inert for exactly #125's
+de↔es and for the de↔fr collapse measured in the same session, and available
+only for de↔en, which committed 10 of 10 turns on the same build. **It cannot
+address the bug it was proposed for.**
+
+That is #135's §7 kill criterion reached from a direction the plan did not
+anticipate: it expected to be beaten by the discriminator failing to separate,
+and was beaten by coverage the app does not control.
+
+A home-only variant (one German recognizer, no setup, since German is the
+device language) is **not** proposed: the same run has that recognizer
+producing `"Bonjour"` at 0.94 on French speech, which is the confident-wrong
+reading the two-sided design existed to catch. Reviving it would need its own
+measured corpus and a new issue.
+
+The valuable output of this experiment is not the referee. It is the evidence
+it collected on the way — above all that **#125 is not Spanish-specific**
+(8 of 8 de↔fr turns dropped against 10 of 10 de↔en, one session, one build),
+now recorded on that issue.
+
+---
+
+Everything below is the record of how it got here.
 
 ## The first device result (build 2.4.58, iPhone 14 Pro, iOS 26.5.2)
 
