@@ -64,49 +64,82 @@ fi
 # Ordinary things the other side of a counter or a street actually says. Kept
 # short, because short utterances are where the arbitration fails (TESTING.md
 # §L3: a short sentence right after the other language is the hard case).
+# Each entry is "<partner line>|<German the tester says back>". The German is
+# a CUE, not a script — say it naturally, and say something else if that is
+# what the moment calls for. It exists so the corpus comes out balanced by
+# construction rather than by luck: the first real run (2026-08-17) produced
+# six partner turns and ONE home turn, which cannot measure home-language
+# detection at all.
+#
+# The replies get deliberately shorter as the exchange goes on, ending in
+# one-word answers. That is not filler — TESTING.md records short utterances
+# right after the other language as the documented hard case, and "Ja." after a
+# French question is the smallest version of it that a real till produces.
 case "$lang" in
   es) PHRASES=(
-        "Hola, buenos días."
-        "¿En qué puedo ayudarle?"
-        "Son catorce euros con cincuenta."
-        "¿Quiere pagar con tarjeta?"
-        "La estación está a la derecha, después del semáforo."
-        "Perdone, ¿de dónde es usted?"
+        "Hola, buenos días.|Guten Tag!"
+        "¿En qué puedo ayudarle?|Ich hätte gern einen Kaffee."
+        "¿Con leche?|Ja, bitte."
+        "Son catorce euros con cincuenta.|Hier, bitte."
+        "¿Quiere pagar con tarjeta?|Nein, bar."
+        "¿Algo más?|Nein, danke."
+        "La estación está a la derecha, después del semáforo.|Vielen Dank, das ist sehr nett."
+        "¿Es usted de aquí?|Ich komme aus Deutschland."
+        "¿Cuánto tiempo se queda?|Eine Woche."
+        "Que tenga un buen día.|Danke, ebenfalls!"
       ) ;;
   fr) PHRASES=(
-        "Bonjour, monsieur."
-        "Qu'est-ce que vous désirez ?"
-        "Ça fait quatorze euros cinquante."
-        "Vous payez par carte ?"
-        "La gare est à droite, après le feu."
-        "Excusez-moi, vous venez d'où ?"
+        "Bonjour, monsieur.|Guten Tag!"
+        "Qu'est-ce que vous désirez ?|Ich hätte gern einen Kaffee."
+        "Avec du lait ?|Ja, bitte."
+        "Ça fait quatorze euros cinquante.|Hier, bitte."
+        "Vous payez par carte ?|Nein, bar."
+        "Et avec ceci ?|Nein, danke."
+        "La gare est à droite, après le feu.|Vielen Dank, das ist sehr nett."
+        "Vous êtes d'ici ?|Ich komme aus Deutschland."
+        "Vous restez combien de temps ?|Eine Woche."
+        "Bonne journée !|Danke, ebenfalls!"
       ) ;;
   en) PHRASES=(
-        "Hello there."
-        "What can I get you?"
-        "That'll be fourteen fifty."
-        "Are you paying by card?"
-        "The station is on the right, past the traffic lights."
-        "Sorry, where are you from?"
+        "Hello there.|Guten Tag!"
+        "What can I get you?|Ich hätte gern einen Kaffee."
+        "With milk?|Ja, bitte."
+        "That'll be fourteen fifty.|Hier, bitte."
+        "Are you paying by card?|Nein, bar."
+        "Anything else?|Nein, danke."
+        "The station is on the right, past the traffic lights.|Vielen Dank, das ist sehr nett."
+        "Are you from around here?|Ich komme aus Deutschland."
+        "How long are you staying?|Eine Woche."
+        "Have a good day.|Danke, ebenfalls!"
       ) ;;
 esac
 
+# 12s is the measured default: the partner line takes 2-3s, the turn clock
+# needs 1.4s of transcript idle to close it, and a short German reply plus its
+# own pause fits in what is left. Longer wastes the run; shorter merges the two
+# languages into one turn, which measures something else entirely.
 auto=""
 if [ "${1:-}" = "--auto" ]; then
-  auto="${2:?--auto needs a number of seconds}"
+  auto="${2:-12}"
 elif [ -n "${1:-}" ]; then
   PHRASES=("$1")
 fi
 
 echo "Partner voice: $voice ($lang).  Phone unlocked, app open, mic ON."
-echo "Reply in GERMAN after each line, as you normally would."
+echo "Say the GERMAN line after each partner line — it is a cue, not a script."
+echo "Leave about a second of silence either side so it lands as its OWN turn."
 echo "The point is a native partner voice against your native German."
 echo
 i=0
 for p in "${PHRASES[@]}"; do
   i=$((i + 1))
-  echo "[$i/${#PHRASES[@]}] $p"
-  say -v "$voice" "$p"
+  line="${p%%|*}"
+  # A custom phrase passed on the command line carries no cue; `${p#*|}` would
+  # then return the phrase itself, printing it as though it were German.
+  case "$p" in *"|"*) cue="${p#*|}" ;; *) cue="" ;; esac
+  echo "[$i/${#PHRASES[@]}] $line"
+  say -v "$voice" "$line"
+  [ -n "$cue" ] && printf '      \033[1msay in German:\033[0m %s\n' "$cue"
   if [ -n "$auto" ]; then
     sleep "$auto"
   else
