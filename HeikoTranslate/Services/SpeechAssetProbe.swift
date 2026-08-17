@@ -86,10 +86,16 @@ enum SpeechAssetProbe {
         let home = TurnLogic.Lang(rawValue: defaults.string(forKey: "settings.homeLang") ?? "de") ?? .de
         let partner = TurnLogic.Lang(rawValue: defaults.string(forKey: "settings.partnerLang") ?? "en") ?? .en
 
-        // de/es/fr are the #135 measurement set; the live pair is included so
-        // an ordinary session is never left without its own languages.
+        // en and fr are the #135 measurement set — the tester's two strongest
+        // languages, so the audio is native-quality on both sides rather than
+        // accented (TESTING.md, "Who is speaking, and why it changes what the
+        // evidence means"). The live pair is included too, so an ordinary
+        // session is never left without its own languages. Spanish is
+        // deliberately NOT prefetched: it is the pair #125 cares about, but
+        // nobody here can speak it well enough to produce evidence worth
+        // having, and an unused asset is a download for nothing.
         var targets: [TurnLogic.Lang] = [home, partner]
-        for lang in [TurnLogic.Lang.es, .fr] where !targets.contains(lang) {
+        for lang in [TurnLogic.Lang.en, .fr] where !targets.contains(lang) {
             targets.append(lang)
         }
 
