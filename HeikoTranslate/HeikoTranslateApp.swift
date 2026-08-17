@@ -13,6 +13,17 @@ struct HeikoTranslateApp: App {
         // pair switches and six conversations. Capability queries only — no
         // authorization prompt, no audio, no recognition.
         LanguageReferee.logOnDeviceCapability()
+        // iOS 26 lets the APP install speech assets — no Settings, no
+        // keyboards, no visible change to the phone (#135). Whether that
+        // rescues the experiment is a device question, so it is asked here.
+        // Downloads are gated on an unmetered path: a silent cellular fetch
+        // of a language model would be its own kind of rudeness.
+        if #available(iOS 26.0, *) {
+            Task.detached(priority: .utility) {
+                let unmetered = await NetworkPath.isUnmetered()
+                await SpeechAssetProbe.run(allowDownload: unmetered)
+            }
+        }
     }
 
     /// The in-app text-size setting, applied HERE rather than inside
