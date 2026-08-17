@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fill in the `truth` field for captured turns, one clip at a time (#135).
 
-    Tools/lid-label.py logs/20260817-160000/turn-audio
+    Tools/lid-label.py <pulled-log-dir>/turn-audio
 
 Plays each unlabelled clip and asks which language was actually spoken. Writes
 the answer back into `manifest.jsonl`, which is what `Tools/lid-bench.py` reads.
