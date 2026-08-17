@@ -557,6 +557,44 @@ struct TurnLogic {
         return Self.isRoundTripEcho(homeText, inputs: inputs)
     }
 
+    /// A settle naming a language that is NEITHER side is known-corrupt, so
+    /// the partner session's own votes are better evidence than the pool that
+    /// contains them. GitHub #125.
+    ///
+    /// Measured on device 2026-08-17 (build 2.4.63) on the default de↔en pair:
+    /// ordinary German, the home session voted Korean twelve times, the
+    /// PARTNER session read German eleven times and was right, both sessions
+    /// produced full-length output — and the turn was dropped, because the
+    /// pooled tally settled somewhere impossible and the veto had no yield for
+    /// that shape.
+    ///
+    /// **Why the partner's reading is independent here, where L1.64e proved it
+    /// is not when the settle names the partner language.** There the pooled
+    /// settle is formed from a tally containing the partner's own votes, so a
+    /// partner session emitting a quorum of stray home codes satisfies both
+    /// halves with the same three votes — one witness counted twice. An
+    /// impossible settle cannot have been formed that way: votes for `home`
+    /// push the pool toward home, never toward a third language, and
+    /// `partnerHeardHome` requires home to be this session's strict plurality.
+    /// So whatever carried the pool to a third language came from somewhere
+    /// the partner's home-reading did not.
+    ///
+    /// Deliberately the narrowest form: positive testimony only, by the same
+    /// quorum and strict plurality `partnerHeardHome` already enforces
+    /// everywhere else. A neither-side settle with NO partner reading of home
+    /// keeps vetoing (L1.100b/L1.100c) — one witness reporting a third
+    /// language says nothing about which side spoke, and #45's neither-side
+    /// settles vetoed unconditionally for exactly that reason.
+    ///
+    /// Read by BOTH `noteOutputs` and `commit`, and it must stay that way: a
+    /// live line that clears direction while commit yields would leave
+    /// `translator` naming no session at the moment the service flushes held
+    /// audio, which is how #77 and #84 discarded the real translation.
+    var impossibleSettleYieldsToPartnerHome: Bool {
+        guard let guess = spokenLang, guess != home, guess != partner else { return false }
+        return partnerHeardHome
+    }
+
     // MARK: - Direction (the authoritative signal)
 
     /// Did the home session really translate, or is this a false start?
@@ -711,11 +749,18 @@ struct TurnLogic {
         // speech (#75). The previous tell — partner output sharing few
         // tokens with what it heard — was #83: near-restatements of foreign
         // speech cleared it, and the partner's words landed in Heiko's
-        // bubble on the say-so of plurals and apostrophes. Settles on a
-        // language that is NEITHER side still veto unconditionally —
-        // nothing on screen could be trusted there.
+        // bubble on the say-so of plurals and apostrophes.
+        //
+        // Settles on a language that is NEITHER side vetoed unconditionally
+        // until #125 measured the shape that makes that wrong: the pool
+        // settles on a third language the HOME session invented, while the
+        // partner session reads home clearly by its own strict plurality.
+        // `impossibleSettleYieldsToPartnerHome` is that yield and nothing
+        // wider — without partner testimony a neither-side settle still
+        // vetoes, because nothing on screen could be trusted there.
         let partnerVouches = partnerEvidenceOverridesForeignVeto(outputs: outputs, inputs: inputs)
-        let vetoBarsHome = !(spokenLang == nil || spokenLang == home || partnerVouches)
+        let vetoBarsHome = !(spokenLang == nil || spokenLang == home || partnerVouches
+                             || impossibleSettleYieldsToPartnerHome)
         // BOTH provisional directions re-derive, not just foreign (#84
         // review): a homeSpoken resolved before the codes arrived must
         // clear when a late foreign settle arms the veto — otherwise
@@ -969,8 +1014,14 @@ struct TurnLogic {
         // `noteOutputs`: codes settled on the PARTNER language while the
         // complete crossed evidence says HOME means the settle came from
         // the mis-hearing home session, not from the speech (#75).
+        //
+        // And the second yield, by the same shared predicate so the live line
+        // and the bubble cannot disagree about the side: a settle naming a
+        // language that is NEITHER side, with the partner session's own votes
+        // reading home by quorum and strict plurality (#125).
         if let guess = spokenLang, guess != home,
-           !partnerEvidenceOverridesForeignVeto(outputs: outputs, inputs: inputs) {
+           !partnerEvidenceOverridesForeignVeto(outputs: outputs, inputs: inputs),
+           !impossibleSettleYieldsToPartnerHome {
             // A veto rejection decided nothing — clear any provisional
             // direction so `translator` names no session while the deferral
             // machinery waits (the #84 review's audio-flush sequence; same

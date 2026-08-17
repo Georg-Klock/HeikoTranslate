@@ -136,6 +136,34 @@ final class ImpossibleSettleTests: XCTestCase {
         XCTAssertEqual(l.lastRejectReason, "no session produced any translation")
     }
 
+    // L1.100f — the live line and the bubble must agree about the side.
+    //
+    // The yield is read by `noteOutputs` as well as `commit`, and this pins
+    // why: `translator` follows `direction`, and the service flushes the held
+    // audio of whichever session it names. A live path that kept vetoing while
+    // commit yielded would name no session at the moment of the flush — which
+    // is how #77 and #84 discarded the real translation and played the home
+    // session's echo instead. Same shape as L1.100, judged live.
+    func testL1_100f_liveDirectionAgreesWithTheCommittedSide() {
+        var l = measuredKoreanShape(partnerHomeVotes: 11)
+        let inputs: [TurnLogic.Lang: String] = [.de: heard, .en: heard]
+        let outputs: [TurnLogic.Lang: String] = [.de: homeEcho, .en: partnerTranslation]
+
+        // The first partner output starts the home-silence confirm clock; the
+        // second lands after it, which is when a home direction may resolve.
+        l.noteOutputs(outputs, inputs: inputs, at: t(10))
+        l.noteOutputs(outputs, inputs: inputs,
+                      at: t(10 + TurnLogic.homeSilenceConfirmDelay + 0.1))
+
+        XCTAssertEqual(l.direction, .homeSpoken,
+                       "the live path must reach the same side commit does")
+        XCTAssertEqual(l.translator, .en,
+                       "and name the partner session, whose audio the service will flush")
+
+        let bubble = l.commit(inputs: inputs, outputs: outputs)
+        XCTAssertEqual(bubble?.isHome, true, "commit agrees with the line already on screen")
+    }
+
     // L1.100e — the rule is scoped to IMPOSSIBLE settles. A settle on the
     // partner language keeps the existing, much stricter yield (the full
     // crossed shape plus a corroborated echo), because there the settle is

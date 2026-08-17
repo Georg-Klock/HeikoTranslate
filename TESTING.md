@@ -1433,6 +1433,15 @@ the stricter full-crossed-shape yield, pinned by L1.100e.
 Verified fail-first: with the rule removed, L1.100 and L1.100d fail; L1.100e
 passes both ways, since it guards a path this must not touch.
 
+**The yield is read by `noteOutputs` as well as `commit`, and that is not
+optional.** `translator` follows `direction`, and the service flushes the held
+audio of whichever session it names. A live path that kept vetoing while
+commit yielded would name no session at the instant of the flush — which is
+exactly how #77 and #84 discarded the real translation and played the home
+session's echo back instead. One predicate, read by both, pinned by L1.100f:
+the same shape judged live must reach `.homeSpoken`, name the partner session,
+and still agree with what commit then returns.
+
 | ID | Given | Expect | Rule |
 |---|---|---|---|
 | L1.100 | The measured Korean turn: impossible settle, partner votes home ×11, both sessions output | Commits RIGHT/home via the partner session — not dropped | **#125** |
