@@ -251,7 +251,17 @@ final class TranscriberReferee: @unchecked Sendable {
     private func setReading(text: String, confidence: Double, for lang: Lang) {
         lock.lock(); defer { lock.unlock() }
         sides[lang]?.text = text
-        sides[lang]?.confidence = confidence
+        // A zero means "this result carried no confidence attribute", not
+        // "the recogniser is unsure" — volatile results frequently arrive
+        // without one. Measured on 2.4.63: roughly a third of turns logged
+        // conf=0.00 on BOTH sides, which is unreadable as evidence, and on
+        // several of them an earlier result in the same turn had reported a
+        // perfectly good score that the final volatile result then erased.
+        // So confidence only ever moves UP within a turn, and `rotate` is
+        // what resets it.
+        if confidence > 0 {
+            sides[lang]?.confidence = max(sides[lang]?.confidence ?? 0, confidence)
+        }
     }
 
     /// Mean `transcriptionConfidence` across the runs that carry one, weighted
