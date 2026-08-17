@@ -38,7 +38,7 @@ targets:
         # in parentheses. Bump BOTH on every install to a real device, so
         # "is my phone current?" is answerable at a glance.
         CFBundleShortVersionString: "2.4"
-        CFBundleVersion: "60"
+        CFBundleVersion: "61"
         # The app only uses the OS's own HTTPS/TLS, which is exempt. Without
         # this key App Store Connect asks the export-compliance question on
         # every single upload and holds the build back from testers until
