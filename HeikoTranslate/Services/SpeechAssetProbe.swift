@@ -68,18 +68,34 @@ enum SpeechAssetProbe {
         await installPairIfNeeded(supported: supported, installed: installed)
     }
 
-    /// Install the CURRENT pair only. `maximumReservedLocales` is a real cap
-    /// and the app has eight languages, so installing everything is not an
-    /// option even where it would work — the pair is what a conversation
-    /// needs, and it is re-derived whenever the pair changes.
+    /// Install the current pair PLUS the languages under measurement.
+    ///
+    /// The pair alone was the first design, and it has a hole: switching the
+    /// pair mid-session does not re-run this probe, which fires once at
+    /// launch, so a fresh partner language would stay uninstalled until the
+    /// next cold start. #135 is measuring de↔fr AND de↔es, so both are
+    /// fetched up front.
+    ///
+    /// `maximumReservedLocales` (5) caps RESERVATIONS, not installs — the
+    /// device already reported 12 installed locales — so a handful of installs
+    /// is within bounds. This list stays small and explicit rather than
+    /// becoming "install everything": the app has eight languages, most of
+    /// which are not being measured, and each asset is a real download.
     private static func installPairIfNeeded(supported: [String], installed: [String]) async {
         let defaults = UserDefaults.standard
         let home = TurnLogic.Lang(rawValue: defaults.string(forKey: "settings.homeLang") ?? "de") ?? .de
         let partner = TurnLogic.Lang(rawValue: defaults.string(forKey: "settings.partnerLang") ?? "en") ?? .en
 
+        // de/es/fr are the #135 measurement set; the live pair is included so
+        // an ordinary session is never left without its own languages.
+        var targets: [TurnLogic.Lang] = [home, partner]
+        for lang in [TurnLogic.Lang.es, .fr] where !targets.contains(lang) {
+            targets.append(lang)
+        }
+
         var modules: [any SpeechModule] = []
         var wantedNames: [String] = []
-        for lang in [home, partner] {
+        for lang in targets {
             let wanted = RefereeEvidence.speechLocaleIdentifier(for: lang)
             let code = String(wanted.prefix(2))
             guard supported.contains(where: { $0.hasPrefix(code) }) else {
@@ -95,7 +111,7 @@ enum SpeechAssetProbe {
             wantedNames.append(identifier)
         }
         guard !modules.isEmpty else {
-            DiagnosticLog.shared.log("referee", "install: pair \(home.rawValue)/\(partner.rawValue) already installed or unsupported")
+            DiagnosticLog.shared.log("referee", "install: \(targets.map(\.rawValue).joined(separator: ",")) already installed or unsupported")
             return
         }
 
@@ -111,7 +127,7 @@ enum SpeechAssetProbe {
             // The load-bearing follow-up: the referee runs on the OLD API, so
             // whether a new-API asset satisfies it is what decides whether any
             // of this helps without a rewrite.
-            let oldNow = [home, partner].map { lang -> String in
+            let oldNow = targets.map { lang -> String in
                 let id = RefereeEvidence.speechLocaleIdentifier(for: lang)
                 let ok = SFSpeechRecognizer(locale: Locale(identifier: id))?.supportsOnDeviceRecognition ?? false
                 return "\(lang.rawValue)=\(ok ? "on-device" : "STILL-NO")"

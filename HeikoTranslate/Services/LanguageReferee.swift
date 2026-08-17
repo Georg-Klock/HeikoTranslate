@@ -47,6 +47,13 @@ final class LanguageReferee: @unchecked Sendable {
         var confidence: Double = 0
     }
 
+    /// On iOS 26 the whole job is delegated to `TranscriberReferee`: the app
+    /// can install its own assets there (verified on device — `fr_FR` in 29
+    /// seconds, silently), and the old API cannot see them. Held as
+    /// `AnyObject` because a stored property cannot name an `@available` type
+    /// from a class that is not itself gated.
+    private var modernBox: AnyObject?
+
     private let lock = NSLock()
     private var sides: [Lang: Side] = [:]
     private var order: [Lang] = []
@@ -107,6 +114,13 @@ final class LanguageReferee: @unchecked Sendable {
     /// never runs under the L1 audio seam.
     func start(home: Lang, partner: Lang) {
         stop()
+        if #available(iOS 26.0, *) {
+            let modern = TranscriberReferee()
+            modernBox = modern
+            modern.start(home: home, partner: partner)
+            DiagnosticLog.shared.log("referee", "start pair \(home.rawValue)/\(partner.rawValue) — via SpeechTranscriber (iOS 26)")
+            return
+        }
         lock.lock()
         order = [home, partner]
         let authorized = SFSpeechRecognizer.authorizationStatus() == .authorized
@@ -139,6 +153,11 @@ final class LanguageReferee: @unchecked Sendable {
     }
 
     func stop() {
+        if #available(iOS 26.0, *), let modern = modernBox as? TranscriberReferee {
+            modern.stop()
+            modernBox = nil
+            return
+        }
         lock.lock()
         running = false
         let toCancel = sides.values.compactMap { $0.task }
@@ -156,6 +175,10 @@ final class LanguageReferee: @unchecked Sendable {
     /// next, which is what `speechHeardThisTurn` and `staleCodeGrace` exist to
     /// enforce against straggler codes.
     func rotate() {
+        if #available(iOS 26.0, *), let modern = modernBox as? TranscriberReferee {
+            modern.rotate()
+            return
+        }
         lock.lock()
         guard running else { lock.unlock(); return }
         let toCancel = sides.values.compactMap { $0.task }
@@ -177,6 +200,10 @@ final class LanguageReferee: @unchecked Sendable {
     /// Called from the audio render thread. Must not touch anything unguarded
     /// and must never throw work back onto that thread.
     func append(_ buffer: AVAudioPCMBuffer) {
+        if #available(iOS 26.0, *), let modern = modernBox as? TranscriberReferee {
+            modern.append(buffer)
+            return
+        }
         lock.lock()
         guard running else { lock.unlock(); return }
         let requests = order.compactMap { sides[$0]?.request }
@@ -190,6 +217,9 @@ final class LanguageReferee: @unchecked Sendable {
     /// line. Never blocks on a final result — Phase 1 wants what the referee
     /// would have said at the moment the turn was decided.
     func currentReadings() -> (home: RefereeEvidence.Reading, partner: RefereeEvidence.Reading)? {
+        if #available(iOS 26.0, *), let modern = modernBox as? TranscriberReferee {
+            return modern.currentReadings()
+        }
         lock.lock()
         defer { lock.unlock() }
         guard order.count == 2,
