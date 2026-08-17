@@ -21,6 +21,19 @@ targets:
         # dialog and the published policy cannot describe the same transfer
         # in two ways. German approved by Georg 2026-08-13 (GitHub #91).
         NSMicrophoneUsageDescription: "Heiko Translate braucht Zugriff auf das Mikrofon, um gesprochene Sprache zu übersetzen. Die Sprachaufnahme wird dazu an die Google Gemini API gesendet."
+        # The referee experiment (GitHub #135). Deliberately says the OPPOSITE
+        # of the microphone sentence above: this recognition runs on the device
+        # and nothing is sent, which is true by construction —
+        # `requiresOnDeviceRecognition` is set on every request and a locale
+        # with no on-device model stands down rather than falling back to the
+        # network. Without this key the app is TERMINATED by TCC the moment it
+        # asks (measured 2026-08-17, four configurations).
+        #
+        # German-only like the microphone sentence; the InfoPlist localization
+        # gap stays #6's. This wording is a CANDIDATE awaiting Georg's review —
+        # the same status the revoked-key sentence carried on #9 — because it
+        # is user-facing text and this branch is an experiment, not a release.
+        NSSpeechRecognitionUsageDescription: "Heiko Translate vergleicht die erkannte Sprache direkt auf diesem iPhone, um die Übersetzungsrichtung zu prüfen. Diese Spracherkennung bleibt auf dem Gerät; es wird nichts gesendet."
         # Shown (very quietly) in the UI corner: one plain number, no build
         # in parentheses. Bump BOTH on every install to a real device, so
         # "is my phone current?" is answerable at a glance.

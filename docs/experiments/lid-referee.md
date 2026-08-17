@@ -1,7 +1,48 @@
 # Experiment — an independent language witness (#135)
 
-Branch: `experiment/lid-referee`. Status: **Phase 0, blocked on measurement
-platform.** Nothing here changes app behaviour.
+Branch: `experiment/lid-referee`. Status: **Phase 1 — observe-only, deployable
+by cable.** The referee runs on the phone and writes one log line per turn.
+**No app behaviour changes:** nothing it produces is read by `TurnLogic`, the
+direction, the commit, or the audio gate.
+
+## Deploying it
+
+```
+Tools/deploy.sh
+```
+
+The phone must be **unlocked** — a locked iPhone reports as `unavailable`,
+which looks identical to not being plugged in. Then talk to it, and:
+
+```
+Tools/pull_logs.sh
+grep "referee:" logs/<timestamp>/*.log
+```
+
+Each turn produces one line beside the existing `why:` line:
+
+```
+referee: de | app: LEFT/foreign | heard[de] "…" conf=0.82  heard[en] "…" conf=0.44 | confΔ=+0.38 ratio=0.412 onlyOne=false
+```
+
+`referee:` is what the independent witness would have said, `app:` is what
+shipped. The turns where those two disagree are the whole point — especially
+the `app: REJECTED …` ones, which are the turns the referee exists to rescue.
+
+**On the first launch after installing, expect the referee to be inert for one
+session.** Authorization is requested when audio starts, and the answer
+arrives asynchronously, so that first run sees `notDetermined` and both sides
+record `unauthorized`. Grant the dialog, then tap the button again (or relaunch)
+and the `referee: start pair …` line should read `de=ready en=ready`. That line
+is also the first result worth reading: if it says `NO-ON-DEVICE-MODEL`, this
+phone has no on-device model for that language and the experiment stops there
+for that pair.
+
+The other thing to watch on an **iPhone SE (2nd gen)** — the field device — is
+cost: two recognizers now run alongside two WebSockets and the audio engine.
+Heat, battery, and whether the mic heartbeat stays regular are all real
+signals; the `audio` category's per-second heartbeat is where a struggling
+device would show up first.
 
 ## Why this branch exists
 
@@ -23,8 +64,29 @@ on-device speech recognizers, one per side of the pair.
 | Piece | Where | Covered by |
 |---|---|---|
 | The pure decision type | `HeikoTranslate/Models/RefereeEvidence.swift` | `Tools/l1.sh` — L1.95–L1.97b |
+| The on-device witness | `HeikoTranslate/Services/LanguageReferee.swift` | device evidence — Phase 1's deliverable |
 | The offline probe | `Tools/lidprobe.sh`, `Tools/lidprobe/` | `harness-sources-shared.sh` (structural, in CI) + the compile itself |
 | The shared source entry | `REFEREE_SOURCES` in `Tools/session_sources.sh` | existence-checked by the same gate |
+
+### How the witness is kept from mattering
+
+Observe-only has to be structural rather than a promise in a comment, because
+this build goes on a phone a real person uses:
+
+- `LanguageReferee` is read by **exactly one** call site — the `referee:` line
+  in `emitUtterance`. `grep -n referee` over the service is the whole audit.
+- Every failure is inert: no on-device model, no authorization, or a recognizer
+  that dies mid-turn are each recorded as an `Availability` and stood down.
+  `RefereeEvidence.verdict` returns `.inconclusive` whenever either side is not
+  `.ready` (L1.95d).
+- It joins the **one shared teardown** (`stopAudioIO`), so a mute cannot leave
+  two recognizers listening — the shape of #15 and #127.
+- It starts inside `startAudioIO`, which the L1 audio seam already skips, so no
+  logic test loads the Speech framework and the 237-case suite is unchanged by
+  its presence.
+- It never touches the start path: authorization is requested off to the side
+  rather than woven into `beginListening()`, whose interleavings are pinned by
+  L1.66a–m and must not gain a new `await`.
 
 `RefereeEvidence` deliberately reaches **no** calibrated verdict. It decides
 the one categorical case — one recognizer produced words and the other

@@ -331,7 +331,12 @@ final class GeminiLiveTranslationService: ObservableObject {
         return "  \(heard)"
     }
 
-    private static func escapedDiagnosticTranscript(_ transcript: String) -> String {
+    // Not private, and `nonisolated`: `LanguageReferee` logs transcripts too
+    // (#135) from its own queue, and a second escaper is exactly the
+    // mirror-copy this repo keeps out of tests — one rule, one
+    // implementation, pinned once by L1.63b. Pure string work, so leaving the
+    // main actor costs nothing and hides nothing.
+    nonisolated static func escapedDiagnosticTranscript(_ transcript: String) -> String {
         transcript
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
@@ -386,6 +391,11 @@ final class GeminiLiveTranslationService: ObservableObject {
     private var isPlayingOutput = false
     private var outputActivityTimer: Timer?
     private let outputTailTimeout: TimeInterval = 0.45
+
+    /// The independent language witness (#135, Phase 1). OBSERVE-ONLY: it is
+    /// read by exactly one thing, the `referee:` diagnostic line in
+    /// `emitUtterance`, and by nothing that decides anything.
+    private let referee = LanguageReferee()
 
     private let speechRMSThreshold: Double = 220
     private var isSendingAudio = false
@@ -587,6 +597,10 @@ final class GeminiLiveTranslationService: ObservableObject {
     }
 
     private func resetForNextUtterance() {
+        // One turn's recognition must not carry into the next, the same rule
+        // `speechHeardThisTurn` and `staleCodeGrace` enforce on the Gemini
+        // side (#135).
+        referee.rotate()
         turn.endTurn()
         inputs = [:]
         outputs = [:]
@@ -701,6 +715,12 @@ final class GeminiLiveTranslationService: ObservableObject {
         // rebuilt below whenever a buffer's real format doesn't match it.
         audioGraph.installTap { [weak self] buffer, _ in
             guard let self else { return }
+            // The independent witness (#135), observe-only: it reads the same
+            // buffers and writes one log line per turn. Deliberately first and
+            // deliberately unguarded by `isRunning` — it is lock-protected,
+            // inert whenever it cannot testify, and must never be able to
+            // change what the rest of this block does.
+            self.referee.append(buffer)
             // This block runs on the real-time audio render thread, NOT the
             // main actor — `installTap` stores it and AVAudioEngine calls it
             // directly, a path that never goes through Swift's actor
@@ -755,6 +775,11 @@ final class GeminiLiveTranslationService: ObservableObject {
             }
         }
         tapInstalled = true
+        // Shares the tap's lifetime exactly, which is also why it never runs
+        // under the L1 audio seam (`skipAudioIOForTesting` skips this whole
+        // function), so no logic test ever touches the Speech framework.
+        LanguageReferee.requestAuthorizationIfNeeded()
+        referee.start(home: turn.home, partner: turn.partner)
         audioGraph.startPlayback()
         diag("audio", "engine started, input format \(inputFormat)")
         succeeded = true
@@ -866,6 +891,11 @@ final class GeminiLiveTranslationService: ObservableObject {
             audioGraph.removeTap()
             tapInstalled = false
         }
+        // The referee joins the ONE shared teardown rather than getting its
+        // own path — two recognizers outliving a run is the shape of #15 and
+        // #127, and a mute that leaves them listening would be both a battery
+        // cost and a privacy surprise.
+        referee.stop()
         audioGraph.stopPlaybackAndEngine()
         audioGraph.deactivateSession()
     }
@@ -1580,12 +1610,21 @@ final class GeminiLiveTranslationService: ObservableObject {
             diag("turn", Self.inputTranscriptDiagnosticLine(inputs: inputs, sessions: activePair))
             diag("turn", said())
             diag("turn", why())
+            // A rejected turn is the MOST interesting case for #135: these are
+            // the turns the referee exists to rescue, so it must be logged
+            // here too and not only on the happy path.
+            if let line = referee.diagnosticLine(appDecision: "REJECTED \(turn.lastRejectReason ?? "?")") {
+                diag("turn", "  " + line)
+            }
             return
         }
         diag("turn", "commit \(bubble.isHome ? "RIGHT/home" : "LEFT/foreign") via \(turn.translator?.rawValue ?? "?") | \(bubble.original.prefix(60)) → \(bubble.translation.prefix(60))")
         diag("turn", Self.inputTranscriptDiagnosticLine(inputs: inputs, sessions: activePair))
         diag("turn", said())
         diag("turn", why())
+        if let line = referee.diagnosticLine(appDecision: bubble.isHome ? "RIGHT/home" : "LEFT/foreign") {
+            diag("turn", "  " + line)
+        }
         onUtterance?(bubble.original, bubble.translation, bubble.isHome)  // R2: side from spoken language
     }
 
