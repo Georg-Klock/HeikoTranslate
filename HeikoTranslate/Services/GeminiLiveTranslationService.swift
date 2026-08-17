@@ -397,6 +397,12 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// `emitUtterance`, and by nothing that decides anything.
     private let referee = LanguageReferee()
 
+    /// Off in every build that has not deliberately switched it on, and inert
+    /// when off (#135, Phase 0). Records the audio of each turn beside the
+    /// app's own verdict so a candidate decider can be scored against real
+    /// speech instead of the transcript, which is the corrupted evidence.
+    private let capture = TurnAudioCapture()
+
     private let speechRMSThreshold: Double = 220
     private var isSendingAudio = false
 
@@ -601,6 +607,9 @@ final class GeminiLiveTranslationService: ObservableObject {
         // `speechHeardThisTurn` and `staleCodeGrace` enforce on the Gemini
         // side (#135).
         referee.rotate()
+        // Same rule, same reason: audio not written by a commit belongs to a
+        // turn that is over, and must not run into the next one.
+        capture.rotate()
         turn.endTurn()
         inputs = [:]
         outputs = [:]
@@ -735,6 +744,12 @@ final class GeminiLiveTranslationService: ObservableObject {
             // rather than from the render thread.
             let rebuiltFormat = resolved.didRebuild ? "\(buffer.format)" : nil
 
+            // The SAME bytes the session sends, captured before any of the
+            // main-actor hops below can drop them: a bench that measured a
+            // differently-converted signal would be measuring a different
+            // question. Inert unless capture is switched on.
+            self.capture.append(pcmData)
+
             // Loudness for the UI, before any network round trip.
             let rms = Self.rms(of: pcmData)
             let level = min(1.0, rms / 4000.0)
@@ -780,6 +795,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         // function), so no logic test ever touches the Speech framework.
         LanguageReferee.requestAuthorizationIfNeeded()
         referee.start(home: turn.home, partner: turn.partner)
+        capture.start(home: turn.home, partner: turn.partner)
         audioGraph.startPlayback()
         diag("audio", "engine started, input format \(inputFormat)")
         succeeded = true
@@ -896,6 +912,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         // #127, and a mute that leaves them listening would be both a battery
         // cost and a privacy surprise.
         referee.stop()
+        capture.stop()
         audioGraph.stopPlaybackAndEngine()
         audioGraph.deactivateSession()
     }
@@ -1616,6 +1633,11 @@ final class GeminiLiveTranslationService: ObservableObject {
             if let line = referee.diagnosticLine(appDecision: "REJECTED \(turn.lastRejectReason ?? "?")") {
                 diag("turn", "  " + line)
             }
+            // Rejected turns are captured too, and are the most valuable rows
+            // in the corpus: they are the ones a better decider has to get
+            // right. Dropping them would leave a bench measuring only the
+            // turns that already worked.
+            capture.finish(decision: "REJECTED \(turn.lastRejectReason ?? "?")")
             return
         }
         diag("turn", "commit \(bubble.isHome ? "RIGHT/home" : "LEFT/foreign") via \(turn.translator?.rawValue ?? "?") | \(bubble.original.prefix(60)) → \(bubble.translation.prefix(60))")
@@ -1625,6 +1647,9 @@ final class GeminiLiveTranslationService: ObservableObject {
         if let line = referee.diagnosticLine(appDecision: bubble.isHome ? "RIGHT/home" : "LEFT/foreign") {
             diag("turn", "  " + line)
         }
+        // The decision, not the truth: `turn.spokenLang` is what the
+        // arbitration concluded, and is the thing a bench exists to check.
+        capture.finish(decision: turn.spokenLang?.rawValue ?? (bubble.isHome ? "home" : "partner"))
         onUtterance?(bubble.original, bubble.translation, bubble.isHome)  // R2: side from spoken language
     }
 

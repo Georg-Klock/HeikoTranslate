@@ -1142,6 +1142,80 @@ costs the experiment nothing except the illusion that it could be measured
 offline. The compile still earns its keep every run: it type-checks
 `RefereeEvidence` against the app's real sources.
 
+#### Capturing the corpus, and scoring candidates against it
+
+The corpus measurement moving to iOS left a gap: the phone is where the audio
+is, and the laptop is where a candidate decider can be swapped in seconds. Two
+pieces close it.
+
+**`TurnAudioCapture` writes each turn's audio with the app's own verdict
+beside it.** It captures the bytes the app already converted for the wire —
+16 kHz mono Int16 — not the raw tap buffer, so a bench measures what Gemini
+actually heard, echo canceller and converter included. Rejected turns are
+captured too, and are the most valuable rows: they are the ones a better
+decider has to get right.
+
+It is **off unless `CAPTURE_TURN_AUDIO` is set in `Secrets.plist`**, which is
+gitignored — so nothing committed can switch it on and a build from a clean
+checkout captures nothing. Files stay in the container until a human runs
+`Tools/pull_logs.sh`, which already copies all of `Documents`. That is the
+same rule the diagnostic log lives by (#8), and it is what keeps
+`docs/privacy-policy.md` true without amendment: local storage adds no
+recipient for microphone audio. The recordings are other people's
+conversations — delete them when the measurement is done.
+
+**`Tools/lid-bench.py` scores candidates on those clips.** Every candidate
+answers one question — given audio and the two configured languages, which was
+spoken — and is scored twice: open-set, and pair-restricted (its probabilities
+renormalised over just the two). The gap between those columns is the number
+that decides the design, because the app always knows the pair in advance.
+
+Two columns matter more than accuracy. `rescues` counts turns where the
+candidate disagreed with the app *and was right*; `breaks`, where it disagreed
+and was wrong. A candidate that is accurate and never rescues is not a second
+witness, it is a second opinion from the same one — which is the failure #125
+measured (6/10 against a 5/10 baseline) and which marginal accuracy cannot
+reveal.
+
+First run, 2026-08-17, `TestAudio` (19 labelled TTS clips), whisper-tiny via
+faster-whisper:
+
+| Clip length | Open-set | Pair-restricted (de/es) |
+|---|---|---|
+| full | 89.5% | **100%** |
+| 2.0 s | 78.9% | 83.3% |
+| 1.0 s | 68.4% | 66.7% |
+
+Restriction does exactly what the theory says at full length: both German
+clips misheard as English come back, because English is not in the pair. It
+stops rescuing at 1 s, where the remaining errors are inside the pair.
+
+**Read that table as a lower bound on nothing and an upper bound on nothing.**
+It is macOS `say` output — no disfluency, no breath, no room — and this file
+already records that a TTS fixture could not reproduce #32. It proves the
+harness works and the restriction has the predicted shape; it does not tell
+you what happens in a kitchen.
+
+**The scoring bug worth recording**, because it made the bench read backwards
+before it read right: clips whose language is not in the configured pair were
+being counted as pair-restricted errors. The restriction forces an answer from
+a set the right answer is not in, so those clips are wrong by construction —
+seven English files dragged de/es from 100% to 63.2% and made restriction look
+*harmful*. They are now excluded and the exclusion is printed. A bench that
+silently drops rows and a bench that silently miscounts them fail the same way.
+
+**Do not score candidates on the existing device recordings.** Every one is a
+single tester speaking both languages, so the non-native side carries their
+accent, and off-the-shelf LID is substantially an accent classifier —
+measured at 93.4% on mainstream-accented German against 61.3% on L2-accented
+German (arXiv:2506.00628, June 2025). Scoring on that audio rejects a good
+model for failing on German-accented Spanish — a condition that does not occur
+in deployment, where both sides are native speakers. Use
+`Tools/l4-partner.sh`, or native speakers. This is the
+same trap "Who is speaking, and why it changes what the evidence means"
+describes for the failure rates themselves, and it bites the candidate and the
+baseline in the same direction.
+
 | ID | Given | Expect | Rule |
 |---|---|---|---|
 | L1.95 | Exactly one recognizer produced words | That language — the one categorical case, and #125's shape | **#135** |
