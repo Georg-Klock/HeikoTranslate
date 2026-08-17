@@ -225,6 +225,25 @@ final class TurnAudioCaptureTests: XCTestCase {
         XCTAssertTrue(manifestLines().isEmpty, "and must not leave a row pointing at no file")
     }
 
+    /// Two launches must not overwrite each other's clips. Measured
+    /// 2026-08-17: a second session's `turn-0001` silently replaced the
+    /// first's, leaving 15 manifest rows against 8 files with no error
+    /// anywhere — a labeller would have heard one utterance and recorded a
+    /// label for another.
+    func testL1_104q_sessionsDoNotOverwriteEachOther() {
+        for stamp in ["0817-160000", "0817-162400"] {
+            let capture = TurnAudioCapture(directory: directory, enabled: true, session: stamp)
+            capture.start(home: .de, partner: .fr)
+            capture.append(pcm(seconds: 0.5, value: 6000))
+            capture.finish(decision: "fr")
+        }
+        XCTAssertEqual(wavFiles().count, 2,
+                       "each launch keeps its own clips")
+        XCTAssertEqual(manifestLines().count, 2)
+        XCTAssertEqual(Set(wavFiles().map(\.lastPathComponent)).count, 2,
+                       "and the names differ")
+    }
+
     // MARK: - L1.104o–p: our own voice is not evidence
 
     /// Measured 2026-08-17 (build 2.4.64): captured clips contained TWO

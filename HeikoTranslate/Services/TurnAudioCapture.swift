@@ -111,7 +111,20 @@ final class TurnAudioCapture: @unchecked Sendable {
     /// language and a whole device session would be wasted before anyone knew.
     private let enabled: Bool
 
-    init(directory: URL? = nil, enabled: Bool = TurnAudioCapture.isEnabled) {
+    /// Distinguishes this launch's clips from every other launch's.
+    ///
+    /// **Measured 2026-08-17.** The turn counter restarts at 1 each launch, so
+    /// a second session's `turn-0001-de-fr.wav` silently REPLACED the first
+    /// session's file while the first session's manifest row stayed — still
+    /// describing a clip that no longer existed. A labeller would have heard
+    /// one utterance and recorded a label for another, and nothing in the data
+    /// would have shown it: 15 rows, 8 files, no error anywhere. Evidence that
+    /// overwrites itself is worse than evidence that is missing.
+    private let session: String
+
+    init(directory: URL? = nil, enabled: Bool = TurnAudioCapture.isEnabled,
+         session: String? = nil) {
+        self.session = session ?? Self.sessionStamp.string(from: Date())
         let base = directory
             ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("turn-audio", isDirectory: true)
@@ -246,7 +259,7 @@ final class TurnAudioCapture: @unchecked Sendable {
         }
         let trimmed = audio.subdata(in: speech)
 
-        let name = String(format: "turn-%04d-%@-%@.wav", index, home.rawValue, partner.rawValue)
+        let name = String(format: "turn-%@-%04d-%@-%@.wav", session, index, home.rawValue, partner.rawValue)
         let url = directory.appendingPathComponent(name)
         do {
             try Self.wav(from: trimmed).write(to: url, options: .atomic)
@@ -293,6 +306,14 @@ final class TurnAudioCapture: @unchecked Sendable {
     private static let timestamp: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+        return f
+    }()
+
+    /// Short enough to keep a filename readable, precise enough that two
+    /// launches in the same minute do not collide.
+    private static let sessionStamp: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMdd-HHmmss"
         return f
     }()
 

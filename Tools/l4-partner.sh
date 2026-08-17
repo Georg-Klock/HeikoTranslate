@@ -44,6 +44,17 @@ case "$lang" in
   *)  echo "unsupported language '$lang' (es, fr, en)" >&2; exit 2 ;;
 esac
 
+# Override the voice: PARTNER_VOICE=Thomas Tools/l4-partner.sh fr
+#
+# This is not a cosmetic knob. The outcomes below are asymmetric only if the
+# voice is a fair stand-in for a native speaker — "a collapse is a REAL bug"
+# stops being true if the collapse was caused by the voice. Jacques in
+# particular was judged poor on listening (2026-08-17); Thomas is the other
+# fr_FR option, and macOS also ships newer fr_FR variants (Eddy, Flo, Shelley).
+# `say -v '?'` lists what is installed. If a run collapses, repeat it with a
+# different voice before believing the result.
+voice="${PARTNER_VOICE:-$voice}"
+
 if ! say -v "$voice" "" >/dev/null 2>&1; then
   echo "Voice '$voice' is not installed." >&2
   echo "Add it: System Settings -> Accessibility -> Spoken Content -> System Voices." >&2
