@@ -36,7 +36,7 @@ struct ExpectedBubble {
 let pairs: [String: (TurnLogic.Lang, TurnLogic.Lang)] = [
     "es_short": (.de, .es),
     "de_after_es": (.de, .es),
-    // #29: German spoken under a KOREAN-home pair — the ko session is the
+    // #29: German spoken under a KOREAN-home pair. The ko session is the
     // home translator, and its few-character output is what the per-script
     // floors exist to admit. This ran zh-home until 2026-08-18; Chinese left
     // the language set (SPEC §3.0) and Korean carries the same measured

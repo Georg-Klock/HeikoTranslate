@@ -87,8 +87,8 @@ final class ConversationViewModel: ObservableObject {
         UserDefaults.standard.string(forKey: key).flatMap(TurnLogic.Lang.init(rawValue:)) ?? def
     }
 
-    /// True when a persisted language no longer exists in `TurnLogic.Lang` —
-    /// a build before the v1 language set stored `fr`/`zh`/`tl`/`vi` and this
+    /// True when a persisted language no longer exists in `TurnLogic.Lang`.
+    /// A build before the v1 language set stored `fr`/`zh`/`tl`/`vi` and this
     /// one cannot decode it (SPEC §3.0). Separate from `loadLang` because the
     /// two cases it must tell apart, "retired language" and "never chosen",
     /// both come back from there as the default.
@@ -1127,7 +1127,7 @@ final class ConversationViewModel: ObservableObject {
         // sitting in its defaults: shipped builds really did write those, and
         // the v1 language set retired them (SPEC §3.0). `loadLang` has already
         // fallen back to the default above, because the raw value no longer
-        // decodes — but the stale string would sit there being re-read and
+        // decodes, but the stale string would sit there being re-read and
         // re-rejected on every launch, so the repair is written through below
         // and logged, otherwise a pair that silently moved back to de↔en has
         // no explanation in the device log. This is the #90 path (observers do
@@ -1135,7 +1135,7 @@ final class ConversationViewModel: ObservableObject {
         let storedLangRetired = Self.storedLangIsRetired("settings.homeLang")
             || Self.storedLangIsRetired("settings.partnerLang")
         if storedLangRetired {
-            diag("app", "stored language retired from the v1 set — pair repaired to "
+            diag("app", "stored language retired from the v1 set, pair repaired to "
                       + "\(homeLang.rawValue)↔\(partnerLang.rawValue)")
         }
         if homeLang == partnerLang { partnerLang = homeLang == .en ? .de : .en }

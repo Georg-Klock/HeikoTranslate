@@ -139,7 +139,7 @@ struct TurnLogic {
         // Measured 2026-08-11, Tools/floor_measurement.py on the Swift wire
         // path (60 probes; the table is committed beside the tool). Korean
         // short answers ran 2-7 chars ("네."=2) with answer ratios down to
-        // 0.5 — the German baseline would reject most of them. The floor
+        // 0.5, and the German baseline would reject most of them. The floor
         // takes the observed minimum (corroborated), keeps the German 8:5
         // shape above it (decisive), and puts the same 0.67 safety factor
         // under the observed minimum ratio that 0.4 has against German's

@@ -31,7 +31,7 @@ where they disagree).
 ## The language pair (2026-07-28)
 
 Settings select an explicit pair: home (right side, large type, default
-German) and partner (left, default English/🇺🇸) from de/en/es/ko — every
+German) and partner (left, default English/🇺🇸) from de/en/es/ko, every
 code verified against the live model (`Tools/targetprobe.sh`). Both wheels
 offer the same four; either language can take either side.
 
@@ -61,9 +61,9 @@ spoke from which fixed-language session produced plausible output, and that
 signal is circular. A session pinned to one language will transcribe a
 neighbouring language as its own and vote for it confidently, which is what
 #125, #121, #137 and #128 each document from device logs. Everything in
-`TurnLogic` under "Turn lifecycle" step 4 below — the per-session vote
+`TurnLogic` under "Turn lifecycle" step 4 below (the per-session vote
 records, the crossed-evidence rule, echo share, the #32 function-word
-discriminator — is error correction over that one unreliable witness, so how
+discriminator) is error correction over that one unreliable witness, so how
 well it works is a property of the pair, not of the code.
 
 Pair difficulty therefore tracks acoustic distance and shared vocabulary,

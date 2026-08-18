@@ -334,8 +334,8 @@ final class LanguagePairTests: XCTestCase {
         // Six notches, none of them the home language: a collision would fire
         // the SPEC §4.4 swap and add an apply of its own, which is a different
         // test (L1.75). The set is smaller than it was (SPEC §3.0), so the
-        // spin repeats languages rather than visiting six distinct ones —
-        // what this pins is the count of applies, not their variety.
+        // spin repeats languages rather than visiting six distinct ones.
+        // What this pins is the count of applies, not their variety.
         for lang in [TurnLogic.Lang.es, .ko, .en, .ko, .es, .en] {
             vm.partnerLang = lang
         }
@@ -489,7 +489,7 @@ final class LanguagePairTests: XCTestCase {
         }
     }
 
-    /// L1.75c — a PERSISTED home naming a retired language is repaired at init.
+    /// L1.75c: a PERSISTED home naming a retired language is repaired at init.
     ///
     /// Property observers do not fire during `init`, so init is the one path a
     /// bad STORED value arrives by. This was defense-in-depth for #90's
@@ -504,7 +504,7 @@ final class LanguagePairTests: XCTestCase {
 
         let vm = ConversationViewModel()
         XCTAssertEqual(vm.homeLang, ConversationViewModel.defaultHomeLang,
-                       "a stored tl home must not seat — tl is not a language any more")
+                       "a stored tl home must not seat; tl is not a language any more")
         XCTAssertEqual(vm.partnerLang, .en,
                        "the partner side was valid and is not the repair's business")
         // And the repair must reach the STORE, or it lasts exactly one launch.
@@ -527,7 +527,7 @@ final class LanguagePairTests: XCTestCase {
                        "the store must match the screen, or next launch re-repairs forever")
     }
 
-    /// L1.75d — a legitimate persisted pair rides through the same init path
+    /// L1.75d: a legitimate persisted pair rides through the same init path
     /// untouched, in memory AND in the store; and a retired language on the
     /// PARTNER side is repaired too.
     ///
@@ -551,7 +551,7 @@ final class LanguagePairTests: XCTestCase {
         let vm2 = ConversationViewModel()
         XCTAssertEqual(vm2.homeLang, .de, "the valid home side is not the repair's business")
         XCTAssertEqual(vm2.partnerLang, ConversationViewModel.defaultPartnerLang,
-                       "a retired partner falls back — fr is not a language any more")
+                       "a retired partner falls back; fr is not a language any more")
         XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.partnerLang"),
                        vm2.partnerLang.rawValue,
                        "and the repair reaches the store, or it lasts one launch")

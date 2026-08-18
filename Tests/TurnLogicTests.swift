@@ -698,7 +698,7 @@ final class TurnLogicTests: XCTestCase {
     // de↔ko pair). It used to be `fr`, which the v1 narrowing retired: an
     // unmapped code casts no global vote by design (L1.54b, the "ja"/"pt"
     // self-target lie), so a retired language no longer produces a settle for
-    // this veto to act on. That is not a rewording — it is the shape #125
+    // this veto to act on. That is not a rewording. It is the shape #125
     // actually measured, a pair settling on a set member belonging to neither
     // side.
     func testL1_47e_neitherSideSettleStillVetoes() {

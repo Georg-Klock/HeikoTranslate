@@ -75,8 +75,8 @@ instead, and says so in the diagnostic log.
 The app translates between an explicitly selected **language pair**
 (language pill → Sprachen): a **home** language (German by default — the phone
 owner's reader language) and a **partner** language (English/🇺🇸 by
-default). Available: the v1 set in §3.0 — German, English (US), Korean,
-Spanish (MX) — every pairing, both directions, either language on either
+default). Available: the v1 set in §3.0 (German, English (US), Korean,
+Spanish (MX)), every pairing, both directions, either language on either
 side. There is no partner-only language: every one of the four renders the
 whole UI, so every one of them can be the reader's side.
 
