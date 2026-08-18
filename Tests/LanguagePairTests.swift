@@ -322,12 +322,21 @@ final class LanguagePairTests: XCTestCase {
     /// without audio hardware. `serviceStartForTesting` stands in for the
     /// audio-and-network step, and the real `start()` records the pair around
     /// it — which is the thing these tests are about.
+    ///
+    /// The permission stub is not optional. `beginListening` awaits a real
+    /// `AVAudioApplication` permission request otherwise, and on a fresh CI
+    /// simulator there is nobody to answer it: the await never returns and the
+    /// whole suite sits there until the job's 20-minute timeout kills it. It
+    /// passes locally only because a simulator that has already been asked
+    /// once answers from its stored decision. Measured — two cancelled CI runs
+    /// on this branch while every other branch finished in five minutes.
     private func makeListeningViewModel(
         home: TurnLogic.Lang = .de, partner: TurnLogic.Lang = .en
     ) async -> ConversationViewModel {
         let vm = ConversationViewModel()
         vm.homeLang = home
         vm.partnerLang = partner
+        vm.permissionRequestForTesting = { true }
         vm.serviceStartForTesting = { true }
         await vm.beginListening()
         return vm
