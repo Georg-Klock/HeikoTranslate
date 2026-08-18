@@ -110,7 +110,7 @@ stated count against.
 | L1.41f | Muted / warning / notice in every combination | One slot, one explicit precedence | **R8** |
 | L1.42 | Permission granted in Settings, app returns | The denial clears and the button starts listening again | **R8** |
 | L1.43 | The German string set | Exactly the reviewed wording, asserted on the real values | **§4.3** |
-| L1.44 | All six language sets | Complete, keep their number placeholder, and none is still German | **§4.3** |
+| L1.44 | Every language set in the v1 set (§3.0) | Complete, keeps its number placeholder, and none is still German | **§4.3** |
 | L1.45 | Six wheel notches in rapid succession | Six persists, ONE session restart | **R7/#1** |
 | L1.45b | A manual tap while a restart is pending | The restart is dropped — the tap owns the session | **R8** |
 | L1.46 | A cold launch, before any tap | Glyph reads muted, notice stays silent — two rules, disagreeing on purpose | **R8** |
@@ -121,7 +121,7 @@ stated count against.
 | L1.47b | The same echo with codes settled on HOME (the referee-log pattern) | RIGHT — there the ratio path alone was the failure | **R2** |
 | L1.47c | A one-token identical output ("Navigator") | Still a translation — cognates, numbers and names stay LEFT | **R2** |
 | L1.47d | A third language's long translations in both sessions | LEFT via home — a real translation shares no tokens with the heard text | **R2** |
-| L1.47e | Codes settled on a language that is NEITHER side | Still vetoed — no session translated into the reader's language | **R3** |
+| L1.47e | Codes settled on a language in the set that is NEITHER side (es on a de↔ko pair) | Still vetoed — no session translated into the reader's language. A language OUTSIDE the set produces an unmapped code, which casts no global vote (L1.54b) and so never reaches this veto | **R3** |
 | L1.47f | A partner output that is itself the echo, or a settle with no partner-session votes at all | Veto holds — the yield needs positive evidence that HOME was spoken, not a plausible-looking translation | **R2/R3** |
 | L1.47g | `noteOutputs` on the same #75 data | homeSpoken after the confirm window — streaming and commit agree | **R2** |
 | L1.47h | Both sessions misread half the German, crossed (after-run 1) | RIGHT — the union echo test sees the round trip for what it is, and the crossed per-session votes carry the yield | **R1/R2** |
@@ -230,35 +230,46 @@ simulator checks were re-taken after the rewrite.
 Per-script floors (#29, measured 2026-08-11). The output-substance floors
 are per home language now — `TurnLogic.floors(for:)` — calibrated by
 `Tools/floor_measurement.py` on the Swift wire path (60 probes, the table
-committed at `Tools/measurements/floors-2026-08-11.json`). Korean and
-Chinese loosen (2/3 and ratio 0.34/0.23); the Latin homes measured safely
-above the baseline and keep the German values, whose binding constraint is
-the false-start corpus only German has. The loosen-only doctrine is itself
+committed at `Tools/measurements/floors-2026-08-11.json`). Korean loosens
+(2/3 and ratio 0.34); the Latin homes measured safely above the baseline and
+keep the German values, whose binding constraint is the false-start corpus
+only German has. The campaign also measured Chinese (2/3, ratio 0.23), which
+left the language set on 2026-08-18 (SPEC §3.0): Korean is the only dense
+script left, so it carries these rows on its own now, and the zh numbers stay
+in the committed table rather than in the code. The loosen-only doctrine is itself
 a test. One campaign exclusion, recorded in the table: a ~300ms utterance
 ("Ja.") never engages the model at all — a VAD floor, not a length fact.
 
 | ID | Given | Expect | Rule |
 |---|---|---|---|
 | L1.74 | Every language's floors vs the German baseline | Loosen-only, and the Latin homes keep the baseline exactly | **#29** |
-| L1.74b | A 7-char zh translation against a 22-char echo (ratio 0.32), codes LYING home | Counts as a real translation and beats the codes (the L1.20 doctrine), where the baseline 0.4 handed the turn to the lying codes — wrong side | **R2** |
+| L1.74b | An 8-char ko translation against a 22-char echo (ratio 0.36), codes LYING home | Counts as a real translation and beats the codes (the L1.20 doctrine), where the baseline 0.4 handed the turn to the lying codes — wrong side. The case sits inside the 0.34–0.4 gap on purpose: that gap is the whole of what the per-script floor buys | **R2** |
 | L1.74c | The decisive path, densest script: 1 char alone vs a 3-char real answer | 1 stays a false start; 3 stands, which the baseline 8 swallowed | **R2/R4** |
-| L1.74d | zh/ko short answers through commit under settled foreign codes | Shape coverage, labelled as such — the settled-codes route admits these regardless; the discrimination lives in the rows above | **R2** |
+| L1.74d | A ko short answer through commit under settled foreign codes | Shape coverage, labelled as such — the settled-codes route admits these regardless; the discrimination lives in the rows above | **R2** |
 
-Partner-only languages (#30, 2026-08-12). Tagalog and Vietnamese are
-selectable as the partner, never as home (`canBeHome`): the wheel filters,
-the SPEC §4.4 collision swap falls back instead of seating them, and the
-home binding refuses them outright. A stored value arrives through `init`,
-where property observers do not fire, so init normalizes it itself (#90).
-L1.44 encodes the amended rule: a partner-only language needs a NAME in
-every set and falls back to German, not a set of its own. Verified live
-before landing: `targetprobe.sh tl vi` translated both.
+The language set (SPEC §3.0, 2026-08-18). Four languages, fully
+interchangeable, so six pairs in both orders. This section replaces the
+partner-only one that stood here: #30's Tagalog and Vietnamese were
+selectable as the partner and refused on the home side, enforced by four
+gates over `canBeHome`, and both languages left the set together with French
+and Chinese. Every remaining language is a reader language, so `canBeHome`
+and its gates are gone and L1.75/L1.75b with them.
+
+What the narrowing created instead is a real migration. Shipped builds wrote
+`fr`, `zh`, `tl` and `vi` into `settings.homeLang` / `settings.partnerLang`,
+and this build cannot decode them, so #90's init repair — written as
+defence-in-depth against a state no build could reach — is now a path that
+runs on ordinary phones. It is also no longer home-side only: a retired
+language is unusable on either side.
 
 | ID | Given | Expect | Rule |
 |---|---|---|---|
-| L1.75 | The collision swap with a partner-only old partner | Falls back (default home, or its counterpart on a second collision) — never seats tl/vi on home | **§4.4/#30** |
-| L1.75b | Any write of a partner-only language to the home binding | Refused; previous home survives; the pair stays distinct | **R8/#30** |
-| L1.75c | A persisted partner-only home (`settings.homeLang = "tl"`), fresh init | Repaired to the default home — observers do not fire during init, so the binding guard cannot cover this path. The distinct-pair fix re-runs after the repair, and the STORE is repaired too, or it lasts one launch | **R8/#30/#90** |
-| L1.75d | A legitimate persisted pair (a partner-only PARTNER included) through the same init | Loads unchanged, in memory and in the store — the repair touches exactly one broken state | **§4.1/#30/#90** |
+| L1.75c | A persisted retired home (`settings.homeLang = "tl"`), fresh init | Repaired to the default home — observers do not fire during init, so no binding guard can cover this path. The distinct-pair fix re-runs after the repair, and the STORE is repaired too, or it lasts one launch | **R8/§3.0/#90** |
+| L1.75d | A valid persisted pair, and separately a retired PARTNER, through the same init | The valid pair loads unchanged in memory and in the store; the retired partner falls back and the fallback is written through | **§4.1/§3.0/#90** |
+| L1.76 | `Lang.allCases`, and the retired codes | Exactly de/en/es/ko; `fr`/`zh`/`tl`/`vi` do not decode, and a stored one is told apart from nothing-stored | **§3.0** |
+| L1.76b | Every ordered pair of distinct languages, seated on the real view model | All twelve seat — the set is fully interchangeable, neither side is privileged | **§3.0/§4.4** |
+| L1.76c | Both settings columns | Both offer the whole set, minus only the language already on the other side | **§3.0/§4.4** |
+| L1.76d | `UIStrings.of` for every language | Each owns a full set — there is no fallback branch left for a gap to hide in | **§4.1/#6** |
 
 The wheels, for VoiceOver (#14, 2026-08-11). Each language column is ONE
 adjustable element; a swipe steps through the same displayed order the
@@ -1233,7 +1244,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 203 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService` and `ConversationViewModel` (2026-08-13, on the #91 branch) |
+| L1 | ✅ Built and passing — 226 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService` and `ConversationViewModel` (2026-08-18, on the v1 language-set branch) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Partially re-verified on device (2026-08-12): revoked-key recovery passed after four on-device iterations (#9, PR #82); late-fragment filtering (#39), loanword direction (#40) and mic-aware speech end (#36) passed and closed; number transcription measured — shared model-level mis-hearing of German compound numerals, now a decision (#33); code-switching evidence refreshed (#32). Found live: #83, speech resuming in the stopped→commit window is dropped and talked over — the open half of #31. Still owed: the deliberate self-hearing geometry run (#35, case 7), which has fresh incidental evidence (a post-playback fragment recommitted as a small bubble). The ordered plan with per-case log criteria stays on GitHub #71. |
