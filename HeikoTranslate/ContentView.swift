@@ -149,7 +149,13 @@ struct ContentView: View {
                 )
             }
         }
-        .sheet(isPresented: $showingSettings) {
+        // onDismiss, not a callback from the Done button: the sheet can also be
+        // swiped away, and both mean "back at the main screen". This is the one
+        // moment the chosen pair reaches the sessions — while the sheet is open
+        // nothing is torn down or opened at all (SPEC §4.4, #146).
+        .sheet(isPresented: $showingSettings, onDismiss: {
+            viewModel.languageSelectionDidFinish()
+        }) {
             LanguageSettingsSheet(viewModel: viewModel)
                 .morphDestination(Self.pillMorphID, pillMorph)
         }

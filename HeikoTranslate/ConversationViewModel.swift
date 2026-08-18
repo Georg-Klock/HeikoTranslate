@@ -97,38 +97,54 @@ final class ConversationViewModel: ObservableObject {
         UserDefaults.standard.string(forKey: key).flatMap(TurnLogic.Lang.init(rawValue:)) ?? def
     }
 
-    /// How long the wheel must sit still before the pair reaches the sessions.
-    ///
-    /// The settings wheels are rotaries: one flick crosses several notches and
-    /// each notch is a language change. Measured on the device 2026-08-07 —
-    /// five changes in 240ms — and before this, every one of them tore both
-    /// WebSocket sessions down and rebuilt them. That is the GitHub #1 churn
-    /// arriving by a new route: the picker that made it impossible was
-    /// replaced by a control that makes it easy.
-    static let languageSettleDelay: TimeInterval = 0.4
-
-    private var languageRestartTask: Task<Void, Never>?
-
-    /// Counts language changes that actually REACHED the sessions, after
-    /// coalescing. Exists so a test can prove one spin restarts once — the
-    /// coalescing is the whole point and is otherwise invisible.
+    /// Counts language changes that actually REACHED the sessions. Exists so a
+    /// test can prove one visit to the sheet restarts at most once — that is
+    /// the whole point and is otherwise invisible.
     private(set) var languageRestartCount = 0
 
+    /// The pair the live sessions were actually started with, or nil when
+    /// nothing is running. This is what "the pair already running" means in
+    /// SPEC §4.4, and comparing against it is what makes closing the sheet
+    /// without changing anything free.
+    private(set) var runningPair: (home: TurnLogic.Lang, partner: TurnLogic.Lang)?
+
+    /// Selecting a language persists it and nothing else.
+    ///
+    /// The wheels are rotaries: one flick crosses several notches and every
+    /// notch is a language change. Each one used to tear both WebSocket
+    /// sessions down and rebuild them — GitHub #1's churn arriving by a new
+    /// route, since the picker that made it impossible was replaced by a
+    /// control that makes it easy. A 0.4s settle delay was the first answer,
+    /// and it is the wrong shape: measured on device 2026-08-18, one change of
+    /// partner language still produced five full restarts and stopped the
+    /// microphone five times (#146), because a deliberate scroll rests between
+    /// detents for longer than any interval that still feels responsive.
+    ///
+    /// No interval can separate "resting mid-scroll" from "done choosing", so
+    /// the restart is no longer on a clock at all. It happens once, when the
+    /// sheet is dismissed — see `languageSelectionDidFinish`.
     private func persistAndApplyLanguages() {
         languageApplyCount += 1
         UserDefaults.standard.set(homeLang.rawValue, forKey: "settings.homeLang")
         UserDefaults.standard.set(partnerLang.rawValue, forKey: "settings.partnerLang")
         diag("app", "language pair set to \(homeLang.rawValue)↔\(partnerLang.rawValue)")
-        // Persisting is cheap and happens per change, so the stored pair is
-        // always the truth. Only the SESSION RESTART is debounced.
-        languageRestartTask?.cancel()
-        languageRestartTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(
-                nanoseconds: UInt64(Self.languageSettleDelay * 1_000_000_000))
-            guard let self, !Task.isCancelled else { return }
-            self.languageRestartCount += 1
-            guard self.isListening else { return }
-            diag("app", "language pair settled — restarting sessions")
+    }
+
+    /// The language sheet has closed and the main screen is back: apply the
+    /// chosen pair to the sessions, once.
+    ///
+    /// Called for every dismissal — the Done button and the swipe alike —
+    /// because both mean the same thing. Restarts only when the pair actually
+    /// differs from the one running, so opening the sheet and closing it again
+    /// costs nothing and an in-flight turn survives it. When nothing is
+    /// listening there is nothing to restart: the next start reads the stored
+    /// pair, which `persistAndApplyLanguages` has already written.
+    func languageSelectionDidFinish() {
+        guard let runningPair, runningPair != (homeLang, partnerLang) else { return }
+        languageRestartCount += 1
+        diag("app", "language selection finished — restarting sessions as \(homeLang.rawValue)↔\(partnerLang.rawValue)")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             self.stop()
             await self.beginListening()
         }
@@ -654,9 +670,12 @@ final class ConversationViewModel: ObservableObject {
     func noteManualToggle() {
         resumeWhenActive = false
         clearMicNotice()
-        // A tap owns the session, so a language restart still waiting to fire
-        // must not arrive afterwards and start something the user just stopped.
-        languageRestartTask?.cancel()
+        // There is no longer a language restart sitting on a timer to cancel
+        // here: it fires when the sheet is dismissed, and the button is not
+        // reachable until it has been (#146). The remaining window — a tap
+        // landing while that restart's own stop/start is in flight — is the
+        // one `invalidatePendingStart` already owns, via #13's generation
+        // check.
     }
 
     /// Opens this app's page in iOS Settings, where the microphone switch is.
@@ -1164,6 +1183,7 @@ final class ConversationViewModel: ObservableObject {
         // stub stands in only for the audio-and-network step below it.
         if let stub = serviceStartForTesting {
             isListening = stub()
+            if isListening { runningPair = (homeLang, partnerLang) }
             return
         }
         #endif
@@ -1229,6 +1249,11 @@ final class ConversationViewModel: ObservableObject {
                 }
             )
             isListening = true
+            // What the sessions are now actually running, recorded at the one
+            // place that hands the pair to them. Dismissing the sheet compares
+            // against this, so a pair that was only scrolled past never counts
+            // as a change (SPEC §4.4, #146).
+            runningPair = (homeLang, partnerLang)
         } catch {
             diag("app", "start FAILED: \(error.localizedDescription)")
             errorMessage = strings.micFailed
@@ -1245,6 +1270,10 @@ final class ConversationViewModel: ObservableObject {
         // never linger over "Mikrofon pausiert". GitHub #28.
         clearMicNotice()
         isListening = false
+        // Nothing is running, so nothing has a pair. Leaving the old value
+        // here would make the next dismissal compare against sessions that no
+        // longer exist and skip a restart that is needed.
+        runningPair = nil
         activity = .idle
         liveTranscript = ""
         liveIsHome = nil
