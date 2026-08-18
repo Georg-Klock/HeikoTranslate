@@ -56,15 +56,14 @@ final class DiagnosticLog {
             rotateIfNeeded(force: false)
             openHandle()
         }
-        // Short version AND build, matching the on-screen pill exactly. The
-        // marketing version no longer moves between releases, so it alone
-        // cannot say which build wrote a log — and a log from Heiko in Germany
-        // that cannot be tied to a build is most of its value gone.
-        let info = Bundle.main.infoDictionary
-        let short = (info?["CFBundleShortVersionString"] as? String) ?? "?"
-        let build = (info?["CFBundleVersion"] as? String) ?? "?"
-        let version = "\(short).\(build.count == 1 ? "0" + build : build)"
-        log("app", "=== launch: Heiko Translate \(version), iOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        // Short version AND build, matching the on-screen pill exactly — the
+        // same `AppVersion.label` the pill renders, rather than a second copy
+        // of the formatting that could drift from it. The marketing version no
+        // longer moves between releases, so it alone cannot say which build
+        // wrote a log — and a log from Heiko in Germany that cannot be tied to
+        // a build is most of its value gone. On an experiment build the label
+        // carries the tag too, so the log says which experiment it came from.
+        log("app", "=== launch: Heiko Translate \(AppVersion.label), iOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
     }
 
     /// The log carries both speakers' words, and `Documents/` rides iCloud
