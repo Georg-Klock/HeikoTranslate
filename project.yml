@@ -26,6 +26,15 @@ targets:
         # "is my phone current?" is answerable at a glance.
         CFBundleShortVersionString: "2.4"
         CFBundleVersion: "74"
+        # Two letters naming the experiment this build carries, appended to
+        # the pill: "2.4.75 EC". Empty on main and on anything heading for
+        # TestFlight — an unmarked number is a normal build, which is the
+        # common case and should not have to say so. An experiment branch
+        # sets it in its own commit so a phone screen, and the log's launch
+        # line, say which experiment is installed. Two letters because the
+        # pill is deliberately small: E for experiment, then the initial of
+        # what is being tried (EC = Experiment, Coordinator).
+        HTExperimentTag: "EC"
         # The app only uses the OS's own HTTPS/TLS, which is exempt. Without
         # this key App Store Connect asks the export-compliance question on
         # every single upload and holds the build back from testers until

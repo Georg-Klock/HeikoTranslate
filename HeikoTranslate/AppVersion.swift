@@ -22,6 +22,18 @@ enum AppVersion {
         // Pad to two digits so it keeps a steady width: "2.3.07", not "2.3.7".
         // Builds past 99 simply get wider, which is fine.
         let padded = build.count == 1 ? "0" + build : build
-        return "\(short).\(padded)"
+        let tag = info?["HTExperimentTag"] as? String
+        return experimentLabel(version: "\(short).\(padded)", tag: tag)
     }()
+
+    /// An experiment build says so on the pill: "2.4.75 EC". A normal build
+    /// is the unmarked case, so a missing, empty or whitespace-only tag adds
+    /// nothing — the number alone still reads as it always has, and nobody
+    /// has to remember to clear a key to ship. Pure and internal so L1 can
+    /// walk both sides without a bundle.
+    static func experimentLabel(version: String, tag: String?) -> String {
+        guard let trimmed = tag?.trimmingCharacters(in: .whitespaces),
+              !trimmed.isEmpty else { return version }
+        return "\(version) \(trimmed.uppercased())"
+    }
 }
