@@ -1,8 +1,16 @@
 # Heiko Translate
 
-A one-button iPhone app for live speech translation — English↔German and
-Mexican Spanish↔German, direction detected automatically — built as a gift
-for Heiko. Voice-to-voice translation runs through Google's Gemini Live API.
+A one-button iPhone app for live speech translation between any two of four
+languages: German, English, Korean and Mexican Spanish. The pair is picked in
+settings and either language can take either side, so all six pairs are on
+offer; within a pair, who just spoke is worked out automatically. Built as a
+gift for Heiko. Voice-to-voice translation runs through Google's Gemini Live
+API.
+
+Four is a deliberate limit rather than how far the work got. Direction is
+inferred rather than known, and that inference only holds up between
+languages that are far apart, which is also why French is not here.
+`SPEC.md` §3.0 has the reasoning and the conditions for revisiting it.
 
 ## What this is
 

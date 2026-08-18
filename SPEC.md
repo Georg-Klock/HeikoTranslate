@@ -22,15 +22,63 @@ Heiko may be holding the phone, or it may lie on a table between two people.
 
 ## 3. Core behaviour (the rules)
 
+### 3.0 Language set (v1)
+
+Four languages, fully interchangeable: **German, English (US), Korean,
+Mexican Spanish**. Either side of a pair may be any of them, so v1 offers
+six pairs: de↔en, de↔ko, de↔es, en↔ko, en↔es, ko↔es.
+
+This is a deliberate constraint, not a backlog gap. The set is chosen so
+that every pair in the mesh is viable. No pair is offered that I would not
+hand to a user.
+
+Why these four:
+
+- The turn router infers who spoke from which fixed-language session
+  produced plausible output (§3.1, `docs/ARCHITECTURE.md`). That signal is
+  circular: a session pinned to one language will transcribe a neighbouring
+  language as its own and sound confident about it. Issues #125, #121, #137
+  and #128 are all instances of this.
+- So pair difficulty is driven by two things: acoustic distance between the
+  languages, and shared vocabulary. Two languages that are far apart and
+  share no lexicon give the router room to be right by accident. Two that
+  are close do not.
+- German and English are non-negotiable, they are the app's purpose, and
+  they are also the hardest pair in the set, because spoken German carries
+  heavy English loanword density. That pair has to be solved regardless.
+- Korean and Spanish are both far from the anchors and from each other,
+  with effectively no shared lexicon. Korean is included on evidence: it
+  worked in live testing.
+
+French was cut for one reason: adding it creates fr↔es and en↔fr edges.
+Both are high-cognate, low-distance pairs and would reintroduce the #125
+failure mode into an otherwise clean mesh. Excluded on the same grounds:
+any Romance-to-Romance pair, Germanic neighbours (nl, sv), and en↔hi, where
+speakers code-switch constantly.
+
+**This set is a function of current language-identification quality in the
+Gemini Live API, not a permanent product decision.** The constraint is that
+turn direction is inferred rather than known. Once the API exposes a
+reliable independent language signal, or once the on-device speech
+recognition referee in #135 is in place and validated, the acoustic-distance
+requirement relaxes and French and other close pairs become candidates.
+Revisit then.
+
+Decided 2026-08-18, and applied to the code in the same session: `Lang` now
+holds exactly these four, both settings wheels offer all of them, and the
+French, Chinese, Tagalog and Vietnamese cases are gone along with the
+partner-only distinction (#30) that Tagalog and Vietnamese existed for. A
+phone that stored one of the retired languages loads the default pair
+instead, and says so in the diagnostic log.
+
 ### 3.1 Translation direction
 The app translates between an explicitly selected **language pair**
 (language pill → Sprachen): a **home** language (German by default — the phone
 owner's reader language) and a **partner** language (English/🇺🇸 by
-default). Available: German, English (US), Spanish (MX), French, Korean,
-Chinese — every pairing, both directions. Tagalog and Vietnamese are
-**partner-only** (decision, 2026-08-12): selectable as the other person's
-language, never as home — home is the reader's side and renders the whole
-UI, and these two have no reviewed UI set.
+default). Available: the v1 set in §3.0 (German, English (US), Korean,
+Spanish (MX)), every pairing, both directions, either language on either
+side. There is no partner-only language: every one of the four renders the
+whole UI, so every one of them can be the reader's side.
 
 - Someone speaks the **partner language** → said in the **home language**.
 - Someone speaks the **home language** → said in the **partner language**.

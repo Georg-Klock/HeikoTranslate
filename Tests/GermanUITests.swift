@@ -245,15 +245,11 @@ final class GermanUITests: XCTestCase {
             XCTAssertEqual(lang.endonym, s.languageNames[lang],
                            "\(lang.rawValue) endonym must come from its own set")
 
-            // Partner-only languages (#30) have NO set of their own by
-            // design: the reader is never them, and of(_:) falls back to
-            // German. What they MUST have is a name in every set (asserted
-            // above) — the rest of this test does not apply.
-            guard lang.canBeHome else {
-                XCTAssertEqual(UIStrings.of(lang).micPaused, de.micPaused,
-                               "\(lang.rawValue) must fall back to the app's own language, German")
-                continue
-            }
+            // Every language in the v1 set is a reader language (SPEC §3.0),
+            // so every one of them owns a full set. The partner-only fallback
+            // branch that used to sit here went with #30's Tagalog and
+            // Vietnamese: there is no longer a language that reaches `of(_:)`
+            // without a set of its own.
             guard lang != .de else { continue }
             // A handful of markers: if these still read German, the set was
             // copied rather than translated.

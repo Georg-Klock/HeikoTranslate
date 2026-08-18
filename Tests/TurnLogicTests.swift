@@ -693,15 +693,23 @@ final class TurnLogicTests: XCTestCase {
     // on a language that is NEITHER side mean no session translated into
     // the home reader's language, so there is still nothing legal to show
     // — the turn is rejected, exactly as before #75.
+    //
+    // The neither-side language is now one that is still IN the set (es, on a
+    // de↔ko pair). It used to be `fr`, which the v1 narrowing retired: an
+    // unmapped code casts no global vote by design (L1.54b, the "ja"/"pt"
+    // self-target lie), so a retired language no longer produces a settle for
+    // this veto to act on. That is not a rewording. It is the shape #125
+    // actually measured, a pair settling on a set member belonging to neither
+    // side.
     func testL1_47e_neitherSideSettleStillVetoes() {
-        var l = TurnLogic(home: .de, partner: .es)
-        settle(&l, "fr", at: t(0))
+        var l = TurnLogic(home: .de, partner: .ko)
+        settle(&l, "es", at: t(0))
         let bubble = l.commit(
-            inputs: [.es: " Um, mir geht es sehr gut. Vielen Dank für die Nachfrage."],
-            outputs: [.es: "Este, me siento muy bien. Muchas gracias por preguntar."])
+            inputs: [.ko: " Um, mir geht es sehr gut. Vielen Dank für die Nachfrage."],
+            outputs: [.ko: "저는 아주 잘 지내요. 물어봐 주셔서 감사합니다."])
         XCTAssertNil(bubble, "a neither-side settle has no translation to trust")
         XCTAssertEqual(l.lastRejectReason,
-                       "codes-veto: settled fr, home session never translated")
+                       "codes-veto: settled es, home session never translated")
     }
 
     // L1.47f — the yield needs POSITIVE evidence that home speech was
@@ -1317,13 +1325,12 @@ final class FillerWordTests: XCTestCase {
         }
     }
 
-    // Unstudied languages are never touched, even when they contain tokens
-    // that happen to look like English fillers.
+    // The unstudied language is never touched, even when it contains tokens
+    // that happen to look like English fillers. Korean is the only one left
+    // (SPEC §3.0); the fr and zh rows went with their languages.
     func testUnstudiedLanguagesUntouched() {
-        XCTAssertEqual(FillerWords.strip("Um, je voudrais un café.", for: .fr),
-                       "Um, je voudrais un café.")
         XCTAssertEqual(FillerWords.strip("음, 커피 주세요.", for: .ko), "음, 커피 주세요.")
-        XCTAssertEqual(FillerWords.strip("嗯，我要一杯咖啡。", for: .zh), "嗯，我要一杯咖啡。")
+        XCTAssertEqual(FillerWords.strip("음 커피", for: .ko), "음 커피")
     }
 
     // The pair-based commit cleans both lines with each line's own rules.
