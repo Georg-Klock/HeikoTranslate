@@ -31,6 +31,15 @@ protocol LiveTranslationSocket: AnyObject {
     func connect()
     func close()
     func sendAudio(_ pcm16kData: Data)
+    /// Manual turn boundaries (#135 interpreter mode). No-ops on the shipping
+    /// path, where the model does its own endpointing.
+    func sendActivityStart()
+    func sendActivityEnd()
+}
+
+extension LiveTranslationSocket {
+    func sendActivityStart() {}
+    func sendActivityEnd() {}
 }
 
 extension GeminiLiveSession: LiveTranslationSocket {}
@@ -268,6 +277,8 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// produced with strictly more of the utterance. So the next output after
     /// a turn boundary clears what came before, text and held audio together.
     private var interpreterResponseEnded = false
+    /// Whether an app-declared activity window is currently open.
+    private var interpreterActivityOpen = false
 
     private var activePair: Set<Lang> = []
     private var dead: Set<Lang> = []
@@ -671,24 +682,12 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Selecting on readiness rather than mere absence from `dead` is the
     /// GitHub #15 fix; internal so L1 can drive it without audio hardware.
     func forward(_ chunk: Data) {
-        // Do not let the interpreter hear itself. Measured on 2.4.70: German
-        // in produced "ça va bien." — correct — and then "Gut.", which is the
-        // model translating its OWN French output back into German. A
-        // round trip, straight through the microphone.
-        //
-        // This is specific to interpreter mode and cannot happen on the
-        // shipping path, where each session's target is pinned: a French-target
-        // session cannot emit German however much French it hears. A general
-        // model translates whatever speech reaches it, and once audio plays
-        // live our own voice is in the room while the mic is still streaming.
-        // Hardware AEC attenuates it; attenuated speech is still speech to a
-        // model that is listening for any.
-        //
-        // The cost is half-duplex: the speaker cannot interrupt the
-        // translation while it plays. For an interpreter that is the normal
-        // social contract — you wait for it to finish — and it is a far
-        // smaller price than the app translating itself in a loop.
-        if AppConfig.interpreterMode, isPlayingOutput { return }
+        // A half-duplex gate lived here for one build (2.4.71) and made
+        // things worse: dropping mic audio while the loudspeaker played cut
+        // the speaker off mid-utterance, and the model answered the fragments.
+        // The self-translation it was meant to stop is handled properly by
+        // manual activity windows instead — our own voice arrives outside any
+        // window, so it is not part of a turn at all.
         for (lang, session) in sessions {
             if readySessions.contains(lang) {
                 session.sendAudio(chunk)
@@ -733,6 +732,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         interpreterOutputBuffer = ""
         interpreterPendingAudio.removeAll()
         interpreterResponseEnded = false
+        interpreterActivityOpen = false
         turn.endTurn()
         inputs = [:]
         outputs = [:]
@@ -1187,6 +1187,7 @@ final class GeminiLiveTranslationService: ObservableObject {
                 // the false start and the correction played end to end.
                 if interpreterResponseEnded {
                     interpreterResponseEnded = false
+        interpreterActivityOpen = false
                     if let previous = interpreterTranslator {
                         let dropped = pendingOutput[previous]?.count ?? 0
                         outputs[previous] = ""
@@ -1598,6 +1599,14 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// in the turn's life. Named so the tap and the test seam share it.
     private func noteLoudMicSample() {
         speechHeardThisTurn = true
+        // Manual turn boundary (#135): the model's own endpointing produced
+        // every garble, so in interpreter mode the APP states when a turn
+        // opens, using the mic-aware clock #78 tuned on device.
+        if AppConfig.interpreterMode, !interpreterActivityOpen {
+            interpreterActivityOpen = true
+            sessions.values.forEach { $0.sendActivityStart() }
+            diag("turn", "activity START — app-owned turn boundary")
+        }
         lastLoudMicAt = Date()
         if SpeechEndPolicy.speechResumesTurn(speakerHasStopped: speakerHasStopped,
                                              isPlayingOutput: isPlayingOutput) {
@@ -1631,6 +1640,11 @@ final class GeminiLiveTranslationService: ObservableObject {
             return
         }
         speakerHasStopped = true
+        if AppConfig.interpreterMode, interpreterActivityOpen {
+            interpreterActivityOpen = false
+            sessions.values.forEach { $0.sendActivityEnd() }
+            diag("turn", "activity END — one window in, one response out")
+        }
         diag("turn", "speaker stopped — waiting for committed translation audio")
         // Re-evaluate first: the home-silence confirm is time-based, and on a
         // laggy connection the whole translation can arrive in one burst

@@ -410,16 +410,37 @@ final class GeminiLiveSession: NSObject {
             // two-word answer at a till is exactly what it waits longest on.
             // Eight seconds for "Ja, bitte" is not a slower product, it is a
             // different and unusable one.
+            // MANUAL turn boundaries. The model's own endpointing is what
+            // produced every garble: it answered a half-finished sentence,
+            // then answered again when more arrived, and the two generations
+            // ran CONCURRENTLY — their fragments interleaved into
+            // "Salut, je suisBonjour, je Heiko et comment ça va ?" (2.4.71).
+            // Playing live cannot fix that, because the braid is in the
+            // stream rather than in our buffering; tuning sensitivity cannot
+            // fix it either, because a breath pause is a legitimate end of
+            // speech to anything listening acoustically.
+            //
+            // With detection disabled the app states the boundaries from its
+            // own mic-aware turn clock — the one tuned against device
+            // evidence in #78, which defers through a breath pause. One
+            // activity window in, one response out.
             setup["realtimeInputConfig"] = [
-                "automaticActivityDetection": [
-                    "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
-                    "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH",
-                    "prefixPaddingMs": 20,
-                    "silenceDurationMs": 200
-                ]
+                "automaticActivityDetection": ["disabled": true]
             ]
         }
         send(json: ["setup": setup])
+    }
+
+    /// Mark the start of a user turn. Only meaningful with automatic activity
+    /// detection disabled, i.e. in `.interpreter` mode.
+    func sendActivityStart() {
+        send(json: ["realtimeInput": ["activityStart": [String: Any]()]])
+    }
+
+    /// Mark the end of a user turn — the model answers ONCE, for exactly what
+    /// fell inside the window.
+    func sendActivityEnd() {
+        send(json: ["realtimeInput": ["activityEnd": [String: Any]()]])
     }
 
     private func send(json: [String: Any]) {
