@@ -112,9 +112,9 @@ struct LanguageColumn: View {
                                   otherSide: TurnLogic.Lang,
                                   displayName: (TurnLogic.Lang) -> String) -> [TurnLogic.Lang] {
         // Both columns offer the same four languages now: the v1 set is fully
-        // interchangeable (SPEC §3.0), so the home column's extra filter — it
-        // used to drop the partner-only pair (#30), which had no UI set — has
-        // nothing left to drop and is gone.
+        // interchangeable (SPEC §3.0), so the home column's extra filter has
+        // nothing left to drop and is gone. It used to drop the partner-only
+        // pair (#30), which had no UI set.
         TurnLogic.Lang.allCases
             .filter { !excludesOtherSide || $0 != otherSide }
             .sorted { displayName($0).localizedCompare(displayName($1)) == .orderedAscending }

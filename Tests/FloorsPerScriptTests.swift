@@ -99,6 +99,6 @@ final class FloorsPerScriptTests: XCTestCase {
         var shortAnswer = TurnLogic(home: .ko, partner: .de)
         shortAnswer.noteOutputs([.ko: "좋아요"], inputs: [:], at: t(0))
         XCTAssertEqual(shortAnswer.direction, .foreignSpoken,
-                       "3 chars meets the measured ko decisive floor — the baseline 8 swallowed it")
+                       "3 chars meets the measured ko decisive floor, which the baseline 8 swallowed")
     }
 }

@@ -15,7 +15,7 @@ import Foundation
 ///
 /// **Review status.** German is the reviewed original (see `GermanUITests`).
 /// English was written alongside it. **Spanish and Korean have still never
-/// been read by a speaker of them** — that is what #6 asks for and this is
+/// been read by a speaker of them.** That is what #6 asks for and this is
 /// not it. (The French and Chinese sets were deleted with their languages on
 /// 2026-08-18, SPEC §3.0; the review debt shrank from four sets to two, which
 /// is a side effect of the decision and not a reason for it.)
@@ -52,7 +52,7 @@ struct UIStrings {
     /// The unreviewed sets all said some form of "tap the screen" until
     /// 2026-08-13, which is both vaguer than the contract (the tap that
     /// recovers is on the button) and drops the *why*. They now name the
-    /// outcome — turn it back on — the way English does. #6.
+    /// outcome, turn it back on, the way English does. #6.
     let micResumeFailed: String
     let connectionError: String
     /// The key this build shipped with has been revoked — rotation after

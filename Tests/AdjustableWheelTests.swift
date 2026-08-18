@@ -28,7 +28,7 @@ final class AdjustableWheelTests: XCTestCase {
         let home = LanguageColumn.selectableOptions(
             excludesOtherSide: false, otherSide: .de, displayName: name)
         XCTAssertEqual(home.count, TurnLogic.Lang.allCases.count,
-                       "the ME column offers the whole set — a collision there swaps, by design")
+                       "the ME column offers the whole set; a collision there swaps, by design")
     }
 
     // A full lap in each direction visits every option exactly once and

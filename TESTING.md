@@ -170,7 +170,7 @@ sessions hallucinating one wrong language together.
 | L1.47b | The same echo with codes settled on HOME (the referee-log pattern) | RIGHT — there the ratio path alone was the failure | **R2** |
 | L1.47c | A one-token identical output ("Navigator") | Still a translation — cognates, numbers and names stay LEFT | **R2** |
 | L1.47d | A third language's long translations in both sessions | LEFT via home — a real translation shares no tokens with the heard text | **R2** |
-| L1.47e | Codes settled on a language in the set that is NEITHER side (es on a de↔ko pair) | Still vetoed — no session translated into the reader's language. A language OUTSIDE the set produces an unmapped code, which casts no global vote (L1.54b) and so never reaches this veto | **R3** |
+| L1.47e | Codes settled on a language in the set that is NEITHER side (es on a de↔ko pair) | Still vetoed, because no session translated into the reader's language. A language OUTSIDE the set produces an unmapped code, which casts no global vote (L1.54b) and so never reaches this veto | **R3** |
 | L1.47f | A partner output that is itself the echo, or a settle with no partner-session votes at all | Veto holds — the yield needs positive evidence that HOME was spoken, not a plausible-looking translation | **R2/R3** |
 | L1.47g | `noteOutputs` on the same #75 data | homeSpoken after the confirm window — streaming and commit agree | **R2** |
 | L1.47h | Both sessions misread half the German, crossed (after-run 1) | RIGHT — the union echo test sees the round trip for what it is, and the crossed per-session votes carry the yield | **R1/R2** |
@@ -297,9 +297,9 @@ a test. One campaign exclusion, recorded in the table: a ~300ms utterance
 | ID | Given | Expect | Rule |
 |---|---|---|---|
 | L1.74 | Every language's floors vs the German baseline | Loosen-only, and the Latin homes keep the baseline exactly | **#29** |
-| L1.74b | An 8-char ko translation against a 22-char echo (ratio 0.36), codes LYING home | Counts as a real translation and beats the codes (the L1.20 doctrine), where the baseline 0.4 handed the turn to the lying codes — wrong side. The case sits inside the 0.34–0.4 gap on purpose: that gap is the whole of what the per-script floor buys | **R2** |
+| L1.74b | An 8-char ko translation against a 22-char echo (ratio 0.36), codes LYING home | Counts as a real translation and beats the codes (the L1.20 doctrine), where the baseline 0.4 handed the turn to the lying codes, which is the wrong side. The case sits inside the 0.34 to 0.4 gap on purpose: that gap is the whole of what the per-script floor buys | **R2** |
 | L1.74c | The decisive path, densest script: 1 char alone vs a 3-char real answer | 1 stays a false start; 3 stands, which the baseline 8 swallowed | **R2/R4** |
-| L1.74d | A ko short answer through commit under settled foreign codes | Shape coverage, labelled as such — the settled-codes route admits these regardless; the discrimination lives in the rows above | **R2** |
+| L1.74d | A ko short answer through commit under settled foreign codes | Shape coverage, labelled as such: the settled-codes route admits these regardless, and the discrimination lives in the rows above | **R2** |
 
 The language set (SPEC §3.0, 2026-08-18). Four languages, fully
 interchangeable, so six pairs in both orders. This section replaces the
@@ -311,19 +311,19 @@ and its gates are gone and L1.75/L1.75b with them.
 
 What the narrowing created instead is a real migration. Shipped builds wrote
 `fr`, `zh`, `tl` and `vi` into `settings.homeLang` / `settings.partnerLang`,
-and this build cannot decode them, so #90's init repair — written as
-defence-in-depth against a state no build could reach — is now a path that
+and this build cannot decode them, so #90's init repair, written as
+defence-in-depth against a state no build could reach, is now a path that
 runs on ordinary phones. It is also no longer home-side only: a retired
 language is unusable on either side.
 
 | ID | Given | Expect | Rule |
 |---|---|---|---|
-| L1.75c | A persisted retired home (`settings.homeLang = "tl"`), fresh init | Repaired to the default home — observers do not fire during init, so no binding guard can cover this path. The distinct-pair fix re-runs after the repair, and the STORE is repaired too, or it lasts one launch | **R8/§3.0/#90** |
+| L1.75c | A persisted retired home (`settings.homeLang = "tl"`), fresh init | Repaired to the default home. Observers do not fire during init, so no binding guard can cover this path. The distinct-pair fix re-runs after the repair, and the STORE is repaired too, or it lasts one launch | **R8/§3.0/#90** |
 | L1.75d | A valid persisted pair, and separately a retired PARTNER, through the same init | The valid pair loads unchanged in memory and in the store; the retired partner falls back and the fallback is written through | **§4.1/§3.0/#90** |
 | L1.76 | `Lang.allCases`, and the retired codes | Exactly de/en/es/ko; `fr`/`zh`/`tl`/`vi` do not decode, and a stored one is told apart from nothing-stored | **§3.0** |
-| L1.76b | Every ordered pair of distinct languages, seated on the real view model | All twelve seat — the set is fully interchangeable, neither side is privileged | **§3.0/§4.4** |
+| L1.76b | Every ordered pair of distinct languages, seated on the real view model | All twelve seat: the set is fully interchangeable, neither side is privileged | **§3.0/§4.4** |
 | L1.76c | Both settings columns | Both offer the whole set, minus only the language already on the other side | **§3.0/§4.4** |
-| L1.76d | `UIStrings.of` for every language | Each owns a full set — there is no fallback branch left for a gap to hide in | **§4.1/#6** |
+| L1.76d | `UIStrings.of` for every language | Each owns a full set, so there is no fallback branch left for a gap to hide in | **§4.1/#6** |
 
 The wheels, for VoiceOver (#14, 2026-08-11). Each language column is ONE
 adjustable element; a swipe steps through the same displayed order the
