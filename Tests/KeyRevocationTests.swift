@@ -153,7 +153,7 @@ final class KeyRevocationTests: XCTestCase {
     }
 
     func testEveryLanguageHasTheSentence() {
-        for lang in TurnLogic.Lang.allCases where lang.canBeHome {
+        for lang in TurnLogic.Lang.allCases {
             XCTAssertFalse(UIStrings.of(lang).updateRequired.isEmpty)
         }
     }

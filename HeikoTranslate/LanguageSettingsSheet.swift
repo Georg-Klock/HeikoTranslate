@@ -111,13 +111,12 @@ struct LanguageColumn: View {
     static func selectableOptions(excludesOtherSide: Bool,
                                   otherSide: TurnLogic.Lang,
                                   displayName: (TurnLogic.Lang) -> String) -> [TurnLogic.Lang] {
+        // Both columns offer the same four languages now: the v1 set is fully
+        // interchangeable (SPEC §3.0), so the home column's extra filter — it
+        // used to drop the partner-only pair (#30), which had no UI set — has
+        // nothing left to drop and is gone.
         TurnLogic.Lang.allCases
             .filter { !excludesOtherSide || $0 != otherSide }
-            // The HOME column offers only full app languages: a partner-only
-            // language (#30) has no UI set, so the reader's side must never
-            // become one. The partner column offers everything the model
-            // translates.
-            .filter { excludesOtherSide || $0.canBeHome }
             .sorted { displayName($0).localizedCompare(displayName($1)) == .orderedAscending }
     }
 
@@ -191,10 +190,10 @@ struct LanguageColumn: View {
     ///
     /// The Figma's two bubbles are 187 and 186pt on a 393pt sheet — the same
     /// width whatever is inside them. Hugging looked right with one language
-    /// and turned the screen restless with six: "中文" and "Französisch" are
-    /// nowhere near the same length, so the bubble, and the descriptor pinned
-    /// to its edge, jumped every time the language changed. A frame the words
-    /// sit inside does not move at all.
+    /// and turned the screen restless with several: "한국어" and "Koreanisch"
+    /// are nowhere near the same length, so the bubble, and the descriptor
+    /// pinned to its edge, jumped every time the language changed. A frame the
+    /// words sit inside does not move at all.
     private var bubbleWidth: CGFloat {
         // A shade wider than the Figma's 187, because a 30pt flag takes more
         // room than the 20pt one the design measured.
