@@ -40,18 +40,15 @@ enum FillerWords {
     }
 
     /// Per-language entry point. Only German, English, and Spanish have
-    /// studied lists; for every other language nothing is stripped — the
-    /// adversarial review of the first list proved that deleting real words
-    /// is the expensive failure, and we haven't studied French/Korean/
-    /// Chinese hesitation noises against real-word collisions.
+    /// studied lists; Korean strips nothing — the adversarial review of the
+    /// first list proved that deleting real words is the expensive failure,
+    /// and nobody has studied Korean hesitation noises against real-word
+    /// collisions.
     static func strip(_ text: String, for lang: TurnLogic.Lang) -> String {
         switch lang {
         case .de: return strip(text, isGerman: true)
         case .en, .es: return strip(text, isGerman: false)
-        // tl/vi join the unstudied set for the same reason (#30): deleting
-        // real words is the expensive failure, and nobody has studied their
-        // hesitation noises against real-word collisions.
-        case .fr, .ko, .zh, .tl, .vi: return text
+        case .ko: return text
         }
     }
 
