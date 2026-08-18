@@ -146,20 +146,6 @@ Tools/l2probe.sh de "Where is the train station?"                    # L2
 Tools/l3replay.sh                                                    # L3
 ```
 
-## Getting it onto a tester's iPhone (TestFlight)
-
-1. Enroll in the [Apple Developer Program](https://developer.apple.com/programs/)
-   ($99/year) using your own Apple ID.
-2. In Xcode: *Product → Archive*, then use the Organizer to upload the
-   archive to App Store Connect.
-3. In [App Store Connect](https://appstoreconnect.apple.com), open
-   *TestFlight* for the app and add your tester by email.
-4. The tester installs the free **TestFlight** app, accepts the emailed invite,
-   and installs Heiko Translate through it. Best done together on a call the
-   first time.
-5. TestFlight builds expire after ~90 days — repeat steps 2–3 to push
-   updates or renew.
-
 ## Project layout
 
 ```
