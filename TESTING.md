@@ -111,8 +111,9 @@ stated count against.
 | L1.42 | Permission granted in Settings, app returns | The denial clears and the button starts listening again | **R8** |
 | L1.43 | The German string set | Exactly the reviewed wording, asserted on the real values | **§4.3** |
 | L1.44 | All six language sets | Complete, keep their number placeholder, and none is still German | **§4.3** |
-| L1.45 | Six wheel notches in rapid succession | Six persists, ONE session restart | **R7/#1** |
-| L1.45b | A manual tap while a restart is pending | The restart is dropped — the tap owns the session | **R8** |
+| L1.45 | Six wheel notches, then the sheet is dismissed | Six persists, NO restart while the sheet is open (not even after a delay), ONE on dismissal | **R7/#1/#146** |
+| L1.45b | The sheet is dismissed on the pair it opened with, including after scrolling away and back | No restart — a value scrolled past is not a value chosen | **R4/#146** |
+| L1.45c | A language change while nothing is listening | No restart; the choice still persists for the next start | **#146** |
 | L1.46 | A cold launch, before any tap | Glyph reads muted, notice stays silent — two rules, disagreeing on purpose | **R8** |
 | L1.46c | Every combination of listening / launching | The glyph is muted whenever nothing is running; `hasEverStarted` does not enter into it | **R8** |
 | L1.47 | A fresh install, no stored settings | Opens ME: German, YOU: English | **§4.1** |

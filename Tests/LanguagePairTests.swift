@@ -318,42 +318,89 @@ final class LanguagePairTests: XCTestCase {
         XCTAssertNil(VM.bottomNotice(muted: false, warning: nil, micNotice: nil))
     }
 
-    /// L1.45 — one spin of a wheel restarts the sessions ONCE.
+    /// Puts the view model in a listening state with a known running pair,
+    /// without audio hardware. `serviceStartForTesting` stands in for the
+    /// audio-and-network step, and the real `start()` records the pair around
+    /// it — which is the thing these tests are about.
+    private func makeListeningViewModel(
+        home: TurnLogic.Lang = .de, partner: TurnLogic.Lang = .en
+    ) async -> ConversationViewModel {
+        let vm = ConversationViewModel()
+        vm.homeLang = home
+        vm.partnerLang = partner
+        vm.serviceStartForTesting = { true }
+        await vm.beginListening()
+        return vm
+    }
+
+    /// L1.45 — a whole spin of the wheel touches no connection; the pair
+    /// reaches the sessions once, when the sheet closes.
     ///
     /// The wheels are rotaries: a flick crosses several notches and each notch
-    /// is a language change. Measured on the device 2026-08-07 — five changes
-    /// inside 240ms — and each one used to tear both WebSocket sessions down
-    /// and rebuild them, which is the GitHub #1 churn arriving by a new route.
+    /// is a language change. Every one of them used to tear both WebSocket
+    /// sessions down and rebuild them (GitHub #1's churn by a new route), and
+    /// the 0.4s settle delay that replaced it still produced five full
+    /// restarts for one language change on device — a deliberate scroll rests
+    /// between detents for longer than any responsive interval. GitHub #146.
     ///
-    /// Persisting still happens per change, so the stored pair is always the
-    /// truth; only the restart coalesces.
-    func testL1_45_aSpinRestartsTheSessionsOnce() async {
-        let (vm, baseline) = makeViewModel()
+    /// Persisting still happens per notch, so the stored pair is always the
+    /// truth. Only the restart waits, and it waits for a signal rather than a
+    /// clock.
+    func testL1_45_aSpinReachesTheSessionsOnceOnDismiss() async {
+        let vm = await makeListeningViewModel()
+        let baseline = vm.languageApplyCount
         XCTAssertEqual(vm.languageRestartCount, 0)
 
-        for lang in [TurnLogic.Lang.es, .fr, .ko, .zh, .es, .en] {
+        for lang in [TurnLogic.Lang.es, .fr, .ko, .zh, .es, .fr] {
             vm.partnerLang = lang
         }
         XCTAssertEqual(vm.languageApplyCount - baseline, 6,
                        "every notch still persists — only the restart waits")
-        XCTAssertEqual(vm.languageRestartCount, 0, "nothing has reached the sessions yet")
+        XCTAssertEqual(vm.languageRestartCount, 0,
+                       "the sheet is still open: nothing may reach the sessions")
 
-        try? await Task.sleep(nanoseconds: UInt64(
-            (ConversationViewModel.languageSettleDelay + 0.3) * 1_000_000_000))
+        // Long enough that any reintroduced settle timer would have fired.
+        // This is the assertion that distinguishes "waits for dismissal" from
+        // "waits a bit longer": the old 0.4s debounce passes the check above
+        // and fails this one.
+        try? await Task.sleep(nanoseconds: 900_000_000)
+        XCTAssertEqual(vm.languageRestartCount, 0,
+                       "no clock may restart the sessions — only the dismissal")
+
+        vm.languageSelectionDidFinish()
         XCTAssertEqual(vm.languageRestartCount, 1, "six notches, one restart")
     }
 
-    /// L1.45b — a manual tap cancels a restart that has not fired yet, so it
-    /// cannot arrive afterwards and start something the user just stopped.
-    func testL1_45b_aTapCancelsAPendingLanguageRestart() async {
+    /// L1.45b — opening the sheet and closing it again is free.
+    ///
+    /// The expensive reading of "changing it restarts the translation" is that
+    /// any visit to the sheet costs a reconnect. Dismissing without choosing
+    /// anything different must not interrupt a conversation in progress.
+    func testL1_45b_dismissingWithoutAChangeRestartsNothing() async {
+        let vm = await makeListeningViewModel(home: .de, partner: .en)
+
+        vm.languageSelectionDidFinish()
+        XCTAssertEqual(vm.languageRestartCount, 0, "same pair, nothing to do")
+
+        // Scrolled away and back again: the pair the sessions run never
+        // changed, so neither should the sessions.
+        vm.partnerLang = .fr
+        vm.partnerLang = .ko
+        vm.partnerLang = .en
+        vm.languageSelectionDidFinish()
+        XCTAssertEqual(vm.languageRestartCount, 0,
+                       "a value scrolled past is not a value chosen")
+    }
+
+    /// L1.45c — with nothing listening there is nothing to restart. The next
+    /// start reads the stored pair, which every notch has already written.
+    func testL1_45c_aChangeWhileStoppedRestartsNothing() {
         let (vm, _) = makeViewModel()
         vm.partnerLang = .fr
-        vm.noteManualToggle()
-
-        try? await Task.sleep(nanoseconds: UInt64(
-            (ConversationViewModel.languageSettleDelay + 0.3) * 1_000_000_000))
-        XCTAssertEqual(vm.languageRestartCount, 0,
-                       "the tap owns the session; the pending restart is dropped")
+        vm.languageSelectionDidFinish()
+        XCTAssertEqual(vm.languageRestartCount, 0)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.partnerLang"), "fr",
+                       "the choice still persists — only the restart is conditional")
     }
 
     /// L1.46 — on a cold launch the NOTICE stays silent while the GLYPH
