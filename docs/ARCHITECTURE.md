@@ -31,13 +31,48 @@ where they disagree).
 ## The language pair (2026-07-28)
 
 Settings select an explicit pair: home (right side, large type, default
-German) and partner (left, default English/🇺🇸) from de/en/es/fr/ko/zh —
-every code verified against the live model (`Tools/targetprobe.sh`). One
-session per side, so exactly TWO sessions run. The direction doctrine
-generalizes: the home session translates substantially iff the input was
-not the home language; partner-session output plus 1.2s of home silence
-means the home language was spoken. The historical section below explains
-why three sessions existed before the pair was explicit.
+German) and partner (left, default English/🇺🇸) from de/en/es/ko — every
+code verified against the live model (`Tools/targetprobe.sh`). Both wheels
+offer the same four; either language can take either side.
+
+**Exactly two sessions run, and only the pair's two.** `beginListening`
+connects one `GeminiLiveSession` per side and records the pair in
+`activePair` (`GeminiLiveTranslationService.swift`, the `for lang in [home,
+partner]` loop); every 64ms mic chunk is forwarded to both. `Lang.allCases`
+is the settings menu, never the session set. Conflating the two is a bug
+that has actually shipped: the startup watchdog treated `allCases` as the
+thing to keep alive and spun up all six languages of the time, which the
+device log caught as a turn carrying output from five sessions on a
+two-language pair. Nothing runs a language the user did not select, and
+changing the pair mid-conversation tears both sessions down and rebuilds
+them (coalesced, so one spin of the wheel is one restart).
+
+The direction doctrine generalizes: the home session translates
+substantially iff the input was not the home language; partner-session
+output plus 1.2s of home silence means the home language was spoken. The
+historical section below explains why three sessions existed before the pair
+was explicit.
+
+### Why the language set is small (2026-08-18)
+
+The set is four languages, and that is a routing constraint before it is a
+product one. Direction is inferred, never declared: the router reads who
+spoke from which fixed-language session produced plausible output, and that
+signal is circular. A session pinned to one language will transcribe a
+neighbouring language as its own and vote for it confidently, which is what
+#125, #121, #137 and #128 each document from device logs. Everything in
+`TurnLogic` under "Turn lifecycle" step 4 below — the per-session vote
+records, the crossed-evidence rule, echo share, the #32 function-word
+discriminator — is error correction over that one unreliable witness, so how
+well it works is a property of the pair, not of the code.
+
+Pair difficulty therefore tracks acoustic distance and shared vocabulary,
+and the v1 set was chosen so that every pair in the mesh leaves the
+crossed-evidence machinery something to work with. French was cut because it
+adds fr↔es and en↔fr, both high-cognate and low-distance, which puts the
+#125 shape back into an otherwise clean mesh. The full rationale and the
+conditions under which this relaxes are `SPEC.md` §3.0; the independent
+witness that would relax it is #135.
 
 ## Why three concurrent sessions (historical)
 
