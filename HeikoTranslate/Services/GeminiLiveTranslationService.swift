@@ -1412,6 +1412,31 @@ final class GeminiLiveTranslationService: ObservableObject {
         // the rest of the sentence.
         if rms > speechRMSThreshold { lastOutputAt = Date() }
 
+        // Interpreter mode plays as it arrives, and the reason is the whole
+        // point of the mode (#135).
+        //
+        // Holding exists because with TWO sessions the app had to know which
+        // one to play — the other was echoing, and releasing the wrong one put
+        // the speaker's own words back in the room. With ONE session there is
+        // nothing to choose: every chunk is the translation.
+        //
+        // And holding is what produced the garble. Three device builds in a
+        // row released an accumulated batch at commit, and when the model
+        // streamed two overlapping responses the batch braided them:
+        // "Super, commentBonjour, je vas-tu ? suis Heiko…" (2.4.69, 80 chunks
+        // at once). Played live, the same stream is what every realtime client
+        // plays — a false start, then the correction — which is a model
+        // behaviour a listener can follow rather than an artifact we made.
+        //
+        // The cost is real and accepted: turn-ending becomes the model's
+        // judgement, and it treats a breath pause as an ending, so it will
+        // sometimes speak over the speaker. Live playback does not cause that,
+        // it stops hiding it.
+        if AppConfig.interpreterMode {
+            play(pcm24kChunk: data)
+            return
+        }
+
         // Home-session audio corroborates the transcript signal, but only
         // once the transcript itself is substantial — a false start must not
         // flip the turn's direction. (`turn.home`, not `.de` — the hardcode
