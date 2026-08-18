@@ -28,6 +28,25 @@ struct SpeechEndPolicy {
     /// yet to calibrate against; the cap is what makes that ignorance safe.
     static let maxMicExtension: TimeInterval = 2.5
 
+    // MARK: - Interpreter mode (#135)
+    //
+    // With manual activity windows the app tells the model when a turn ends,
+    // and the model only THEN starts generating. So this clock is no longer
+    // just "when may we show a bubble" — it is dead air the listener sits
+    // through. Measured on 2.4.72: 1.4s idle plus up to 2.5s of mic veto,
+    // then 1.6-3.6s of generation, is 3-7s of silence after the speaker
+    // stops. Correct, and unusable.
+    //
+    // The shipping values stay exactly as they are. They were tuned for a
+    // DIFFERENT question — when may a bubble be committed — where being early
+    // is a wrong bubble and being late costs only patience. Here being late
+    // costs the conversation, and being early is now recoverable: an
+    // early-closed window means the rest of the sentence opens a NEW window
+    // and gets its own answer, which is two bubbles rather than the braid
+    // that made 2.4.69 unusable.
+    static let interpreterTranscriptIdle: TimeInterval = 0.7
+    static let interpreterMaxMicExtension: TimeInterval = 1.0
+
     /// Re-check cadence while deferred.
     static let recheckInterval: TimeInterval = 0.25
 
@@ -37,11 +56,12 @@ struct SpeechEndPolicy {
     /// - `lastLoudMicAt`: most recent mic buffer above the speech floor.
     /// - `deferredSince`: when this release attempt FIRST deferred, nil on
     ///   the initial attempt — the babble cap is measured from there.
-    static func mayRelease(now: Date, lastLoudMicAt: Date?, deferredSince: Date?) -> Bool {
+    static func mayRelease(now: Date, lastLoudMicAt: Date?, deferredSince: Date?,
+                           maxExtension: TimeInterval = maxMicExtension) -> Bool {
         guard let loud = lastLoudMicAt,
               now.timeIntervalSince(loud) < micQuietWindow else { return true }
         if let since = deferredSince,
-           now.timeIntervalSince(since) >= maxMicExtension { return true }
+           now.timeIntervalSince(since) >= maxExtension { return true }
         return false
     }
 

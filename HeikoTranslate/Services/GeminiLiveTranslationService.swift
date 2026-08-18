@@ -1581,7 +1581,9 @@ final class GeminiLiveTranslationService: ObservableObject {
         speakerHasStopped = false
         speechEndTimer?.invalidate()
         speechEndTimer = Timer.scheduledTimer(
-            withTimeInterval: SpeechEndPolicy.transcriptIdleThreshold,
+            withTimeInterval: AppConfig.interpreterMode
+                ? SpeechEndPolicy.interpreterTranscriptIdle
+                : SpeechEndPolicy.transcriptIdleThreshold,
             repeats: false
         ) { [weak self] _ in
             Task { @MainActor in self?.speakerStopped() }
@@ -1624,7 +1626,10 @@ final class GeminiLiveTranslationService: ObservableObject {
         if !SpeechEndPolicy.mayRelease(
             now: Date(),
             lastLoudMicAt: lastLoudMicAt,
-            deferredSince: deferredSince
+            deferredSince: deferredSince,
+            maxExtension: AppConfig.interpreterMode
+                ? SpeechEndPolicy.interpreterMaxMicExtension
+                : SpeechEndPolicy.maxMicExtension
         ) {
             let since = deferredSince ?? Date()
             if deferredSince == nil {
