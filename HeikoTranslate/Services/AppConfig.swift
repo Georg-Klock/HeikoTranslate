@@ -7,6 +7,16 @@ import Foundation
 /// key (console at aistudio.google.com). `Secrets.plist` is gitignored.
 enum AppConfig {
 
+    /// True when this process is an XCTest run.
+    ///
+    /// Used to keep MEASUREMENT flags out of the suite. Those flags live in
+    /// `Secrets.plist`, which the test host bundles, so a device experiment
+    /// switched on locally would otherwise change what L1 tests — and a green
+    /// suite that depends on which flags a machine happens to carry is not a
+    /// gate. Only ever used to force flags OFF; nothing here may make tests
+    /// take a path the app cannot.
+    static let isRunningTests: Bool = NSClassFromString("XCTestCase") != nil
+
     // One guard per failure, each named. These used to be a single guard
     // with a single "missing Secrets.plist" message — and under simulator
     // load a TRANSIENT read failure took that path and killed the app while
@@ -44,6 +54,14 @@ enum AppConfig {
     /// build's switch, not a feature: the mode is under test, and the
     /// arbitration it replaces has years of device evidence behind it.
     static var interpreterMode: Bool = {
+        // A measurement flag must never reach the test suite. L1 runs in a
+        // host that bundles the real Secrets.plist, so switching this on for a
+        // device run turned the suite red — the service opened ONE session
+        // where the tests expect the pair, and ReplacementWindowTests crashed
+        // on a nil unwrap. That is a test depending on local machine config,
+        // which is the same defect the capture flag hit (L1.104a) and is
+        // resolved the same way: tests get the shipping behaviour, always.
+        if isRunningTests { return false }
         guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
               let data = try? Data(contentsOf: url),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]

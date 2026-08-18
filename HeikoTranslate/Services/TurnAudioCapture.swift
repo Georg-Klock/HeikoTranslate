@@ -47,6 +47,10 @@ final class TurnAudioCapture: @unchecked Sendable {
 
     /// Whether to capture at all, read once from the bundle.
     static let isEnabled: Bool = {
+        // Same rule as AppConfig.interpreterMode: a measurement flag must not
+        // reach the suite. Without this, a machine with capture enabled has
+        // L1 writing real WAVs into the app container from every service test.
+        if AppConfig.isRunningTests { return false }
         guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
               let data = try? Data(contentsOf: url),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
