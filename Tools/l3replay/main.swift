@@ -413,10 +413,23 @@ final class ReplayRunner {
         if let ended = streamEndedAt {
             let sinceEnd = now.timeIntervalSince(ended)
             let contentQuiet = lastContentAt == .distantPast ? sinceEnd : quiet
-            if let id = turnCoordinator.currentID,
-               sinceEnd > endOfStreamQuiet, contentQuiet > endOfStreamQuiet,
-               turnMayFinalize(id, at: now) {
-                finalizeTurn(for: id)
+            if sinceEnd > endOfStreamQuiet, contentQuiet > endOfStreamQuiet {
+                // The WAV ran out `endOfStreamQuiet` ago and nothing has
+                // arrived since, so the speaker has stopped by definition —
+                // there is no more audio to resume with. Confirm it, because
+                // the lifecycle gate will not grant a finalization on
+                // transcript idleness alone.
+                if let id = turnCoordinator.currentID {
+                    turnCoordinator.confirmSpeakerStopped(for: id)
+                    if turnMayFinalize(id, at: now) { finalizeTurn(for: id) }
+                }
+                // Termination is NOT conditional on a turn being open. A
+                // replay that never opened one (silence, noise) and a replay
+                // whose turn already committed — finalizeTurn resets the
+                // coordinator, so currentID is nil — must both still end.
+                // Gating this on `currentID` hung every case until the
+                // timeout, which reads as an API outage rather than a
+                // harness bug.
                 finished = true
                 doneSem.signal()
                 return
