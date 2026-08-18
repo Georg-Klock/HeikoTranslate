@@ -671,6 +671,24 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Selecting on readiness rather than mere absence from `dead` is the
     /// GitHub #15 fix; internal so L1 can drive it without audio hardware.
     func forward(_ chunk: Data) {
+        // Do not let the interpreter hear itself. Measured on 2.4.70: German
+        // in produced "ça va bien." — correct — and then "Gut.", which is the
+        // model translating its OWN French output back into German. A
+        // round trip, straight through the microphone.
+        //
+        // This is specific to interpreter mode and cannot happen on the
+        // shipping path, where each session's target is pinned: a French-target
+        // session cannot emit German however much French it hears. A general
+        // model translates whatever speech reaches it, and once audio plays
+        // live our own voice is in the room while the mic is still streaming.
+        // Hardware AEC attenuates it; attenuated speech is still speech to a
+        // model that is listening for any.
+        //
+        // The cost is half-duplex: the speaker cannot interrupt the
+        // translation while it plays. For an interpreter that is the normal
+        // social contract — you wait for it to finish — and it is a far
+        // smaller price than the app translating itself in a loop.
+        if AppConfig.interpreterMode, isPlayingOutput { return }
         for (lang, session) in sessions {
             if readySessions.contains(lang) {
                 session.sendAudio(chunk)
