@@ -331,7 +331,12 @@ final class LanguagePairTests: XCTestCase {
         let (vm, baseline) = makeViewModel()
         XCTAssertEqual(vm.languageRestartCount, 0)
 
-        for lang in [TurnLogic.Lang.es, .fr, .ko, .zh, .es, .en] {
+        // Six notches, none of them the home language: a collision would fire
+        // the SPEC §4.4 swap and add an apply of its own, which is a different
+        // test (L1.75). The set is smaller than it was (SPEC §3.0), so the
+        // spin repeats languages rather than visiting six distinct ones —
+        // what this pins is the count of applies, not their variety.
+        for lang in [TurnLogic.Lang.es, .ko, .en, .ko, .es, .en] {
             vm.partnerLang = lang
         }
         XCTAssertEqual(vm.languageApplyCount - baseline, 6,
@@ -347,7 +352,7 @@ final class LanguagePairTests: XCTestCase {
     /// cannot arrive afterwards and start something the user just stopped.
     func testL1_45b_aTapCancelsAPendingLanguageRestart() async {
         let (vm, _) = makeViewModel()
-        vm.partnerLang = .fr
+        vm.partnerLang = .ko
         vm.noteManualToggle()
 
         try? await Task.sleep(nanoseconds: UInt64(
@@ -484,21 +489,22 @@ final class LanguagePairTests: XCTestCase {
         }
     }
 
-    /// L1.75c — a PERSISTED partner-only home is repaired during init.
+    /// L1.75c — a PERSISTED home naming a retired language is repaired at init.
     ///
-    /// The #30 belt in `homeLang`'s `didSet` reverts a partner-only write —
-    /// but property observers do not fire during `init`, and init is the one
-    /// path a bad STORED value actually arrives by. Not reachable by any
-    /// shipped build (the didSet reverts before anything persists); this is
-    /// defense-in-depth for future migrations and hand-edited containers.
-    /// GitHub #90.
-    func testL1_75c_aPersistedPartnerOnlyHomeIsRepairedAtInit() {
+    /// Property observers do not fire during `init`, so init is the one path a
+    /// bad STORED value arrives by. This was defense-in-depth for #90's
+    /// partner-only pair, which no shipped build could persist. It is not
+    /// hypothetical any more: shipped builds really did write `fr`, `zh`, `tl`
+    /// and `vi`, and the v1 language set retired all four (SPEC §3.0), so
+    /// every phone that used one carries a home value this build cannot
+    /// decode. Same repair, a cause that now actually occurs.
+    func testL1_75c_aPersistedRetiredHomeIsRepairedAtInit() {
         let restore = seedStoredPair(home: "tl", partner: "en")
         defer { restore() }
 
         let vm = ConversationViewModel()
         XCTAssertEqual(vm.homeLang, ConversationViewModel.defaultHomeLang,
-                       "a stored tl home must not seat — it has no UI set")
+                       "a stored tl home must not seat — tl is not a language any more")
         XCTAssertEqual(vm.partnerLang, .en,
                        "the partner side was valid and is not the repair's business")
         // And the repair must reach the STORE, or it lasts exactly one launch.
@@ -522,36 +528,43 @@ final class LanguagePairTests: XCTestCase {
     }
 
     /// L1.75d — a legitimate persisted pair rides through the same init path
-    /// untouched, in memory AND in the store. A partner-only PARTNER is a
-    /// legitimate state — tl on the partner side is exactly where it belongs
-    /// — so the repair must not so much as rewrite it. GitHub #90.
+    /// untouched, in memory AND in the store; and a retired language on the
+    /// PARTNER side is repaired too.
+    ///
+    /// That second half is a real change from #90, stated because it reverses
+    /// what this test used to assert. Under the partner-only design a `tl`
+    /// partner was a legitimate state and the repair was home-side only. With
+    /// the v1 set (SPEC §3.0) there is no language that is valid on one side
+    /// and not the other: a retired value is unusable wherever it sits.
     func testL1_75d_aLegitimatePersistedPairLoadsUnchanged() {
-        let restore = seedStoredPair(home: "es", partner: "fr")
+        let restore = seedStoredPair(home: "es", partner: "ko")
         defer { restore() }
 
         let vm = ConversationViewModel()
         XCTAssertEqual(vm.homeLang, .es)
-        XCTAssertEqual(vm.partnerLang, .fr)
+        XCTAssertEqual(vm.partnerLang, .ko)
         XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.homeLang"), "es",
                        "a valid stored value is not rewritten")
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.partnerLang"), "fr")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.partnerLang"), "ko")
 
-        _ = seedStoredPair(home: "de", partner: "tl")
+        _ = seedStoredPair(home: "de", partner: "fr")
         let vm2 = ConversationViewModel()
-        XCTAssertEqual(vm2.homeLang, .de)
-        XCTAssertEqual(vm2.partnerLang, .tl,
-                       "partner-only means partner is allowed — the repair is home-side only")
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.partnerLang"), "tl")
+        XCTAssertEqual(vm2.homeLang, .de, "the valid home side is not the repair's business")
+        XCTAssertEqual(vm2.partnerLang, ConversationViewModel.defaultPartnerLang,
+                       "a retired partner falls back — fr is not a language any more")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "settings.partnerLang"),
+                       vm2.partnerLang.rawValue,
+                       "and the repair reaches the store, or it lasts one launch")
     }
 
     /// L1.29e — the pair is never left with both sides equal, whichever wheel
     /// moved. R-invariant behind the swap: two identical sessions would both
     /// claim every turn.
     func testL1_29e_pairIsAlwaysTwoDistinctLanguages() {
-        // allCases, not a hand-written list: the old one stopped at fr, so
-        // ko and zh — selectable on the real wheels — were claimed covered
-        // and weren't. A future Lang case joins this invariant on the day
-        // it is added, not when someone remembers. GitHub #22.
+        // allCases, not a hand-written list: an older hand-written one
+        // stopped short of the languages the real wheels offered and claimed
+        // to cover them anyway. A Lang case joins this invariant on the day it
+        // is added or removed, not when someone remembers. GitHub #22.
         for lang in TurnLogic.Lang.allCases {
             let (vm, _) = makeViewModel()
             vm.partnerLang = lang

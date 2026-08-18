@@ -14,9 +14,11 @@ import Foundation
 /// every string. A missing translation is a build error.
 ///
 /// **Review status.** German is the reviewed original (see `GermanUITests`).
-/// English was written alongside it. **Spanish, French, Korean and Chinese
-/// have still never been read by a speaker of them** — that is what #6 asks
-/// for and this is not it.
+/// English was written alongside it. **Spanish and Korean have still never
+/// been read by a speaker of them** — that is what #6 asks for and this is
+/// not it. (The French and Chinese sets were deleted with their languages on
+/// 2026-08-18, SPEC §3.0; the review debt shrank from four sets to two, which
+/// is a side effect of the decision and not a reason for it.)
 ///
 /// What they have had is a second AI pass (2026-08-13, decision on #6): every
 /// string re-rendered independently and the reading kept that most of those
@@ -41,23 +43,23 @@ struct UIStrings {
     /// A failed AUTOMATIC resume — the app tried to restart listening by
     /// itself and could not. Deliberately actionable where micFailed is a
     /// statement: the reader was not at the button when this happened.
-    /// German approved by Georg 2026-08-06 (GitHub #5); the other five ride
-    /// the #6 native-review backlog like the rest of their sets.
+    /// German approved by Georg 2026-08-06 (GitHub #5); Spanish and Korean
+    /// ride the #6 native-review backlog like the rest of their sets.
     /// Also shown when the mic watchdog spends both rebuilds on a dead
     /// microphone and gives up (GitHub #87) — the same contract holds: the
     /// app tried by itself, could not, and a tap is the recovery.
     ///
-    /// The four unreviewed sets all said some form of "tap the screen"
-    /// until 2026-08-13, which is both vaguer than the contract (the tap
-    /// that recovers is on the button) and drops the *why*. They now name
-    /// the outcome — turn it back on — the way English does. #6.
+    /// The unreviewed sets all said some form of "tap the screen" until
+    /// 2026-08-13, which is both vaguer than the contract (the tap that
+    /// recovers is on the button) and drops the *why*. They now name the
+    /// outcome — turn it back on — the way English does. #6.
     let micResumeFailed: String
     let connectionError: String
     /// The key this build shipped with has been revoked — rotation after
     /// abuse, see GitHub #9. Terminal in a way connectionError is not: no
     /// retry can ever work, only an update can, and the one button opens the
     /// update page (the micDenied pattern). German is a CANDIDATE awaiting
-    /// Georg's on-device check; the other five ride the #6 review backlog.
+    /// Georg's on-device check; Spanish and Korean ride the #6 backlog.
     let updateRequired: String
 
     // Connection warnings
@@ -90,7 +92,7 @@ struct UIStrings {
     /// accessible manner"; this row opens the published policy. The word each
     /// language uses is the one its websites put on exactly this link — the
     /// reader is finding a legal page, not learning a coinage. German
-    /// approved by Georg 2026-08-13; the other five ride the #6 backlog.
+    /// approved by Georg 2026-08-13; Spanish and Korean ride the #6 backlog.
     let privacyPolicy: String
 
     // Accessibility
@@ -98,23 +100,17 @@ struct UIStrings {
     let startListeningLabel: String
     let stopListeningLabel: String
 
-    /// Every selectable language — the six full ones plus the
-    /// partner-only pair (#30) — named in THIS language.
+    /// Every selectable language (the v1 set, SPEC §3.0) named in THIS
+    /// language. Any of the four can be the reader's side, so every set
+    /// needs a name for every other.
     let languageNames: [TurnLogic.Lang: String]
 
     static func of(_ lang: TurnLogic.Lang) -> UIStrings {
         switch lang {
-        // Partner-only languages (#30) can never be the HOME/reader side —
-        // `canBeHome` gates the wheel and the collision swap — so no UI set
-        // exists for them. German is the safe fallback if an impossible
-        // state ever reaches here: the app's own language.
-        case .tl, .vi: return german
         case .de: return german
         case .en: return english
         case .es: return spanish
-        case .fr: return french
         case .ko: return korean
-        case .zh: return chinese
         }
     }
 
@@ -147,8 +143,7 @@ struct UIStrings {
         startListeningLabel: "Zuhören starten",
         stopListeningLabel: "Zuhören beenden",
         languageNames: [.de: "Deutsch", .en: "Englisch", .es: "Spanisch",
-                        .fr: "Französisch", .ko: "Koreanisch", .zh: "Chinesisch",
-                        .tl: "Tagalog", .vi: "Vietnamesisch"])
+                        .ko: "Koreanisch"])
 
     static let english = UIStrings(
         connecting: "Connecting…",
@@ -178,8 +173,7 @@ struct UIStrings {
         startListeningLabel: "Start listening",
         stopListeningLabel: "Stop listening",
         languageNames: [.de: "German", .en: "English", .es: "Spanish",
-                        .fr: "French", .ko: "Korean", .zh: "Chinese",
-                        .tl: "Tagalog", .vi: "Vietnamese"])
+                        .ko: "Korean"])
 
     // MARK: - Unreviewed translations (see the note on this type)
 
@@ -211,39 +205,7 @@ struct UIStrings {
         startListeningLabel: "Empezar a escuchar",
         stopListeningLabel: "Dejar de escuchar",
         languageNames: [.de: "Alemán", .en: "Inglés", .es: "Español",
-                        .fr: "Francés", .ko: "Coreano", .zh: "Chino",
-                        .tl: "Tagalo", .vi: "Vietnamita"])
-
-    static let french = UIStrings(
-        connecting: "Connexion…",
-        hearing: "À l'écoute",
-        translating: "Traduction",
-        micPaused: "Microphone en pause",
-        tapToSpeak: "Touchez pour parler",
-        micDenied: "Pas d'accès au microphone. Touchez pour ouvrir les Réglages.",
-        micFailed: "Impossible de démarrer le microphone.",
-        micResumeFailed: "Le microphone est coupé — touchez pour le réactiver.",
-        connectionError: "Problème de connexion. Veuillez réessayer.",
-        updateRequired: "Cette version de l'app ne fonctionne plus. Touchez pour mettre à jour.",
-        poorConnection: "Connexion faible — la traduction peut s'en ressentir.",
-        noServerResponse: "Pas de réponse du serveur — vérifiez votre connexion.",
-        offline: "Pas de connexion internet.",
-        micResumed: "Microphone réactivé — la traduction continue.",
-        othersSpeak: "Les autres parlent",
-        iSpeak: "Je parle",
-        textSize: "Taille du texte",
-        done: "Terminé",
-        usage: "Utilisation",
-        minutesSpokenFormat: "%.0f minutes de conversation",
-        sendLog: "Envoyer le journal à Georg",
-        sendLogSubtitleFormat: "Si quelque chose ne marche pas · %@",
-        privacyPolicy: "Politique de confidentialité",
-        settingsLabel: "Réglages",
-        startListeningLabel: "Commencer à écouter",
-        stopListeningLabel: "Arrêter d'écouter",
-        languageNames: [.de: "Allemand", .en: "Anglais", .es: "Espagnol",
-                        .fr: "Français", .ko: "Coréen", .zh: "Chinois",
-                        .tl: "Tagalog", .vi: "Vietnamien"])
+                        .ko: "Coreano"])
 
     static let korean = UIStrings(
         connecting: "연결 중…",
@@ -273,39 +235,7 @@ struct UIStrings {
         startListeningLabel: "듣기 시작",
         stopListeningLabel: "듣기 중지",
         languageNames: [.de: "독일어", .en: "영어", .es: "스페인어",
-                        .fr: "프랑스어", .ko: "한국어", .zh: "중국어",
-                        .tl: "타갈로그어", .vi: "베트남어"])
-
-    static let chinese = UIStrings(
-        connecting: "连接中…",
-        hearing: "聆听中",
-        translating: "翻译中",
-        micPaused: "麦克风已暂停",
-        tapToSpeak: "轻点开始说话",
-        micDenied: "无法访问麦克风。轻点前往设置。",
-        micFailed: "无法启动麦克风。",
-        micResumeFailed: "麦克风已关闭，轻点重新开启。",
-        connectionError: "连接出错，请重试。",
-        updateRequired: "此版本已无法使用。轻点前往更新。",
-        poorConnection: "连接不佳，翻译质量可能会受影响。",
-        noServerResponse: "服务器无响应，请检查网络连接。",
-        offline: "没有网络连接。",
-        micResumed: "麦克风已重新开启，翻译继续进行。",
-        othersSpeak: "对方说的语言",
-        iSpeak: "我说的语言",
-        textSize: "文字大小",
-        done: "完成",
-        usage: "使用时长",
-        minutesSpokenFormat: "共说了 %.0f 分钟",
-        sendLog: "把日志发给 Georg",
-        sendLogSubtitleFormat: "如果出了问题 · %@",
-        privacyPolicy: "隐私政策",
-        settingsLabel: "设置",
-        startListeningLabel: "开始聆听",
-        stopListeningLabel: "停止聆听",
-        languageNames: [.de: "德语", .en: "英语", .es: "西班牙语",
-                        .fr: "法语", .ko: "韩语", .zh: "中文",
-                        .tl: "他加禄语", .vi: "越南语"])
+                        .ko: "한국어"])
 }
 
 extension TurnLogic.Lang {
