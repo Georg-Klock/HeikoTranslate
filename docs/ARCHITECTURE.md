@@ -142,7 +142,10 @@ translator session's audio is played.
    so a loud room degrades to the old behaviour instead of holding a turn
    open: the RMS floor was calibrated speech-vs-silence, not speech-vs-babble,
    and the cap is what makes that ignorance safe. A normally-ending turn is
-   unaffected — the mic is already quiet when the timer fires.
+   unaffected — the mic is already quiet when the timer fires. `TurnCoordinator`
+   owns the resulting endpoint confirmation and the local turn ID: every
+   input-idle, output-tail and deferred-finalize callback must present that ID
+   and may finalize only after the microphone has confirmed the endpoint.
 7. A turn finalizes when translated audio has been quiet for 0.45s
    (`outputTailTimeout`) — but never while input transcription is still
    progressing, since a pause in the translation mid-sentence is a breath,
@@ -151,8 +154,9 @@ translator session's audio is played.
    transcription has been idle for 1.6s (`inputIdleTimeout`), a watchdog
    that stops a stale translator swallowing the next utterance. The
    server's `turnComplete` is parsed but ignored: this preview model
-   doesn't send it reliably (see wire findings below), so the idle
-   timeouts are the only turn-end signal.
+   doesn't send it reliably (see wire findings below), so the idle timers are
+   the only *proposals* to finalize. `TurnCoordinator` still rejects them if
+   the speaker is active or the callback belongs to a completed turn.
 8. `TurnLogic.commit` enforces SPEC §5.1's gates (language known — with a
    plurality fallback for short turns that never settled, something said,
    translation present, not already committed) and produces exactly one

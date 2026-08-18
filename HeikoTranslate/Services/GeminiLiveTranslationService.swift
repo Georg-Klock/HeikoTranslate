@@ -352,12 +352,9 @@ final class GeminiLiveTranslationService: ObservableObject {
     private var lingeringTranslator: Lang?
     private var lingerUntil = Date.distantPast
     private let maxPendingOutputChunks = 1500   // ≈40s of 24kHz audio
-    /// When input transcription last progressed — the output-tail timer must
-    /// not finalize a turn whose speaker is still talking (R5).
-    private var lastInputAt = Date.distantPast
-    /// True once the speaker has been quiet long enough that answering is no
-    /// longer an interruption. Gates all playback.
-    private var speakerHasStopped = false
+    /// One pure owner for this turn's endpoint and timer identity. The service
+    /// schedules platform timers; it never gets to finalize around this gate.
+    private var turnCoordinator = TurnCoordinator()
     private var speechEndTimer: Timer?
     // The transcript-idle threshold that arms release lives in
     // `SpeechEndPolicy`. The policy also owns the microphone veto: transcripts
@@ -365,19 +362,18 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Most recent mic buffer above `micSpeechRMSFloor`.
     private var lastLoudMicAt: Date?
 
-    /// When a session's translation text last grew. A turn must not finalize
-    /// while the translation is still arriving: device evidence showed
-    /// "…wir haben im Moment keine" committed as one bubble and the rest of
-    /// the same sentence, "Gurken mehr.", landing in the NEXT one against
-    /// unrelated English (R1/R5).
-    private var lastOutputAt = Date.distantPast
     private let outputQuietPause: TimeInterval = 0.9
 
-    /// True when both sides have gone quiet long enough to end the turn.
-    private var turnMayFinalize: Bool {
-        let now = Date()
-        return now.timeIntervalSince(lastInputAt) >= outputTailTimeout
-            && now.timeIntervalSince(lastOutputAt) >= outputQuietPause
+    /// True only when the current turn has an endpoint confirmed by the mic,
+    /// then both input and output streams have gone quiet. Transcript idleness
+    /// may request this check; it never bypasses the speaker-end decision.
+    private func turnMayFinalize(_ id: TurnCoordinator.ID, at now: Date = Date()) -> Bool {
+        turnCoordinator.finalization(
+            for: id,
+            at: now,
+            inputQuietFor: outputTailTimeout,
+            outputQuietFor: outputQuietPause
+        ) == .granted
     }
 
     /// Minimum input quiet time before a turn may commit. Kept separate from
@@ -445,9 +441,19 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// The #83 wiring, reachable without an audio graph. Same code path as
     /// a real loud buffer.
     func noteLoudMicSampleForTesting() { noteLoudMicSample() }
-    /// Reaching a stopped turn for real needs timers and transcripts.
-    func forceSpeakerStoppedForTesting() { speakerHasStopped = true }
-    var speakerHasStoppedForTesting: Bool { speakerHasStopped }
+    /// Reaching a stopped turn for real needs timers and transcripts. A turn
+    /// has to exist before it can be sealed, so open one if the test has not
+    /// spoken yet.
+    func forceSpeakerStoppedForTesting() {
+        let id: TurnCoordinator.ID
+        if let current = turnCoordinator.currentID {
+            id = current
+        } else {
+            id = turnCoordinator.noteInput()
+        }
+        turnCoordinator.confirmSpeakerStopped(for: id)
+    }
+    var speakerHasStoppedForTesting: Bool { turnCoordinator.speakerHasStopped }
     /// The mic watchdog's check, fired on demand so L1.68f/g can walk it past
     /// exhaustion deterministically instead of sleeping through three real
     /// 0.5s timers. Same method the timers call. GitHub #87.
@@ -588,13 +594,12 @@ final class GeminiLiveTranslationService: ObservableObject {
 
     private func resetForNextUtterance() {
         turn.endTurn()
+        turnCoordinator.reset()
         inputs = [:]
         outputs = [:]
         pendingOutput = [:]
         speechHeardThisTurn = false
         stopDirectionRecheck()
-        lastOutputAt = .distantPast
-        speakerHasStopped = false
         speechEndTimer?.invalidate()
         speechEndTimer = nil
     }
@@ -624,7 +629,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         micWatchdog = nil
         speechEndTimer?.invalidate()
         speechEndTimer = nil
-        speakerHasStopped = false
+        turnCoordinator.reset()
         lastLoudMicAt = nil
         pendingOutput = [:]
         stopDirectionRecheck()
@@ -974,9 +979,9 @@ final class GeminiLiveTranslationService: ObservableObject {
                 return
             }
             inputs[lang, default: ""] += text
-            noteInputActivity()
+            let id = noteInputActivity()
             onPartialInput?(turn.bestTranscript(from: inputs))
-            resetInputIdleTimer()
+            resetInputIdleTimer(for: id)
         case .outputTranscript(let text):
             // Same gate, output side: a model with no speech to translate
             // this turn is repeating the LAST turn (the #39 repro's second
@@ -988,7 +993,7 @@ final class GeminiLiveTranslationService: ObservableObject {
                 return
             }
             outputs[lang, default: ""] += text
-            lastOutputAt = Date()
+            turnCoordinator.noteOutput()
             // A session translating is the authoritative direction signal —
             // the German session really translates only non-German input.
             turn.noteOutputs(outputs, inputs: inputs)
@@ -1190,7 +1195,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         // watch only transcript events, so a turn could finalize while its
         // translation audio was still streaming in — and the reset dropped
         // the rest of the sentence.
-        if rms > speechRMSThreshold { lastOutputAt = Date() }
+        if rms > speechRMSThreshold { turnCoordinator.noteOutput() }
 
         // Home-session audio corroborates the transcript signal, but only
         // once the transcript itself is substantial — a false start must not
@@ -1207,7 +1212,8 @@ final class GeminiLiveTranslationService: ObservableObject {
         // play it through, and drop the other session's stale audio —
         // buffering either would misfile last turn's sound into this one.
         if let lingering = lingeringTranslator {
-            if Date() >= lingerUntil || Date().timeIntervalSince(lastInputAt) < 1.0 {
+            if Date() >= lingerUntil
+                || Date().timeIntervalSince(turnCoordinator.lastInputAt) < 1.0 {
                 lingeringTranslator = nil   // window over, or new speech owns the buffers again
             } else if lang == lingering {
                 if rms > speechRMSThreshold { play(pcm24kChunk: data) }
@@ -1304,23 +1310,26 @@ final class GeminiLiveTranslationService: ObservableObject {
         onServerRecovered?()
     }
 
-    private func noteInputActivity() {
-        lastInputAt = Date()
+    private func noteInputActivity() -> TurnCoordinator.ID {
+        let id = turnCoordinator.noteInput()
         lingeringTranslator = nil   // new speech owns the buffers again
-        armSpeechEndClock()
+        armSpeechEndClock(for: id)
+        return id
     }
 
     /// The turn is (still) live: clear the stop and restart the idle clock.
     /// Shared by transcript activity and the #83 mic-resume path, so the two
-    /// cannot drift.
-    private func armSpeechEndClock() {
-        speakerHasStopped = false
+    /// cannot drift. The clock is armed *for a turn*, so a timer that
+    /// survives a reset finds itself stale rather than acting on whatever
+    /// turn happens to be current when it fires.
+    private func armSpeechEndClock(for id: TurnCoordinator.ID) {
+        turnCoordinator.reopenSpeech(for: id)
         speechEndTimer?.invalidate()
         speechEndTimer = Timer.scheduledTimer(
             withTimeInterval: SpeechEndPolicy.transcriptIdleThreshold,
             repeats: false
         ) { [weak self] _ in
-            Task { @MainActor in self?.speakerStopped() }
+            Task { @MainActor in self?.speakerStopped(for: id) }
         }
     }
 
@@ -1336,19 +1345,23 @@ final class GeminiLiveTranslationService: ObservableObject {
     private func noteLoudMicSample() {
         speechHeardThisTurn = true
         lastLoudMicAt = Date()
-        if SpeechEndPolicy.speechResumesTurn(speakerHasStopped: speakerHasStopped,
+        if SpeechEndPolicy.speechResumesTurn(speakerHasStopped: turnCoordinator.speakerHasStopped,
                                              isPlayingOutput: isPlayingOutput) {
             resumeStoppedTurn()
         }
     }
 
+    /// Only the turn that is actually current can be resumed. Without a
+    /// current turn there is nothing to un-stop, and the loud buffer is just
+    /// room noise between turns.
     private func resumeStoppedTurn() {
+        guard let id = turnCoordinator.currentID else { return }
         diag("turn", "speaker resumed during the commit window — un-stopping (GitHub #83)")
-        armSpeechEndClock()
+        armSpeechEndClock(for: id)
     }
 
-    private func speakerStopped(deferredSince: Date? = nil) {
-        guard isRunning, !speakerHasStopped else { return }
+    private func speakerStopped(for id: TurnCoordinator.ID, deferredSince: Date? = nil) {
+        guard isRunning, turnCoordinator.isCurrent(id), !turnCoordinator.speakerHasStopped else { return }
         if !SpeechEndPolicy.mayRelease(
             now: Date(),
             lastLoudMicAt: lastLoudMicAt,
@@ -1363,11 +1376,11 @@ final class GeminiLiveTranslationService: ObservableObject {
                 withTimeInterval: SpeechEndPolicy.recheckInterval,
                 repeats: false
             ) { [weak self] _ in
-                Task { @MainActor in self?.speakerStopped(deferredSince: since) }
+                Task { @MainActor in self?.speakerStopped(for: id, deferredSince: since) }
             }
             return
         }
-        speakerHasStopped = true
+        guard turnCoordinator.confirmSpeakerStopped(for: id) else { return }
         diag("turn", "speaker stopped — waiting for committed translation audio")
         // Re-evaluate first: the home-silence confirm is time-based, and on a
         // laggy connection the whole translation can arrive in one burst
@@ -1375,18 +1388,19 @@ final class GeminiLiveTranslationService: ObservableObject {
         // and the held audio never plays (measured 2026-07-29, turn 1).
         turn.noteOutputs(outputs, inputs: inputs)
         reportDirectionIfChanged()
-        startDirectionRecheck()
+        startDirectionRecheck(for: id)
     }
 
     /// While translated audio sits in `pendingOutput` waiting for a
     /// direction, keep re-evaluating on a clock — the confirm window can
     /// elapse without any new server event to trigger it.
-    private func startDirectionRecheck() {
+    private func startDirectionRecheck(for id: TurnCoordinator.ID) {
         directionRecheckTimer?.invalidate()
         directionRecheckTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                guard self.isRunning, self.speakerHasStopped else {
+                guard self.isRunning, self.turnCoordinator.isCurrent(id),
+                      self.turnCoordinator.speakerHasStopped else {
                     self.stopDirectionRecheck()
                     return
                 }
@@ -1423,26 +1437,29 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// If speech stops and no translated audio ever arrives (e.g. we picked
     /// a session that stays silent), still finalize the turn so `translator`
     /// can't go stale and swallow the next utterance.
-    private func resetInputIdleTimer() {
+    private func resetInputIdleTimer(for id: TurnCoordinator.ID) {
         inputIdleTimer?.invalidate()
         inputIdleTimer = Timer.scheduledTimer(withTimeInterval: inputIdleTimeout, repeats: false) { [weak self] _ in
             Task { @MainActor in
-                guard let self, !self.isPlayingOutput else { return }
+                guard let self, self.turnCoordinator.isCurrent(id), !self.isPlayingOutput else { return }
                 // Same rule as the output-tail path: a translation still
                 // arriving means the turn isn't over.
-                guard self.turnMayFinalize else {
-                    self.resetInputIdleTimer()
+                guard self.turnMayFinalize(id) else {
+                    self.resetInputIdleTimer(for: id)
                     return
                 }
-                self.finalizeTurn()
+                self.finalizeTurn(for: id)
             }
         }
     }
 
-    private func finalizeTurn() {
+    private func finalizeTurn(for requestedID: TurnCoordinator.ID? = nil) {
         // A timer Task already on the main queue can land here after the
         // mute tore everything down — no late bubbles, no late audio.
-        guard isRunning else { return }
+        guard isRunning,
+              let id = requestedID ?? turnCoordinator.currentID,
+              turnCoordinator.isCurrent(id)
+        else { return }
         inputIdleTimer?.invalidate()
         inputIdleTimer = nil
         deferralTimer?.invalidate()
@@ -1472,7 +1489,7 @@ final class GeminiLiveTranslationService: ObservableObject {
             // misfiling them into the next turn's buffers.
             lingeringTranslator = t
             lingerUntil = Date().addingTimeInterval(2.5)
-            markOutputActive()
+            markOutputActive(for: id)
             return
         }
         // The decision itself lives in FinalizePolicy so the L3 harness runs
@@ -1486,14 +1503,16 @@ final class GeminiLiveTranslationService: ObservableObject {
             diag("turn", "finalize DEFERRED (\(reason)) — waiting for the missing translation, attempt \(finalizePolicy.deferrals)/\(FinalizePolicy.maxDeferrals)")
             deferralTimer = Timer.scheduledTimer(withTimeInterval: FinalizePolicy.deferralInterval, repeats: false) { [weak self] _ in
                 Task { @MainActor in
-                    guard let self, self.isRunning else { return }
+                    guard let self, self.isRunning, self.turnCoordinator.isCurrent(id) else { return }
                     // If new speech started meanwhile, the normal timers own
                     // the turn again — don't force-finalize mid-sentence. The
                     // rule and its clock live in FinalizePolicy so the harness
                     // runs THIS one. GitHub #21.
                     guard FinalizePolicy.deferredRetryIsDue(now: Date(),
-                                                            lastInputAt: self.lastInputAt) else { return }
-                    self.finalizeTurn()
+                                                            lastInputAt: self.turnCoordinator.lastInputAt),
+                          self.turnMayFinalize(id)
+                    else { return }
+                    self.finalizeTurn(for: id)
                 }
             }
             return
@@ -1511,19 +1530,20 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// and output streams are quiet. This timer never releases PCM; it merely
     /// preserves the committed turn long enough for its tail, then returns to
     /// `finalizeTurn` for cleanup.
-    private func markOutputActive() {
+    private func markOutputActive(for id: TurnCoordinator.ID) {
+        guard turnCoordinator.isCurrent(id) else { return }
         isPlayingOutput = true
         setActivity(.translating)
         outputActivityTimer?.invalidate()
         outputActivityTimer = Timer.scheduledTimer(withTimeInterval: outputTailTimeout, repeats: false) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
-                if !self.turnMayFinalize {
-                    self.markOutputActive()
+                guard let self, self.turnCoordinator.isCurrent(id) else { return }
+                if !self.turnMayFinalize(id) {
+                    self.markOutputActive(for: id)
                     return
                 }
                 self.isPlayingOutput = false
-                self.finalizeTurn()
+                self.finalizeTurn(for: id)
             }
         }
     }

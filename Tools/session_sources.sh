@@ -35,6 +35,7 @@ SESSION_SOURCES=(
 # smaller binary.
 TURN_SOURCES=(
   HeikoTranslate/Models/TurnLogic.swift
+  HeikoTranslate/Models/TurnCoordinator.swift
   HeikoTranslate/Models/FillerWords.swift
   HeikoTranslate/Models/FinalizePolicy.swift
   HeikoTranslate/Models/SpeechEndPolicy.swift
