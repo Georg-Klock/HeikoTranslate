@@ -35,6 +35,29 @@ This closes two concrete failure modes:
 - a late timer from a reset turn could act on whichever shared state happened
   to be current.
 
+## What the first device session showed
+
+Measured 2026-08-18, build 2.4.75 EC, about thirteen minutes over two
+sessions. Full numbers in TESTING.md's L4 row; what matters for the design:
+
+- **Direction was right on all 17 bubbles**, across de↔en, de↔fr and fr↔en.
+  The fr↔en run mattered most, because home was not German: the home side is
+  a parameter here, and one garbled utterance whose partner session reported
+  a third language still settled home correctly.
+- **The lifecycle gate did its job in the one case that tested it.** A loud
+  mic buffer vetoed a proposed stop; the turn sealed 0.25 s later once the
+  mic went quiet. Nothing committed while someone was still talking.
+- **The abstention gap is real and now has evidence.** One turn produced no
+  translation from either session, deferred three times, and was cleared with
+  no bubble and nothing shown. The person got silence and no reason for it.
+  That is the "typed abstention/repair" slice below, and it is the first item
+  on this list to have been observed rather than predicted.
+- **The #83 resume path did not occur.** `speaker resumed during the commit
+  window` appears zero times, so the reconciliation between #83's mic-resume
+  and this branch's turn-ID threading rests on L1 alone. Provoking it needs a
+  deliberate pause of about a second mid-sentence, and it should be an
+  explicit case in the next device run rather than something waited for.
+
 ## Target shape
 
 The completed experiment should make the next layer a pure `TurnArbiter`:
