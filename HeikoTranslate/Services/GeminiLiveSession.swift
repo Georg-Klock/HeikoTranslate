@@ -96,12 +96,19 @@ struct SessionLifecycle {
     }
 }
 
-/// One WebSocket connection to the Gemini Live Translate API
-/// (`gemini-3.5-live-translate-preview`), fixed to a single target
-/// language with automatic source-language detection. Three of these run
-/// concurrently in `GeminiLiveTranslationService` (targets "de", "en" and
-/// "es") to reproduce the app's asymmetric translation rules, because the
-/// API itself only supports one fixed target per session.
+/// One WebSocket connection to a Gemini Live model, in one of two `Mode`s.
+///
+/// `.translate` is what ships: `gemini-3.5-live-translate-preview`, fixed to a
+/// single target language with automatic source detection. TWO of these run
+/// concurrently in `GeminiLiveTranslationService`, one per side of the pair,
+/// because that API supports only one fixed target per session — which is why
+/// the app has to infer the spoken language from which session translated, and
+/// why TurnLogic carries the arbitration it does.
+///
+/// `.interpreter` is the #135 alternative under measurement: a general Live
+/// model given both languages in a system instruction and left to choose the
+/// direction itself, so ONE session could replace the pair and the inference
+/// with it. Not wired into the app; reachable from `Tools/interpreterprobe.sh`.
 ///
 /// The wire format below was verified against the live API directly (a
 /// standalone script, outside the app) on 2026-07-19: setup, streaming
@@ -168,7 +175,66 @@ final class GeminiLiveSession: NSObject {
         string: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
     )!
 
-    private let targetLanguageCode: String
+    /// What this session asks the server to be.
+    ///
+    /// `.translate` is what ships and its wire bytes are unchanged: the
+    /// translate-preview model with ONE fixed target, source auto-detected.
+    /// That fixed target is the reason the app runs two sessions and infers
+    /// the spoken language from which one produced a real translation — the
+    /// inference every vote tally, veto and yield in TurnLogic exists to make
+    /// safe.
+    ///
+    /// `.interpreter` is the #135 alternative: a general Live model told the
+    /// pair in a system instruction and left to choose the direction itself.
+    /// Measured 9/9 correct across de/fr and de/es on a standalone client
+    /// (Tools/onesession-probe.py), which is not evidence about this path —
+    /// hence this mode, so the same question can be asked of the client the
+    /// app actually ships.
+    enum Mode {
+        case translate(target: String)
+        case interpreter(home: String, partner: String, model: String)
+
+        /// Measured on this client, "Ja, bitte." to French, time from end of
+        /// audio to first output token:
+        ///
+        ///   gemini-3.1-flash-live-preview            7.94 / 7.94 / 8.00 s
+        ///   ...with endpointing tuned hard            4.97 s, and it CLIPPED
+        ///                                             the output to "S'il
+        ///                                             vous plaît."
+        ///   gemini-2.5-flash-native-audio-latest      2.53 s
+        ///   gemini-2.5-flash-native-audio-preview-12-2025
+        ///                                             1.70-1.94 s, full text
+        ///   (the shipping translate model, same clip) 2.15-2.29 s
+        ///
+        /// So the default is the December native-audio preview: it is the only
+        /// general model measured at or below the shipping model's latency on
+        /// the SHORT utterances that matter, and the only one that stayed
+        /// correct while being fast. The 3.1 live preview is conversational by
+        /// default — it waits to see whether you have finished thinking, which
+        /// is the right behaviour for a chat and the wrong one for a till.
+        static let defaultInterpreterModel = "models/gemini-2.5-flash-native-audio-preview-12-2025"
+
+        var model: String {
+            switch self {
+            case .translate: return "models/gemini-3.5-live-translate-preview"
+            case .interpreter(_, _, let model): return model
+            }
+        }
+
+        /// What the diagnostic log calls this session. One session per target
+        /// is no longer a safe assumption, so the label carries the pair.
+        var label: String {
+            switch self {
+            case .translate(let target): return target
+            case .interpreter(let home, let partner, _): return "\(home)↔\(partner)"
+            }
+        }
+    }
+
+    private let mode: Mode
+    /// Kept as the log label so every existing `[de]`-style diagnostic line
+    /// reads the same on the shipping path.
+    private var targetLanguageCode: String { mode.label }
     private let apiKey: String
     private let onEvent: (Event) -> Void
 
@@ -202,8 +268,14 @@ final class GeminiLiveSession: NSObject {
         task = new
     }
 
-    init(targetLanguageCode: String, apiKey: String, onEvent: @escaping (Event) -> Void) {
-        self.targetLanguageCode = targetLanguageCode
+    /// The shipping constructor, unchanged for every caller.
+    convenience init(targetLanguageCode: String, apiKey: String,
+                     onEvent: @escaping (Event) -> Void) {
+        self.init(mode: .translate(target: targetLanguageCode), apiKey: apiKey, onEvent: onEvent)
+    }
+
+    init(mode: Mode, apiKey: String, onEvent: @escaping (Event) -> Void) {
+        self.mode = mode
         self.apiKey = apiKey
         self.onEvent = onEvent
         super.init()
@@ -283,26 +355,71 @@ final class GeminiLiveSession: NSObject {
 
     // MARK: - Outgoing
 
+    /// The instruction that replaces the whole two-session inference.
+    ///
+    /// It names exactly two languages and asks for the other one, so the
+    /// session can never wander to a third — the pair remains a UI decision,
+    /// which is the product rule (SPEC §3.1). What moves into the model is the
+    /// DIRECTION within that pair.
+    ///
+    /// "Say only the translation" is load-bearing: a general model will
+    /// otherwise answer the question it just heard, which is a different
+    /// product and a much worse one for someone who cannot check it.
+    static func interpreterInstruction(home: String, partner: String) -> String {
+        func name(_ code: String) -> String {
+            ["de": "German", "en": "English", "es": "Spanish",
+             "fr": "French", "ko": "Korean", "zh": "Mandarin Chinese"][code] ?? code
+        }
+        let h = name(home), p = name(partner)
+        return "You are a live interpreter between \(h) and \(p). Whatever language you "
+            + "hear, translate it into the OTHER one of those two: \(h) in means \(p) out, "
+            + "and \(p) in means \(h) out. Say only the translation itself — never answer, "
+            + "comment, explain, or add anything. If you hear no speech, say nothing."
+    }
+
     private func sendSetup() {
-        send(json: [
-            "setup": [
-                "model": "models/gemini-3.5-live-translate-preview",
-                "generationConfig": [
-                    "responseModalities": ["AUDIO"],
-                    "translationConfig": [
-                        "targetLanguageCode": targetLanguageCode,
-                        "echoTargetLanguage": false
-                    ]
-                ],
-                // Confirmed via a direct WebSocket protocol test (bypassing
-                // the app entirely) that these must be siblings of
-                // generationConfig, not nested inside it — the server
-                // rejects the nested form with "Unknown name
-                // 'inputAudioTranscription' at 'setup.generation_config'".
-                "inputAudioTranscription": [String: Any](),
-                "outputAudioTranscription": [String: Any]()
+        var setup: [String: Any] = [
+            "model": mode.model,
+            // Confirmed via a direct WebSocket protocol test (bypassing
+            // the app entirely) that these must be siblings of
+            // generationConfig, not nested inside it — the server
+            // rejects the nested form with "Unknown name
+            // 'inputAudioTranscription' at 'setup.generation_config'".
+            "inputAudioTranscription": [String: Any](),
+            "outputAudioTranscription": [String: Any]()
+        ]
+        switch mode {
+        case .translate(let target):
+            setup["generationConfig"] = [
+                "responseModalities": ["AUDIO"],
+                "translationConfig": [
+                    "targetLanguageCode": target,
+                    "echoTargetLanguage": false
+                ]
             ]
-        ])
+        case .interpreter(let home, let partner, _):
+            setup["generationConfig"] = ["responseModalities": ["AUDIO"]]
+            setup["systemInstruction"] = [
+                "parts": [["text": Self.interpreterInstruction(home: home, partner: partner)]]
+            ]
+            // Endpointing, and it is the whole viability question rather than
+            // a tuning detail. Measured on this client: the general model took
+            // 7.94/7.94/8.00s to answer "Ja, bitte." where the translate model
+            // took 2.15-2.26s. A general model is CONVERSATIONAL by default —
+            // it waits to see whether you have finished thinking — and a
+            // two-word answer at a till is exactly what it waits longest on.
+            // Eight seconds for "Ja, bitte" is not a slower product, it is a
+            // different and unusable one.
+            setup["realtimeInputConfig"] = [
+                "automaticActivityDetection": [
+                    "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
+                    "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH",
+                    "prefixPaddingMs": 20,
+                    "silenceDurationMs": 200
+                ]
+            ]
+        }
+        send(json: ["setup": setup])
     }
 
     private func send(json: [String: Any]) {
