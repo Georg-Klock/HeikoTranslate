@@ -1131,6 +1131,10 @@ fail:
 | deploy | a failing pre-commit hook | number still committed, via `--no-verify` |
 | deploy | — (dirty worktree) | the uncommitted files are named *in* the commit |
 | deploy `--no-bump` | — (staged `project.yml` edit) | not swept into a "Build X" commit |
+| deploy `--no-build` | — (after an aborted deploy left a newer artifact) | the artifact's number is reconciled into `project.yml` and COMMITTED |
+| deploy `--no-build` | — (artifact older than the repo) | refused, nothing installed |
+| deploy `--no-build` | — (artifact, repo and HEAD all agree) | installed, no commit manufactured |
+| deploy | — (settings query resolves a stale app) | refused, nothing installed and no number committed |
 | release | L1 | nothing moved (the bump hasn't happened yet) |
 | release | the archive | number restored, tree clean |
 | release | the upload | number BURNED — Apple may hold it |

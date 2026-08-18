@@ -3,7 +3,7 @@
 # this project runs a dozen times a day, in one command.
 #
 #   Tools/deploy.sh            # L1, bump, build, wait for the phone, install, logs
-#   Tools/deploy.sh --no-build # skip the build (already built)
+#   Tools/deploy.sh --no-build # skip the build (install what is already built)
 #   Tools/deploy.sh --no-bump  # don't increment the build number
 #   Tools/deploy.sh --no-test  # skip L1 (debugging the deploy path, not the app)
 #   Tools/deploy.sh --wait 300 # wait longer than the default 120s
@@ -285,6 +285,83 @@ if [[ -z "$APP" || ! -d "$APP" ]]; then
   echo "Could not resolve a built app from -showBuildSettings (got: '${APP:-}')." >&2
   echo "Build first (drop --no-build), or check the scheme/destination." >&2
   exit 1
+fi
+
+# The pill reads the BUNDLE's CFBundleVersion. project.yml is only a source for
+# it, and the two can drift — so the number checked against git has to be the
+# one actually inside the app about to be installed, not the one this script
+# believes it bumped.
+#
+# The bump block above is gated on `BUILD == 1`, so `--no-build` skipped the
+# bump, the traps, and the commit entirely. That gap was not theoretical
+# (2026-08-18): a full deploy bumped 74 -> 75 and built the app, then found the
+# phone locked. The EXIT trap correctly reverted project.yml to 74 — but the
+# BUILT ARTIFACT stayed at 75. `--no-build` then installed that 75 with nothing
+# armed to record it, so the phone's pill read 2.4.75 while the repo said 74 and
+# no commit named 75. That is the 2.3.36 failure this pipeline exists to
+# prevent, reached by a route none of its guards covered.
+#
+# Reconciling here rather than in the bump block covers every path with one
+# rule: whatever number is in the bundle must exist in a commit before the
+# install is allowed to stand.
+# plutil, not PlistBuddy: it is on PATH, so the L0 harness can stub it the way
+# it already stubs it for the #89 preflight, and this stays checkable off a Mac.
+APP_BUILD=$(plutil -extract CFBundleVersion raw -o - "$APP/Info.plist" 2>/dev/null || true)
+if ! [[ "$APP_BUILD" =~ ^[0-9]+$ ]]; then
+  echo "Could not read CFBundleVersion from the app about to be installed:" >&2
+  echo "  $APP/Info.plist" >&2
+  echo "Refusing to install a build whose number cannot be checked against git." >&2
+  exit 1
+fi
+YML_BUILD=$(grep 'CFBundleVersion:' project.yml | sed 's/.*"\(.*\)"/\1/')
+HEAD_BUILD=$(git show HEAD:project.yml 2>/dev/null \
+  | grep 'CFBundleVersion:' | sed 's/.*"\(.*\)"/\1/' || true)
+if ! [[ "$HEAD_BUILD" =~ ^[0-9]+$ ]]; then
+  echo "Could not read CFBundleVersion from HEAD's project.yml (got '${HEAD_BUILD:-}')." >&2
+  echo "Refusing to install: without it there is no way to tell whether the" >&2
+  echo "number in the bundle is already recorded." >&2
+  exit 1
+fi
+
+# A build that ran this time was built FROM project.yml, so a mismatch means
+# -showBuildSettings resolved an app this run did not produce — #3's stale
+# DerivedData wearing a different hat. Installing it would put an old number
+# on the phone while a fresh one gets committed, which is precisely the
+# number↔code break the settings query was introduced to close.
+if [[ "$BUILD" == "1" && "$APP_BUILD" != "$YML_BUILD" ]]; then
+  echo "The built app says $APP_BUILD but project.yml says $YML_BUILD." >&2
+  echo "That app is not the one this run built — refusing to install it." >&2
+  echo "  app: $APP" >&2
+  exit 1
+fi
+
+if [[ "$APP_BUILD" != "$HEAD_BUILD" ]]; then
+  # Never install a number below the one git already records. The counter only
+  # goes up, so a lower number in the bundle means a stale artifact — and that
+  # number may already name different code, which is the one thing a number on
+  # a screen must never do.
+  if (( APP_BUILD < HEAD_BUILD )); then
+    echo "The app about to be installed is build $APP_BUILD, but git is already" >&2
+    echo "at $HEAD_BUILD. The counter never goes backwards, and $APP_BUILD may" >&2
+    echo "already name other code." >&2
+    echo "Rebuild (drop --no-build) instead of installing a stale app." >&2
+    exit 1
+  fi
+  # The number is about to reach a screen and is not in git. Make project.yml
+  # say it, then arm the same recording machinery the bump block arms: on a
+  # successful install commit_build_number writes it, and on a failure before
+  # the install on_exit reverts to what HEAD had. Re-arming after a real bump
+  # is a no-op — the values it sets are the ones already there.
+  if [[ "$YML_BUILD" != "$APP_BUILD" ]]; then
+    echo "==> The built app is $APP_BUILD; project.yml says $YML_BUILD — reconciling"
+    set_build_number "$YML_BUILD" "$APP_BUILD"
+  fi
+  CURRENT_BUILD="$HEAD_BUILD"
+  NEXT_BUILD="$APP_BUILD"
+  BUMPED=1
+  trap on_exit EXIT
+  trap 'on_signal 2' INT
+  trap 'on_signal 15' TERM
 fi
 
 echo "==> Waiting up to ${WAIT_SECONDS}s for an unlocked, connected iPhone"
