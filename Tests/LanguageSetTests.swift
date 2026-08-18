@@ -34,7 +34,7 @@ final class LanguageSetTests: XCTestCase {
         XCTAssertFalse(ConversationViewModel.storedLangIsRetired(seeded("ko")),
                        "a language still in the set is not a repair case")
         XCTAssertFalse(ConversationViewModel.storedLangIsRetired("settings.absent.\(UUID().uuidString)"),
-                       "nothing stored is not a repair case either — that is a fresh install")
+                       "nothing stored is not a repair case either; that is a fresh install")
     }
 
     /// Fully interchangeable: every language seats on either side, and every
@@ -80,13 +80,13 @@ final class LanguageSetTests: XCTestCase {
                            "\(lang.rawValue) must name every language in the set")
             guard lang != .de else { continue }
             XCTAssertNotEqual(strings.done, UIStrings.german.done,
-                              "\(lang.rawValue) falls back to German — it has no set of its own")
+                              "\(lang.rawValue) falls back to German, so it has no set of its own")
         }
     }
 
     /// Seeds one key and returns it. The keys are process-wide, so this uses
-    /// a fresh name per call rather than the real `settings.*` keys — the
-    /// point here is `storedLangIsRetired`'s decode rule, not the pair.
+    /// a fresh name per call rather than the real `settings.*` keys. The point
+    /// here is `storedLangIsRetired`'s decode rule, not the pair.
     private func seeded(_ raw: String) -> String {
         let key = "settings.langProbe.\(UUID().uuidString)"
         UserDefaults.standard.set(raw, forKey: key)

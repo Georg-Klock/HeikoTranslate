@@ -40,8 +40,8 @@ enum FillerWords {
     }
 
     /// Per-language entry point. Only German, English, and Spanish have
-    /// studied lists; Korean strips nothing — the adversarial review of the
-    /// first list proved that deleting real words is the expensive failure,
+    /// studied lists; Korean strips nothing, because the adversarial review of
+    /// the first list proved that deleting real words is the expensive failure,
     /// and nobody has studied Korean hesitation noises against real-word
     /// collisions.
     static func strip(_ text: String, for lang: TurnLogic.Lang) -> String {
