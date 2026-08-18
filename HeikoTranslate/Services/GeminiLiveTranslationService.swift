@@ -187,11 +187,75 @@ final class GeminiLiveTranslationService: ObservableObject {
         #endif
         return GeminiLiveSession(targetLanguageCode: lang.rawValue, apiKey: apiKey, onEvent: onEvent)
     }
+
+    /// One session for the whole pair (#135). Its events are delivered under
+    /// the `home` key and re-attributed in `handle` by the language the model
+    /// actually spoke, so nothing downstream has to know this mode exists.
+    private func makeInterpreterSession(home: Lang, partner: Lang,
+                                        apiKey: String) -> any LiveTranslationSocket {
+        let token = registry.register(home)
+        let onEvent: (GeminiLiveSession.Event) -> Void = { [weak self] event in
+            Task { @MainActor in
+                guard let self else { return }
+                if case .usage(let usage) = event {
+                    CostTracker.shared.record(usage: usage)
+                }
+                guard self.registry.isCurrent(token, for: home) else { return }
+                self.handle(home, event)
+            }
+        }
+        #if DEBUG
+        if let factory = sessionFactoryForTesting { return factory(home, onEvent) }
+        #endif
+        return GeminiLiveSession(
+            mode: .interpreter(home: home.rawValue, partner: partner.rawValue,
+                               model: GeminiLiveSession.Mode.defaultInterpreterModel),
+            apiKey: apiKey, onEvent: onEvent)
+    }
+
+    /// Which language key this event belongs to.
+    ///
+    /// On the shipping path, the answer is the session it came from. In
+    /// interpreter mode there is only one session, and the answer is the
+    /// language the model CHOSE to speak — route the output there and it
+    /// looks exactly like the session that would have translated, so the
+    /// release timing, #78's deferral through a breath pause and the linger
+    /// window all keep working on a shape they already know.
+    ///
+    /// Returns nil while there is not yet enough output to tell. The caller
+    /// must hold rather than guess: audio is released on the app's own clock,
+    /// so waiting costs nothing and a wrong side costs the turn.
+    private func interpreterSide(addingOutput text: String) -> Lang? {
+        if let locked = interpreterTranslator { return locked }
+        interpreterOutputBuffer += text
+        guard let side = InterpreterRouting.side(of: interpreterOutputBuffer,
+                                                 home: turn.home, partner: turn.partner)
+        else { return nil }
+        interpreterTranslator = side
+        diag("turn", "interpreter side → \(side.rawValue) "
+             + "(spoken \(side == turn.home ? turn.partner.rawValue : turn.home.rawValue)) "
+             + "from \(interpreterOutputBuffer.count) chars")
+        return side
+    }
     /// The two languages this run is supposed to be running, and the ONLY
     /// ones any code here may connect. `Lang.allCases` is the settings menu
     /// (six languages), never the session set — conflating them made the
     /// startup watchdog spin up all six, which the device log caught as a
     /// turn with output from five sessions on a two-language pair.
+    /// Interpreter mode (#135): the side the model chose for THIS turn, and
+    /// the output text gathered while deciding it.
+    ///
+    /// Locked once per turn and cleared by `resetForNextUtterance`. Locking
+    /// matters: the translation streams in, and re-classifying every fragment
+    /// would let a two-word prefix move the bubble to the other side halfway
+    /// through — the same defect the settle-overturn rule exists to stop on
+    /// the shipping path.
+    private var interpreterTranslator: Lang?
+    private var interpreterOutputBuffer = ""
+    /// Translation audio that arrived before the side was known. Held rather
+    /// than filed under a guess, and flushed the moment the side locks.
+    private var interpreterPendingAudio: [Data] = []
+
     private var activePair: Set<Lang> = []
     private var dead: Set<Lang> = []
     /// Per-session reconnect attempts after an error, so a transient network
@@ -547,10 +611,26 @@ final class GeminiLiveTranslationService: ObservableObject {
         // audio. The pair is explicit (settings), so exactly two sessions.
         activePair = [home, partner]
         let apiKey = liveAPIKey
-        for lang in [home, partner] {
-            let session = makeSession(lang, apiKey: apiKey)
-            sessions[lang] = session
+        if AppConfig.interpreterMode {
+            // The #135 experiment: ONE session that picks the direction
+            // itself. It is stored under `home` purely so the existing
+            // fan-out, close and reconnect paths keep working on a dictionary
+            // they already understand; the key does NOT mean "the home
+            // session". What arrives from it is re-attributed by the language
+            // the model chose to speak — see `handle`.
+            interpreterTranslator = nil
+            interpreterOutputBuffer = ""
+            let session = makeInterpreterSession(home: home, partner: partner, apiKey: apiKey)
+            sessions[home] = session
             session.connect()
+            diag("app", "INTERPRETER MODE — one session for \(home.rawValue)↔\(partner.rawValue), "
+                 + "direction from the model, segmentation still ours")
+        } else {
+            for lang in [home, partner] {
+                let session = makeSession(lang, apiKey: apiKey)
+                sessions[lang] = session
+                session.connect()
+            }
         }
         lastServerEventAt = Date()
         reportedServerSilence = false
@@ -611,6 +691,11 @@ final class GeminiLiveTranslationService: ObservableObject {
         // Same rule, same reason: audio not written by a commit belongs to a
         // turn that is over, and must not run into the next one.
         capture.rotate()
+        // One turn's chosen side must never carry into the next: the model
+        // re-decides per utterance, which is the whole point of the mode.
+        interpreterTranslator = nil
+        interpreterOutputBuffer = ""
+        interpreterPendingAudio.removeAll()
         turn.endTurn()
         inputs = [:]
         outputs = [:]
@@ -996,6 +1081,22 @@ final class GeminiLiveTranslationService: ObservableObject {
             openMicIfReady()
         case .audioChunk(let data):
             lastServerEventAt = Date()
+            if AppConfig.interpreterMode {
+                // Audio usually leads the transcript, so the side is often
+                // still unknown when the first chunks land. There is only ONE
+                // source here and all of it is this turn's translation, so
+                // hold it and file it once the side is known rather than
+                // guessing a bucket — a chunk in the wrong bucket is played
+                // for the wrong side or dropped at commit.
+                guard let side = interpreterTranslator else {
+                    interpreterPendingAudio.append(data)
+                    return
+                }
+                for held in interpreterPendingAudio { handleAudioChunk(held, from: side) }
+                interpreterPendingAudio.removeAll()
+                handleAudioChunk(data, from: side)
+                return
+            }
             handleAudioChunk(data, from: lang)
         case .inputLanguage(let code):
             noteInputLanguage(code, from: lang)
@@ -1037,6 +1138,17 @@ final class GeminiLiveTranslationService: ObservableObject {
             guard speechHeardThisTurn else {
                 diag("turn", "[\(lang.rawValue)] output transcript ignored (no speech this turn): \(text.prefix(40))")
                 return
+            }
+            // Interpreter mode: attribute to the language the model spoke,
+            // not to the key the single session was filed under. Held until
+            // there is enough text to be sure — a prefix is not a language.
+            var lang = lang
+            if AppConfig.interpreterMode {
+                guard let side = interpreterSide(addingOutput: text) else {
+                    diag("turn", "interpreter output held — not yet classifiable: \(text.prefix(24))")
+                    return
+                }
+                lang = side
             }
             outputs[lang, default: ""] += text
             lastOutputAt = Date()

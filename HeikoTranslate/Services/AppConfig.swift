@@ -36,6 +36,25 @@ enum AppConfig {
         return key
     }()
 
+    /// Run ONE interpreter session instead of the pair (#135, experiment).
+    ///
+    /// Off unless `INTERPRETER_MODE` is set in `Secrets.plist`, which is
+    /// gitignored — so no committed state can enable it and a build from a
+    /// clean checkout is the shipping two-session app. This is a measurement
+    /// build's switch, not a feature: the mode is under test, and the
+    /// arbitration it replaces has years of device evidence behind it.
+    static var interpreterMode: Bool = {
+        guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
+              let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        else { return false }
+        if let flag = plist["INTERPRETER_MODE"] as? Bool { return flag }
+        if let flag = plist["INTERPRETER_MODE"] as? String {
+            return ["YES", "true", "1"].contains(flag)
+        }
+        return false
+    }()
+
     /// Where "Zum Aktualisieren antippen" leads: this app's install page,
     /// read from `APP_UPDATE_URL` in Secrets.plist. Optional and read
     /// SOFTLY, unlike the key above — a build without it still shows the
