@@ -255,6 +255,19 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Translation audio that arrived before the side was known. Held rather
     /// than filed under a guess, and flushed the moment the side locks.
     private var interpreterPendingAudio: [Data] = []
+    /// The model finished a response and may start another for the SAME
+    /// utterance. Measured on 2.4.68: a half-finished German sentence got an
+    /// answer, the speaker carried on, the model answered AGAIN with the
+    /// fuller sentence — and the app concatenated both into one bubble and
+    /// released 88 chunks, so he heard a false start followed by the real
+    /// translation with no gap. That is #112's shape arriving without an
+    /// `interrupted` signal: the model did not abandon its answer, it simply
+    /// answered twice.
+    ///
+    /// A second response is a REPLACEMENT, not a continuation — it was
+    /// produced with strictly more of the utterance. So the next output after
+    /// a turn boundary clears what came before, text and held audio together.
+    private var interpreterResponseEnded = false
 
     private var activePair: Set<Lang> = []
     private var dead: Set<Lang> = []
@@ -701,6 +714,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         interpreterTranslator = nil
         interpreterOutputBuffer = ""
         interpreterPendingAudio.removeAll()
+        interpreterResponseEnded = false
         turn.endTurn()
         inputs = [:]
         outputs = [:]
@@ -1149,6 +1163,22 @@ final class GeminiLiveTranslationService: ObservableObject {
             // there is enough text to be sure — a prefix is not a language.
             var lang = lang
             if AppConfig.interpreterMode {
+                // A new response after a turn boundary supersedes the last
+                // one: it was produced with strictly more of the utterance.
+                // Drop the old text AND its held audio, or the listener hears
+                // the false start and the correction played end to end.
+                if interpreterResponseEnded {
+                    interpreterResponseEnded = false
+                    if let previous = interpreterTranslator {
+                        let dropped = pendingOutput[previous]?.count ?? 0
+                        outputs[previous] = ""
+                        pendingOutput[previous] = []
+                        interpreterOutputBuffer = ""
+                        interpreterTranslator = nil
+                        diag("turn", "model answered again — superseding the previous response "
+                             + "(\(dropped) held chunks dropped)")
+                    }
+                }
                 guard let side = interpreterSide(addingOutput: text) else {
                     diag("turn", "interpreter output held — not yet classifiable: \(text.prefix(24))")
                     return
@@ -1162,7 +1192,7 @@ final class GeminiLiveTranslationService: ObservableObject {
             turn.noteOutputs(outputs, inputs: inputs)
             reportDirectionIfChanged()
         case .turnComplete:
-            break
+            if AppConfig.interpreterMode { interpreterResponseEnded = true }
         case .interrupted:
             // In interpreter mode this signal is EVIDENCE, not just a
             // diagnostic. Measured on device 2.4.67: the server interrupted
