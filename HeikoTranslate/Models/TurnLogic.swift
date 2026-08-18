@@ -707,6 +707,20 @@ struct TurnLogic {
         // emitted, while the service was flushing held audio for the session
         // that actually translated. GitHub #26.
         guard !hasCommitted else { return }
+        if singleSession {
+            // Same rule as commit, live: the language spoken IS the direction.
+            // No veto, no crossed evidence, no home-silence confirm delay —
+            // that delay exists to prove a NEGATIVE (the home session stayed
+            // quiet), and there is no second session to be quiet.
+            let homeText = (outputs[home] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let partnerText = (outputs[partner] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if homeText.isEmpty && partnerText.isEmpty {
+                direction = nil
+            } else {
+                direction = homeText.count >= partnerText.count ? .foreignSpoken : .homeSpoken
+            }
+            return
+        }
         // A home settle backed by the full crossed shape outranks the home
         // session's own output (see `homeSettleWithCrossedEvidence`). Without
         // it the size ratio re-decides on every streamed chunk and the
@@ -960,9 +974,79 @@ struct TurnLogic {
     /// home speech pairs its transcript with the partner translation. A turn
     /// whose codes settled on something that was never translated commits
     /// nothing rather than guessing a side.
+    /// ONE session decides the direction (#135 interpreter mode), so none of
+    /// the arbitration below may run.
+    ///
+    /// Measured on device 2026-08-17 (build 2.4.67): with the arbitration
+    /// still live, three of eight turns were rejected, twice with
+    /// `codes-veto: settled fr, home session never translated`. That veto is
+    /// PREDICATED on two sessions existing and one staying silent — with a
+    /// single session the question cannot have a true answer, so it killed
+    /// turns that had a perfectly good translation sitting in `outputs`. One
+    /// French utterance was rejected three times before committing on the
+    /// fourth attempt.
+    ///
+    /// The rules that misfire are not incidental: the codes-veto, the crossed
+    /// evidence, the settle-overturn and the impossible-settle yield all exist
+    /// to infer WHICH SIDE SPOKE from two sessions' behaviour. When the model
+    /// states the answer by choosing a language, inference is not merely
+    /// redundant, it is a second opinion contradicting a fact.
+    var singleSession = false
+
+    /// The whole decision, when one session already made it.
+    ///
+    /// The output's language IS the answer: a translation spoken in the
+    /// PARTNER language means the home language was heard, and vice versa.
+    /// There is nothing to arbitrate, so this checks only what SPEC §5.1
+    /// requires of any bubble — that there is an original and a translation to
+    /// show — and refuses otherwise.
+    ///
+    /// Deliberately keeps the truncation floors OUT as well. They calibrate
+    /// "did the home session produce a REAL translation or a false start",
+    /// which is a question about distinguishing two sessions' output. Here the
+    /// only output there is, is the translation.
+    private mutating func commitSingleSession(inputs: [Lang: String],
+                                              outputs: [Lang: String]) -> Bubble? {
+        func text(_ lang: Lang) -> String {
+            (outputs[lang] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let homeText = text(home)
+        let partnerText = text(partner)
+
+        // Both non-empty should not happen — one session speaks one language
+        // per turn — but if it does, the longer one is the translation and the
+        // shorter is a fragment of the model changing its mind. Deciding by
+        // length rather than by preference keeps this from silently favouring
+        // one side of the pair.
+        let spokeHome = !homeText.isEmpty && homeText.count >= partnerText.count
+        let translatorLang: Lang? = spokeHome ? home : (partnerText.isEmpty ? nil : partner)
+        guard let translatorLang else {
+            direction = nil
+            lastRejectReason = "no session produced any translation"
+            return nil
+        }
+        // Output in the HOME language means the PARTNER was speaking.
+        let isHome = translatorLang == partner
+        direction = isHome ? .homeSpoken : .foreignSpoken
+
+        let sourceLang = isHome ? home : partner
+        let original = FillerWords.strip(bestTranscript(from: inputs), for: sourceLang)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let translation = FillerWords.strip(text(translatorLang), for: translatorLang)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !original.isEmpty, !translation.isEmpty else {
+            direction = nil
+            lastRejectReason = "single session: empty \(original.isEmpty ? "original" : "translation")"
+            return nil
+        }
+        hasCommitted = true
+        return Bubble(original: original, translation: translation, isHome: isHome)
+    }
+
     mutating func commit(inputs: [Lang: String], outputs: [Lang: String]) -> Bubble? {
         lastRejectReason = nil
         guard !hasCommitted else { lastRejectReason = "already committed (R1)"; return nil }
+        if singleSession { return commitSingleSession(inputs: inputs, outputs: outputs) }
 
         func text(_ lang: Lang) -> String {
             (outputs[lang] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1007,6 +1091,7 @@ struct TurnLogic {
             hasCommitted = true
             return Bubble(original: original, translation: translation, isHome: false)
         }
+        // (single-session commits return above; the arbitration continues below)
 
         // Home session quiet ⇒ home language spoken — unless the codes say
         // otherwise, in which case the home translation we'd need never

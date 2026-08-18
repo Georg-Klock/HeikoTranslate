@@ -620,6 +620,11 @@ final class GeminiLiveTranslationService: ObservableObject {
             // the model chose to speak — see `handle`.
             interpreterTranslator = nil
             interpreterOutputBuffer = ""
+            // The arbitration must not run: it infers which side spoke from
+            // two sessions, and there is one. Measured on 2.4.67, leaving it
+            // live rejected 3 of 8 turns on a veto naming a session that does
+            // not exist.
+            turn.singleSession = true
             let session = makeInterpreterSession(home: home, partner: partner, apiKey: apiKey)
             sessions[home] = session
             session.connect()
@@ -1159,7 +1164,29 @@ final class GeminiLiveTranslationService: ObservableObject {
         case .turnComplete:
             break
         case .interrupted:
-            // Diagnostic only, deliberately: this changes no behaviour yet.
+            // In interpreter mode this signal is EVIDENCE, not just a
+            // diagnostic. Measured on device 2.4.67: the server interrupted
+            // its own response at 18:12:00 — it had heard the speaker carry
+            // on — and the app, which had already latched `speakerHasStopped`
+            // through a breath pause, committed three seconds later and played
+            // 60 held chunks over him. The next thing he said was that we had
+            // interrupted him.
+            //
+            // The model does its own endpointing here, so "I abandoned my
+            // answer" is the most direct statement available that the speaker
+            // is still going. Un-latch the stop and let the ordinary
+            // end-of-turn clock run again — the same shape #83's
+            // `speechResumesTurn` uses for a loud mic, but driven by the
+            // server rather than by a microphone we cannot trust while the
+            // loudspeaker is live.
+            if AppConfig.interpreterMode, speakerHasStopped {
+                speakerHasStopped = false
+                speechEndTimer?.invalidate()
+                speechEndTimer = nil
+                diag("turn", "server interrupted itself — speaker is still going, un-stopping the turn")
+            }
+            // Diagnostic only on the shipping path, deliberately: this changes
+            // no behaviour there yet.
             // The count is the whole point — it says how much superseded
             // audio is sitting in the queue at the moment the server says
             // it is superseded, which is what will be heard as a false
