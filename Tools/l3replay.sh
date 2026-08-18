@@ -1,10 +1,10 @@
 #!/bin/bash
 # L3 replay tests (TESTING.md §L3): compiles the replay runner against the
 # REAL app sources — GeminiLiveSession.swift (wire protocol), TurnLogic.swift
-# (turn decisions) and FinalizePolicy.swift (whether a finalize waits for a
-# late translation) — then replays recorded audio through them against the
-# live API. Sharing FinalizePolicy is what stops the harness drifting from the
-# app's finalize behaviour the way it silently had (GitHub #21).
+# (turn decisions), TurnCoordinator.swift (speech-end and turn-identity gate)
+# and FinalizePolicy.swift (whether a finalize waits for a late translation) —
+# then replays recorded audio through them against the live API. Sharing these
+# policies is what stops the harness drifting from the app's finalize behaviour.
 #
 #   Tools/l3replay.sh                    # all cases
 #   Tools/l3replay.sh TestAudio/en_short.wav de_short   # specific cases

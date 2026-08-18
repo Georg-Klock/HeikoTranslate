@@ -169,14 +169,9 @@ final class ReplayRunner {
     }
 
     private var lastContentAt = Date.distantPast
-    /// The last time the USER was heard, as distinct from the last time
-    /// anything happened. The service's deferral guard reads this clock (its
-    /// `lastInputAt`, set only from `.inputTranscript`); comparing against
-    /// `lastContentAt` instead meant the model's own translation — the thing
-    /// the deferral is waiting for — reset the guard and the retry was skipped.
-    /// GitHub #21.
-    private var lastInputAt = Date.distantPast
-    private var lastOutputAt = Date.distantPast
+    /// The real app's pure lifecycle gate. L3 may widen tolerances for network
+    /// jitter, but it must not have its own definition of when a turn may end.
+    private var turnCoordinator = TurnCoordinator()
     private let outputQuietPause = 1.1   // service uses 0.9; widened for jitter
 
     // #78: the release simulation. Same decision the service makes, through
@@ -185,7 +180,6 @@ final class ReplayRunner {
     // 400 is the service's `micSpeechRMSFloor` (calibrated: speech 991–5263,
     // silence 0–12).
     private var lastLoudMicAt: Date?
-    private var speakerReleased = false
     /// Armed only by a transcript event, exactly like the service's
     /// `noteInputActivity` timer — a wiped turn must NOT re-attempt a
     /// release off the previous turn's stale `lastInputAt`.
@@ -210,6 +204,15 @@ final class ReplayRunner {
     private let outputTailTimeout = 0.8
     private let inputIdleTimeout = 2.0
     private let endOfStreamQuiet = 3.0
+
+    private func turnMayFinalize(_ id: TurnCoordinator.ID, at now: Date) -> Bool {
+        turnCoordinator.finalization(
+            for: id,
+            at: now,
+            inputQuietFor: outputTailTimeout,
+            outputQuietFor: outputQuietPause
+        ) == .granted
+    }
 
     init(apiKey: String, home: TurnLogic.Lang = .de, partner: TurnLogic.Lang = .en) {
         self.apiKey = apiKey
@@ -289,6 +292,7 @@ final class ReplayRunner {
             ready.insert(lang)
             if ready.count == sessions.count { readySem.signal() }
         case .audioChunk(let data):
+            if rms(data) > 220 { turnCoordinator.noteOutput() }
             if rms(data) > 220, let t = turn.translator, lang == t {
                 lastTranslatorAudioAt = Date()
                 lastContentAt = Date()
@@ -305,10 +309,9 @@ final class ReplayRunner {
             trace("IN ", lang, text)
             inputs[lang, default: ""] += text
             lastContentAt = Date()
-            lastInputAt = Date()
+            _ = turnCoordinator.noteInput()
             // Mirrors noteInputActivity: a fresh transcript re-arms the
             // release (#78).
-            speakerReleased = false
             releaseArmed = true
             releaseDeferredSince = nil
         case .outputLanguage:
@@ -321,7 +324,7 @@ final class ReplayRunner {
             // production, rather than only at commit.
             turn.noteOutputs(outputs, inputs: inputs)
             lastContentAt = Date()
-            lastOutputAt = Date()
+            turnCoordinator.noteOutput()
         case .turnComplete:
             break
         case .interrupted:
@@ -368,8 +371,10 @@ final class ReplayRunner {
             // threshold and which clock it is measured against. Written out
             // here, against lastContentAt, it silently diverged: the arriving
             // translation reset the clock and the retry never fired. GitHub #21.
-            if FinalizePolicy.deferredRetryIsDue(now: now, lastInputAt: lastInputAt) {
-                finalizeTurn()
+            if let id = turnCoordinator.currentID,
+               FinalizePolicy.deferredRetryIsDue(now: now, lastInputAt: turnCoordinator.lastInputAt),
+               turnMayFinalize(id, at: now) {
+                finalizeTurn(for: id)
             }
             q.asyncAfter(deadline: .now() + 0.1) { self.tick() }
             return
@@ -379,11 +384,12 @@ final class ReplayRunner {
         // SpeechEndPolicy — armed by transcript idleness, vetoed by a loud
         // "mic" (the WAV chunks). Recorded so pause cases can assert the
         // app never starts talking over a speaker who is mid-breath.
-        if releaseArmed, !speakerReleased, lastInputAt != .distantPast,
-           now.timeIntervalSince(lastInputAt) >= SpeechEndPolicy.transcriptIdleThreshold {
+        if releaseArmed, let id = turnCoordinator.currentID,
+           !turnCoordinator.speakerHasStopped,
+           now.timeIntervalSince(turnCoordinator.lastInputAt) >= SpeechEndPolicy.transcriptIdleThreshold {
             if SpeechEndPolicy.mayRelease(now: now, lastLoudMicAt: lastLoudMicAt,
                                           deferredSince: releaseDeferredSince) {
-                speakerReleased = true
+                guard turnCoordinator.confirmSpeakerStopped(for: id) else { return }
                 releaseDeferredSince = nil
                 releaseCount += 1
                 print("    release \(releaseCount) (speaker stopped) at \(elapsed())")
@@ -393,19 +399,24 @@ final class ReplayRunner {
             }
         }
 
-        let outputQuiet = now.timeIntervalSince(lastOutputAt) > outputQuietPause
-        if let lastAudio = lastTranslatorAudioAt,
-           now.timeIntervalSince(lastAudio) > outputTailTimeout, quiet > outputTailTimeout, outputQuiet {
-            finalizeTurn()
-        } else if lastTranslatorAudioAt == nil, !inputs.isEmpty, quiet > inputIdleTimeout, outputQuiet {
-            finalizeTurn()
+        if let id = turnCoordinator.currentID,
+           let lastAudio = lastTranslatorAudioAt,
+           now.timeIntervalSince(lastAudio) > outputTailTimeout, quiet > outputTailTimeout,
+           turnMayFinalize(id, at: now) {
+            finalizeTurn(for: id)
+        } else if let id = turnCoordinator.currentID,
+                  lastTranslatorAudioAt == nil, !inputs.isEmpty, quiet > inputIdleTimeout,
+                  turnMayFinalize(id, at: now) {
+            finalizeTurn(for: id)
         }
 
         if let ended = streamEndedAt {
             let sinceEnd = now.timeIntervalSince(ended)
             let contentQuiet = lastContentAt == .distantPast ? sinceEnd : quiet
-            if sinceEnd > endOfStreamQuiet, contentQuiet > endOfStreamQuiet {
-                finalizeTurn()
+            if let id = turnCoordinator.currentID,
+               sinceEnd > endOfStreamQuiet, contentQuiet > endOfStreamQuiet,
+               turnMayFinalize(id, at: now) {
+                finalizeTurn(for: id)
                 finished = true
                 doneSem.signal()
                 return
@@ -416,7 +427,8 @@ final class ReplayRunner {
 
     /// Mirrors finalizeTurn + resetForNextUtterance: commit through the real
     /// TurnLogic gate, then clear per-utterance state.
-    private func finalizeTurn() {
+    private func finalizeTurn(for id: TurnCoordinator.ID) {
+        guard turnCoordinator.isCurrent(id) else { return }
         // Commit FIRST: a short turn may only lock via commit's plurality
         // fallback, so reading turn.translator before committing would
         // record nil for it.
@@ -468,12 +480,11 @@ final class ReplayRunner {
         }
         deferUntil = nil
         turn.endTurn()
+        turnCoordinator.reset()
         if verbose { print("      --- turn ended @\(elapsed()) — state wiped ---") }
         inputs = [:]
         outputs = [:]
-        lastOutputAt = .distantPast
         lastTranslatorAudioAt = nil
-        speakerReleased = false
         releaseArmed = false
         releaseDeferredSince = nil
     }

@@ -20,12 +20,12 @@ the first.
 
 ## L1 — Logic tests (no network, no audio)
 
-The turn logic is pure decision-making, extracted into
-`HeikoTranslate/Models/TurnLogic.swift` precisely so it can be tested
-without audio hardware. `Tests/TurnLogicTests.swift` exercises **that real
-type** via `@testable import HeikoTranslate` — never a re-implementation
-inside the test file (a mirror copy passes forever while the app
-regresses; we made that mistake once).
+Turn routing is pure decision-making in
+`HeikoTranslate/Models/TurnLogic.swift`; endpoint and timer ownership are
+pure in `HeikoTranslate/Models/TurnCoordinator.swift`. Their tests exercise
+**those real types** via `@testable import HeikoTranslate` — never a
+re-implementation inside a test file (a mirror copy passes forever while the
+app regresses; we made that mistake once).
 
 Run:
 
@@ -179,7 +179,9 @@ review of #47, not a hypothetical.
 
 Speech end, mic-aware (#21 precedent, 2026-08-10). `SpeechEndPolicy` is pure,
 so L1 and the L3 harness run the same rule the app runs. The transcript-idle
-timer proposes; the microphone disposes.
+timer proposes; the microphone disposes. `TurnCoordinator` makes that
+confirmation a hard gate for **every** finalization path, and stamps timers
+with the turn they were armed for.
 
 | ID | Given | Expect | Rule |
 |---|---|---|---|
@@ -189,6 +191,9 @@ timer proposes; the microphone disposes.
 | L1.52d | No loud mic buffer this session (silence, or a dead route) | The gate holds nothing | **R5** |
 | L1.53 | A restaurant-loud room — babble the RMS floor was never calibrated against | Defers only to `maxMicExtension`, then degrades to the OLD behaviour | **R5** |
 | L1.53b | A breath pause with speech resuming into the deferral | Stays deferred until the speaker actually finishes | **R5** |
+| L1.73 | Transcript and translation are quiet, but `SpeechEndPolicy` has not confirmed the endpoint | No commit and no release — silence in model text cannot interrupt a still-speaking person | **R3/R5** |
+| L1.73b | A new transcript after the endpoint was confirmed | The turn re-opens; the earlier confirmation cannot finalize it | **R3/R5** |
+| L1.73c | A timer from a reset turn fires after the next turn begins | Inert — it cannot finalize the new turn | **R1/R3** |
 
 Session lifecycle (#1, 2026-08-10). The flags `close()` writes on the main
 thread and the URLSession callbacks read on the delegate queue are one pure
@@ -1233,7 +1238,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 203 XCTest cases bound to the real `TurnLogic`, `SpeechEndPolicy`, `GeminiLiveTranslationService` and `ConversationViewModel` (2026-08-13, on the #91 branch) |
+| L1 | ✅ Built and passing — 231 XCTest cases bound to the real `TurnLogic`, `TurnCoordinator`, `SpeechEndPolicy`, `GeminiLiveTranslationService` and `ConversationViewModel`, including five `TurnCoordinator` cases binding speech-end confirmation and timer identity to the app/L3 finalization gate (2026-08-18, on the turn-arbiter branch) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Partially re-verified on device (2026-08-12): revoked-key recovery passed after four on-device iterations (#9, PR #82); late-fragment filtering (#39), loanword direction (#40) and mic-aware speech end (#36) passed and closed; number transcription measured — shared model-level mis-hearing of German compound numerals, now a decision (#33); code-switching evidence refreshed (#32). Found live: #83, speech resuming in the stopped→commit window is dropped and talked over — the open half of #31. Still owed: the deliberate self-hearing geometry run (#35, case 7), which has fresh incidental evidence (a post-playback fragment recommitted as a small bubble). The ordered plan with per-case log criteria stays on GitHub #71. |
