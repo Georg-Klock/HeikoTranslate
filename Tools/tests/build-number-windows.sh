@@ -26,12 +26,41 @@ KEEP="${KEEP:-0}"
 # Everything the harness owns (stubs, captured output, the fake DerivedData
 # tree) lives OUTSIDE the git repo, or the scripts' own dirty-tree checks would
 # be reacting to the test rig instead of to the code under test.
+# The number INSIDE the built bundle, which is what reaches the pill. Written
+# in the shape the harness's plutil stub reads (<key> then <string>), so these
+# cases stay runnable off a Mac like the rest of the suite.
+APP_BUNDLE_REL="Library/Developer/Xcode/DerivedData/HeikoTranslate-aaa/Build/Products/Debug-iphoneos/HeikoTranslate.app"
+set_app_build() { # set_app_build <build>
+  cat > "$SANDBOX/$APP_BUNDLE_REL/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleShortVersionString</key>
+    <string>2.3</string>
+    <key>CFBundleVersion</key>
+    <string>$1</string>
+</dict>
+</plist>
+PLIST
+}
+# Read it back without plutil: the stub is only on PATH inside run(), and the
+# host may not have a real one. Same reason the suite stubs plutil at all.
+app_build() {
+  grep -A1 '<key>CFBundleVersion</key>' "$SANDBOX/$APP_BUNDLE_REL/Info.plist" 2>/dev/null \
+    | tail -1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/'
+}
+
 new_repo() {
   SANDBOX=$(mktemp -d)
   REPO_DIR="$SANDBOX/repo"
   mkdir -p "$REPO_DIR/Tools" "$SANDBOX/bin"
   # deploy.sh resolves the built .app under $HOME; give it one to find.
   mkdir -p "$SANDBOX/Library/Developer/Xcode/DerivedData/HeikoTranslate-aaa/Build/Products/Debug-iphoneos/HeikoTranslate.app"
+  # The bundle carries its OWN CFBundleVersion, and that — not project.yml — is
+  # what the pill shows and what deploy.sh now checks against git. A leftover
+  # app from an earlier build starts out matching the fixture repo.
+  set_app_build 40
   cat > "$REPO_DIR/project.yml" <<'YML'
 name: HeikoTranslate
 targets:
@@ -105,7 +134,31 @@ case " $* " in
     [[ "${FAIL_AT:-}" == "upload" ]] && exit 70
     [[ "${FAIL_AT:-}" == "sigterm_after_upload" ]] && kill -TERM "$PPID" ;;
   *)             [[ "${FAIL_AT:-}" == "build"   ]] && exit 65
-                 [[ "${FAIL_AT:-}" == "sigterm_during_build" ]] && kill -TERM "$PPID" ;;
+                 [[ "${FAIL_AT:-}" == "sigterm_during_build" ]] && kill -TERM "$PPID"
+                 # A real build stamps project.yml's number INTO the bundle,
+                 # and the bundle's copy is what reaches the pill. Simulating
+                 # that is what lets a case leave an artifact and project.yml
+                 # disagreeing — the state --no-build used to install blind.
+                 yml_build=$(grep 'CFBundleVersion:' project.yml | sed 's/.*"\(.*\)"/\1/')
+                 # #3's stale DerivedData: the settings query resolves an app
+                 # this run did not produce, so the bundle keeps an older
+                 # number than the one just bumped and committed.
+                 [[ "${FAIL_AT:-}" == "stale_app" ]] && yml_build=$((yml_build - 2))
+                 bundle="$HOME/Library/Developer/Xcode/DerivedData/HeikoTranslate-aaa/Build/Products/Debug-iphoneos/HeikoTranslate.app"
+                 mkdir -p "$bundle"
+                 cat > "$bundle/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleShortVersionString</key>
+    <string>2.3</string>
+    <key>CFBundleVersion</key>
+    <string>$yml_build</string>
+</dict>
+</plist>
+PLIST
+                 ;;
 esac
 exit 0
 SH
@@ -615,6 +668,68 @@ case_start "deploy: a failing pre-commit hook cannot lose an installed number"
   check "build number"  41            "$(build_number)"
   check "head"          "Build 2.3.41 (device)" "$(head_subject)"
   check "said it bypassed" yes "$(grep -q 'no-verify' "$SANDBOX/out" && echo yes || echo no)"
+case_end
+
+# --- the --no-build window -------------------------------------------------
+# The bump block is gated on BUILD == 1, so --no-build skipped the bump, the
+# traps and the commit — while still installing whatever number the leftover
+# artifact carried. Found in use on 2026-08-18, by the two-step sequence the
+# first case below replays exactly.
+
+case_start "deploy: --no-build after an aborted deploy records the artifact's number"
+  # Step one: a full deploy bumps 40 -> 41, builds (the stub stamps 41 into the
+  # bundle), then the phone never appears. The trap correctly reverts
+  # project.yml to 40 — and the BUILT ARTIFACT keeps 41.
+  status=$(FAIL_AT='nophone' run deploy.sh)
+  check "step 1 exit"        1    "$status"
+  check "step 1 repo back to" 40  "$(build_number)"
+  check "step 1 artifact kept" 41 "$(app_build)"
+  check "step 1 head"        base "$(head_subject)"
+  # Step two: --no-build installs that 41. It must not reach the phone as a
+  # number git has never heard of.
+  status=$(FAIL_AT='' run deploy.sh --no-build)
+  check "exit"          0             "$status"
+  check "installed"     yes           "$([[ -f "$SANDBOX/installed" ]] && echo yes || echo no)"
+  check "build number"  41            "$(build_number)"
+  check "head"          "Build 2.3.41 (device)" "$(head_subject)"
+  check "tree"          clean         "$(is_dirty)"
+case_end
+
+case_start "deploy: --no-build refuses an artifact older than the repo"
+  # A leftover bundle from before a release. Installing it would put 38 on the
+  # pill while git says 40 — and 38 already names other code.
+  set_app_build 38
+  status=$(FAIL_AT='' run deploy.sh --no-build)
+  check "exit"          1             "$status"
+  check "did not install" no          "$([[ -f "$SANDBOX/installed" ]] && echo yes || echo no)"
+  check "build number"  40            "$(build_number)"
+  check "head"          base          "$(head_subject)"
+  check "tree"          clean         "$(is_dirty)"
+  check "said why"      yes \
+        "$(grep -qi 'backwards' "$SANDBOX/out" && echo yes || echo no)"
+case_end
+
+case_start "deploy: --no-build with nothing new to record installs and commits nothing"
+  # project.yml, HEAD and the bundle all agree at 40. Reinstalling the same
+  # build is a legitimate thing to do and must not manufacture a commit.
+  status=$(FAIL_AT='' run deploy.sh --no-build)
+  check "exit"          0             "$status"
+  check "installed"     yes           "$([[ -f "$SANDBOX/installed" ]] && echo yes || echo no)"
+  check "build number"  40            "$(build_number)"
+  check "head"          base          "$(head_subject)"
+  check "tree"          clean         "$(is_dirty)"
+case_end
+
+case_start "deploy: a stale resolved app is never installed beside a fresh number"
+  # #3 by another route: the settings query resolves an app this run did not
+  # build. Committing 41 while installing 39 is the number↔code break the
+  # whole pipeline exists to prevent, so the install must not happen at all.
+  status=$(FAIL_AT='stale_app' run deploy.sh)
+  check "exit"          1             "$status"
+  check "did not install" no          "$([[ -f "$SANDBOX/installed" ]] && echo yes || echo no)"
+  check "build number"  40            "$(build_number)"
+  check "head"          base          "$(head_subject)"
+  check "tree"          clean         "$(is_dirty)"
 case_end
 
 case_start "release: an unrecordable uploaded number leaves a recovery note on disk"
