@@ -172,7 +172,12 @@ final class ReplayRunner {
     /// The real app's pure lifecycle gate. L3 may widen tolerances for network
     /// jitter, but it must not have its own definition of when a turn may end.
     private var turnCoordinator = TurnCoordinator()
-    private let outputQuietPause = 1.1   // service uses 0.9; widened for jitter
+    // Service uses 0.65; widened by the same +0.2 it always carried, for
+    // network jitter. The margin has to stay a margin: leaving this at 1.1
+    // after the service dropped to 0.65 would make the harness MORE patient
+    // than the app, so a translation the app clips would still look complete
+    // here — and this is the case L3 is supposed to catch.
+    private let outputQuietPause = 0.85
 
     // #78: the release simulation. Same decision the service makes, through
     // the same SpeechEndPolicy — the WAV chunks stand in for the mic, so
