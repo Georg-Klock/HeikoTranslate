@@ -35,12 +35,12 @@ targets:
         # pill is deliberately small: E for experiment, then the initial of
         # what is being tried (EC was Experiment, Coordinator).
         #
-        # Cleared here because this branch is being merged: the coordinator
-        # stops being an experiment the moment it is what main does, and a
-        # main build that still called itself EC would make the tag mean
-        # nothing. Clearing it is part of adopting an experiment, not an
-        # afterthought.
-        HTExperimentTag: ""
+        # EP = Experiment, Pause: this branch shortens the wait before the
+        # translation is spoken (#151). The judgement is subjective, so the
+        # phone has to be able to say which build made the impression —
+        # otherwise a later main install silently changes the thing being
+        # judged. Cleared on merge, the way EC was.
+        HTExperimentTag: "EP"
         # The app only uses the OS's own HTTPS/TLS, which is exempt. Without
         # this key App Store Connect asks the export-compliance question on
         # every single upload and holds the build back from testers until
