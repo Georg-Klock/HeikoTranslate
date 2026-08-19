@@ -134,7 +134,7 @@ translator session's audio is played.
    translation isn't clipped.
 6. **When the speaker has stopped is decided by `SpeechEndPolicy`**, pure for
    the same reason `FinalizePolicy` is (#21): L1 and the L3 harness run the
-   rule the app runs. The transcript-idle timer proposes at 1.4s; the
+   rule the app runs. The transcript-idle timer proposes at 1.2s; the
    microphone disposes. A speech-level mic buffer within 0.5s of the attempt
    means the speaker is plausibly still going, so the release defers and
    re-checks every 0.25s — device evidence had the idle timer firing 148ms
@@ -245,7 +245,7 @@ continuously while the mic is open and has **no offline mode**.
   session: `"…wir haben im Moment keine"` committed as one bubble and the
   rest of that sentence, `"Gurken mehr."`, landed in the next one against
   unrelated English. Finalizing now requires the *output* side to have been
-  quiet for 0.9s as well as the input side.
+  quiet for 0.65s as well as the input side.
 - **Held translation audio must survive a late direction.** Measured
   2026-07-29 (degraded LTE): the partner session's whole translation
   arrived in one burst shorter than the 1.2s home-silence confirm, so no
@@ -258,7 +258,7 @@ continuously while the mic is open and has **no offline mode**.
     audio waits on an unknown direction.
   - A successful commit plays whatever is still held before the reset.
   - Loud audio chunks update `lastOutputAt` (they used not to), so the
-    finalize gate's "output quiet ≥0.9s" can't fire mid-stream of the
+    finalize gate's "output quiet ≥0.65s" can't fire mid-stream of the
     translation's audio.
   - After a commit the translator's chunks keep playing straight through
     for a 2.5s linger window (text can commit seconds before its audio

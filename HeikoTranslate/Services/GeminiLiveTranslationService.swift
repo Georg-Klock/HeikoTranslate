@@ -362,7 +362,18 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Most recent mic buffer above `micSpeechRMSFloor`.
     private var lastLoudMicAt: Date?
 
-    private let outputQuietPause: TimeInterval = 0.9
+    /// How long the model's own output stream must be silent before its held
+    /// audio counts as a finished translation.
+    ///
+    /// Was 0.9s. Lowered with `transcriptIdleThreshold` after measuring the
+    /// device pause at ~3.2s against SPEC §3.3's "about a second". Kept well
+    /// above `outputTailTimeout` and lowered only to 0.65 rather than further:
+    /// this is the value that decides whether a translation is COMPLETE, and
+    /// cutting it too fine truncates the spoken sentence on a laggy
+    /// connection, which R5 forbids. L3 asserts translation completeness on
+    /// every replay, so a value that starts clipping fails in the harness
+    /// rather than mid-conversation in front of a user.
+    private let outputQuietPause: TimeInterval = 0.65
 
     /// True only when the current turn has an endpoint confirmed by the mic,
     /// then both input and output streams have gone quiet. Transcript idleness
@@ -1191,7 +1202,7 @@ final class GeminiLiveTranslationService: ObservableObject {
 
     private func handleAudioChunk(_ data: Data, from lang: Lang) {
         let rms = Self.rms(of: data)
-        // Audio IS output. The finalize gate (output quiet ≥0.9s) used to
+        // Audio IS output. The finalize gate (output quiet ≥ outputQuietPause) used to
         // watch only transcript events, so a turn could finalize while its
         // translation audio was still streaming in — and the reset dropped
         // the rest of the sentence.
@@ -1338,7 +1349,7 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// the normal clock re-decide; deliberately NOT noteInputActivity, whose
     /// `lastInputAt` is server-transcript timing and feeds the linger and
     /// finalize decisions. If the resumed speech never transcribes, the
-    /// clock re-runs the stop 1.4s later and commits what exists — no worse
+    /// clock re-runs the stop one transcriptIdleThreshold later and commits what
     /// than today, and the deferral now sees the ongoing loudness.
     /// One loud mic buffer (above `micSpeechRMSFloor`), wherever it lands
     /// in the turn's life. Named so the tap and the test seam share it.
