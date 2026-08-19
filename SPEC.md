@@ -229,6 +229,18 @@ Why this matters more here than in most apps: **Heiko cannot check the
 translation himself.** A line that is visibly still working is honest. A
 permanent line that is wrong is not.
 
+**And a turn that vanishes is not honest either.** When the evidence for a
+turn contradicts itself — both sessions transcribing each other's languages,
+so nothing identifies who spoke — the app must not pick a side. It says so
+instead, in the reader's language, under the button: *"Nicht verstanden —
+bitte nochmal sagen."* Saying nothing leaves someone waiting for an answer
+that is never coming, when the repair — saying it again — takes two seconds
+and only happens if they know it is needed.
+
+This applies only where waiting cannot help. A translation still on its way
+is a different thing and stays silent until it arrives or the turn is
+genuinely lost (GitHub #152).
+
 Failure modes this prevents (all observed):
 - Committing before the language is known → bubble on the wrong side.
 - Committing on a mid-sentence pause → truncated sentence.

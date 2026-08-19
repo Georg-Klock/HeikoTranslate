@@ -954,6 +954,28 @@ final class ConversationViewModel: ObservableObject {
         showMicNotice()
     }
 
+    /// #152: the turn refused to pick a side, so ask for it again.
+    ///
+    /// Rides the mic-notice slot deliberately rather than inventing a fourth
+    /// occupant: it is the same kind of thing — a transient event, newest wins,
+    /// gone after `micNoticeDuration` — and `bottomNotice` already encodes the
+    /// precedence, so "Mikrofon pausiert" still outranks it. A second
+    /// mechanism would be a second chance for two notices to fight over one
+    /// slot, which is the bug #28 was filed for.
+    ///
+    /// `.info`, not a warning: nothing failed. The app heard something and
+    /// could not tell who said it, and the person can fix that in two seconds
+    /// by saying it again.
+    func showUnresolvedTurnNotice() {
+        micNoticeDismissal?.cancel()
+        micNotice = StatusNotice(text: strings.didNotCatch, severity: .info)
+        micNoticeDismissal = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.micNoticeDuration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.clearMicNotice()
+        }
+    }
+
     /// Raise the notice and start its dismissal clock. Internal rather than
     /// private so L1 can check what it puts on screen; the only caller in the
     /// app is `resumeAfterInterruption()`, after a start has succeeded.
@@ -1246,6 +1268,9 @@ final class ConversationViewModel: ObservableObject {
                 onConnectionQuality: { [weak self] quality in
                     guard let self else { return }
                     self.connectionWarning = Self.warning(for: quality, in: self.homeLang)
+                },
+                onTurnUnresolved: { [weak self] in
+                    self?.showUnresolvedTurnNotice()
                 }
             )
             isListening = true

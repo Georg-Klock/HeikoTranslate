@@ -292,6 +292,16 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// stopped state and say why. GitHub #87.
     private var onMicUnrecoverable: (() -> Void)?
 
+    /// Fired when a turn REFUSED to pick a side because its evidence
+    /// contradicted itself, so the UI can ask for the sentence again (#152).
+    ///
+    /// Distinct from the ordinary rejections, which mean something is missing
+    /// and may still arrive — those are retried and must stay silent. This one
+    /// is terminal for the turn, and silence is the failure being fixed: the
+    /// home reader cannot check a translation, so a turn that vanishes with no
+    /// explanation leaves them waiting instead of repeating.
+    private var onTurnUnresolved: (() -> Void)?
+
     /// Effective connection quality, measured end to end. iOS exposes no
     /// signal-strength API to apps (bars are private); what we CAN measure
     /// is better anyway: whether Google's answers are actually arriving.
@@ -481,7 +491,8 @@ final class GeminiLiveTranslationService: ObservableObject {
         onServerRecovered: (() -> Void)? = nil,
         onSessionsExhausted: (() -> Void)? = nil,
         onMicUnrecoverable: (() -> Void)? = nil,
-        onConnectionQuality: ((ConnectionQuality) -> Void)? = nil
+        onConnectionQuality: ((ConnectionQuality) -> Void)? = nil,
+        onTurnUnresolved: (() -> Void)? = nil
     ) throws {
         // Second line of defence for GitHub #1. Whatever the caller does, a
         // start() that lands while we are already running must not install a
@@ -497,6 +508,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         self.onSessionsExhausted = onSessionsExhausted
         self.onMicUnrecoverable = onMicUnrecoverable
         self.onConnectionQuality = onConnectionQuality
+        self.onTurnUnresolved = onTurnUnresolved
         startPathMonitorIfNeeded()
         self.onInputLevel = onInputLevel
         self.onDirection = onDirection
@@ -1600,6 +1612,11 @@ final class GeminiLiveTranslationService: ObservableObject {
             diag("turn", Self.inputTranscriptDiagnosticLine(inputs: inputs, sessions: activePair))
             diag("turn", said())
             diag("turn", why())
+            // Only the typed refusal reaches the user. The other rejections
+            // mean "not yet" and are retried by the deferral machinery; asking
+            // someone to repeat a sentence that is still on its way would be
+            // both wrong and, at three deferrals a turn, constant.
+            if turn.abstained { onTurnUnresolved?() }
             return
         }
         diag("turn", "commit \(bubble.isHome ? "RIGHT/home" : "LEFT/foreign") via \(turn.translator?.rawValue ?? "?") | \(bubble.original.prefix(60)) → \(bubble.translation.prefix(60))")
