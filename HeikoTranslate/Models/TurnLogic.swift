@@ -544,6 +544,29 @@ struct TurnLogic {
         spokenLang == home && homeHeardPartner && partnerHeardHome
     }
 
+    /// The crossed mis-hearing shape itself: each session's own votes name the
+    /// OTHER side's language. Both witnesses, no claim about where the settle
+    /// landed.
+    ///
+    /// `homeSettleWithCrossedEvidence` is this same pair of witnesses narrowed
+    /// to a home settle, because its job is to rescue a home commit from a
+    /// foreign veto — one direction only. Naming the shape separately is what
+    /// lets the other direction be reasoned about at all: measured on device
+    /// 2026-08-18 (#125), both witnesses fired, the settle landed on the
+    /// partner, and every guard that consumes them sat out because each is
+    /// gated on a home settle.
+    var crossedEvidence: Bool { homeHeardPartner && partnerHeardHome }
+
+    /// Set by `commit` when it refused to pick a side because the evidence
+    /// contradicted itself, rather than because something was missing.
+    ///
+    /// Typed, and deliberately not read off `lastRejectReason`: that string is
+    /// for the log, and #28 established that copy must never be a control
+    /// channel — the view picked a colour by spelling once and rewording the
+    /// text silently changed behaviour. A caller deciding whether to ask the
+    /// speaker to repeat needs a fact, not a phrase.
+    private(set) var abstained = false
+
     /// A foreign-language veto may yield only for the full measured crossed
     /// shape. A high-overlap home output is not used to guess a side; here it
     /// verifies the specific mis-hearing mechanism that makes the global
@@ -917,10 +940,53 @@ struct TurnLogic {
     /// nothing rather than guessing a side.
     mutating func commit(inputs: [Lang: String], outputs: [Lang: String]) -> Bubble? {
         lastRejectReason = nil
+        abstained = false
         guard !hasCommitted else { lastRejectReason = "already committed (R1)"; return nil }
 
         func text(_ lang: Lang) -> String {
             (outputs[lang] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // #125: the full crossed shape, with the settle on the PARTNER.
+        //
+        // Both witnesses say the sessions swapped languages, so nothing this
+        // turn produced identifies who spoke: the transcript attributed to the
+        // speaker is the other language, and committing it puts words on
+        // screen that nobody said. Measured on device 2026-08-18, three
+        // identical turns, every individual signal reporting correctly.
+        //
+        // This is a refusal, not a rejection. The other `return nil` paths
+        // mean something is MISSING and may still arrive, which is why the
+        // deferral machinery retries them. Here the evidence is present and
+        // contradicts itself; waiting cannot improve it, and the honest
+        // outcome is to say so and let the speaker repeat (#152).
+        //
+        // Deliberately not applied when `partnerEvidenceOverridesForeignVeto`
+        // holds: that is the measured #75/#83 case where this same evidence
+        // plus a round-trip echo resolves HOME correctly, and the home branch
+        // below already handles it. Abstaining first would trade a working
+        // rescue for a shrug.
+        // Crossed codes and a partner settle are NOT enough on their own to
+        // call a turn untrustworthy: L1.51 is exactly that shape and commits
+        // foreign correctly (a Spanish speaker saying a name, the home session
+        // echoing it). What separates the two is whether the home session
+        // produced an input transcript at all.
+        //
+        // When it did, both sessions have described the SAME audio and
+        // labelled it as each other's language — two contradictory accounts of
+        // one utterance, which is the #125 swap. When it did not, there is only
+        // one account and nothing contradicts it.
+        let homeHeardSomething = !(inputs[home] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let partnerHeardSomething = !(inputs[partner] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if crossedEvidence, spokenLang == partner,
+           homeHeardSomething, partnerHeardSomething,
+           !partnerEvidenceOverridesForeignVeto(outputs: outputs, inputs: inputs) {
+            direction = nil
+            abstained = true
+            lastRejectReason = "abstained: sessions transcribed each other's languages (#125)"
+            return nil
         }
 
         // Same gate as `noteOutputs`, and here for the same reason the two

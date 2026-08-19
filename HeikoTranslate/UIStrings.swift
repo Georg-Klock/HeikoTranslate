@@ -65,6 +65,13 @@ struct UIStrings {
     let noServerResponse: String
     let offline: String
     let micResumed: String
+    /// #152: the turn could not be resolved and nothing will arrive later.
+    /// An instruction, not a diagnosis — it has to tell the reader what to DO,
+    /// because the one thing that helps is saying it again. Kept short: it
+    /// shares the slot under the button with the mute and connection notices,
+    /// and it is read mid-conversation by someone who cannot check the
+    /// translation themselves.
+    let didNotCatch: String
 
     // Settings sheet
     /// Above the left wheel and the right wheel. They name the two sides in
@@ -134,6 +141,7 @@ struct UIStrings {
         noServerResponse: "Keine Antwort vom Server — bitte Internetverbindung prüfen.",
         offline: "Keine Internetverbindung.",
         micResumed: "Mikrofon wieder aktiv — die Übersetzung läuft weiter.",
+        didNotCatch: "Nicht verstanden — bitte wiederholen.",
         othersSpeak: "Andere sprechen",
         iSpeak: "Ich spreche",
         textSize: "Textgröße",
@@ -165,6 +173,7 @@ struct UIStrings {
         noServerResponse: "No response from the server — please check your connection.",
         offline: "No internet connection.",
         micResumed: "Microphone back on — translation continues.",
+        didNotCatch: "Didn't catch that — please say it again.",
         othersSpeak: "Others speak",
         iSpeak: "I speak",
         textSize: "Text size",
@@ -198,6 +207,7 @@ struct UIStrings {
         noServerResponse: "El servidor no responde — revisa tu conexión.",
         offline: "Sin conexión a internet.",
         micResumed: "Micrófono activo de nuevo — la traducción continúa.",
+        didNotCatch: "No te he entendido — dilo otra vez, por favor.",
         othersSpeak: "Los demás hablan",
         iSpeak: "Yo hablo",
         textSize: "Tamaño del texto",
@@ -229,6 +239,7 @@ struct UIStrings {
         noServerResponse: "Pas de réponse du serveur — vérifiez votre connexion.",
         offline: "Pas de connexion internet.",
         micResumed: "Microphone réactivé — la traduction continue.",
+        didNotCatch: "Je n'ai pas compris — répétez, s'il vous plaît.",
         othersSpeak: "Les autres parlent",
         iSpeak: "Je parle",
         textSize: "Taille du texte",
@@ -260,6 +271,7 @@ struct UIStrings {
         noServerResponse: "서버 응답이 없습니다 — 인터넷 연결을 확인해 주세요.",
         offline: "인터넷에 연결되어 있지 않습니다.",
         micResumed: "마이크가 다시 켜졌습니다 — 번역이 계속됩니다.",
+        didNotCatch: "잘 못 알아들었어요 — 다시 말씀해 주세요.",
         othersSpeak: "상대방이 쓰는 언어",
         iSpeak: "내가 쓰는 언어",
         textSize: "글자 크기",
@@ -291,6 +303,7 @@ struct UIStrings {
         noServerResponse: "服务器无响应，请检查网络连接。",
         offline: "没有网络连接。",
         micResumed: "麦克风已重新开启，翻译继续进行。",
+        didNotCatch: "没有听清 — 请再说一遍。",
         othersSpeak: "对方说的语言",
         iSpeak: "我说的语言",
         textSize: "文字大小",

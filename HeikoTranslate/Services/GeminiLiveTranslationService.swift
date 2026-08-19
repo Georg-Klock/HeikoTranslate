@@ -292,6 +292,16 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// stopped state and say why. GitHub #87.
     private var onMicUnrecoverable: (() -> Void)?
 
+    /// Fired when a turn REFUSED to pick a side because its evidence
+    /// contradicted itself, so the UI can ask for the sentence again (#152).
+    ///
+    /// Distinct from the ordinary rejections, which mean something is missing
+    /// and may still arrive — those are retried and must stay silent. This one
+    /// is terminal for the turn, and silence is the failure being fixed: the
+    /// home reader cannot check a translation, so a turn that vanishes with no
+    /// explanation leaves them waiting instead of repeating.
+    private var onTurnUnresolved: (() -> Void)?
+
     /// Effective connection quality, measured end to end. iOS exposes no
     /// signal-strength API to apps (bars are private); what we CAN measure
     /// is better anyway: whether Google's answers are actually arriving.
@@ -363,6 +373,22 @@ final class GeminiLiveTranslationService: ObservableObject {
     private var lastLoudMicAt: Date?
 
     private let outputQuietPause: TimeInterval = 0.9
+
+    /// Did anyone actually say anything this turn?
+    ///
+    /// The gate on asking for a repeat. A turn with no transcript from any
+    /// session was never a turn someone took — a stray buffer, a door, a
+    /// cough — and telling a quiet room to say it again is worse than saying
+    /// nothing, which is the whole standard #152 is held to.
+    ///
+    /// Static and pure so L1 can hold it without a clock: the surrounding
+    /// `finalizeTurn` runs on real timers, and #153 is open precisely because
+    /// tests that wait on wall-clock time flake into false regressions.
+    static func turnHeardSpeech(_ inputs: [TurnLogic.Lang: String]) -> Bool {
+        inputs.values.contains {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
 
     /// True only when the current turn has an endpoint confirmed by the mic,
     /// then both input and output streams have gone quiet. Transcript idleness
@@ -481,7 +507,8 @@ final class GeminiLiveTranslationService: ObservableObject {
         onServerRecovered: (() -> Void)? = nil,
         onSessionsExhausted: (() -> Void)? = nil,
         onMicUnrecoverable: (() -> Void)? = nil,
-        onConnectionQuality: ((ConnectionQuality) -> Void)? = nil
+        onConnectionQuality: ((ConnectionQuality) -> Void)? = nil,
+        onTurnUnresolved: (() -> Void)? = nil
     ) throws {
         // Second line of defence for GitHub #1. Whatever the caller does, a
         // start() that lands while we are already running must not install a
@@ -497,6 +524,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         self.onSessionsExhausted = onSessionsExhausted
         self.onMicUnrecoverable = onMicUnrecoverable
         self.onConnectionQuality = onConnectionQuality
+        self.onTurnUnresolved = onTurnUnresolved
         startPathMonitorIfNeeded()
         self.onInputLevel = onInputLevel
         self.onDirection = onDirection
@@ -1516,6 +1544,30 @@ final class GeminiLiveTranslationService: ObservableObject {
                 }
             }
             return
+        }
+        // The turn is being abandoned. Everything that could still have
+        // arrived has been waited for, so this is the last moment anyone can
+        // be told — and the one place BOTH ways of losing a turn arrive:
+        //
+        //   - the evidence contradicted itself (`turn.abstained`), and
+        //   - the deferral ladder ran out with nothing to show.
+        //
+        // Told in one place rather than at each rejection, because the user
+        // outcome is identical and the difference is diagnostic. Notifying at
+        // the rejection site instead would have fired three extra times per
+        // turn, once per deferral, for a translation still on its way.
+        //
+        // Measured 2026-08-19 (#139): the home session went mute, so every
+        // turn the other person spoke deferred three times and vanished. The
+        // app showed nothing for a minute — which is the failure #152 is
+        // about, reached by the route the first slice did not cover.
+        //
+        // Gated on having actually heard something. A turn with no transcript
+        // at all was never a turn anyone took, and asking a quiet room to
+        // repeat itself is worse than saying nothing.
+        if Self.turnHeardSpeech(inputs) {
+            diag("turn", "turn unresolved — asking for a repeat (\(turn.abstained ? "abstained" : "nothing arrived"))")
+            onTurnUnresolved?()
         }
         resetForNextUtterance()
         // Clear the live provisional line even when the turn produced no
