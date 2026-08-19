@@ -229,17 +229,23 @@ Why this matters more here than in most apps: **Heiko cannot check the
 translation himself.** A line that is visibly still working is honest. A
 permanent line that is wrong is not.
 
-**And a turn that vanishes is not honest either.** When the evidence for a
-turn contradicts itself — both sessions transcribing each other's languages,
-so nothing identifies who spoke — the app must not pick a side. It says so
-instead, in the reader's language, under the button: *"Nicht verstanden —
-bitte wiederholen."* Saying nothing leaves someone waiting for an answer
-that is never coming, when the repair — saying it again — takes two seconds
-and only happens if they know it is needed.
+**And a turn that vanishes is not honest either.** A turn can be lost two
+ways, and both end the same for the person who spoke:
 
-This applies only where waiting cannot help. A translation still on its way
-is a different thing and stays silent until it arrives or the turn is
-genuinely lost (GitHub #152).
+1. **The evidence contradicts itself** — both sessions transcribing each
+   other's languages, so nothing identifies who spoke. The app must not pick
+   a side.
+2. **Nothing ever arrives** — the translation is waited for and does not
+   come. Measured on device: one session went mute, and every turn the other
+   person spoke was waited on and then dropped, silently, for a minute.
+
+In both the app says so, in the reader's language, under the button:
+*"Nicht verstanden — bitte wiederholen."* Saying nothing leaves someone
+waiting for an answer that is never coming, when the repair — saying it
+again — takes two seconds and only happens if they know it is needed.
+
+It is said once, when the turn is abandoned — never while a translation may
+still be on its way, and never for a turn nobody spoke in (GitHub #152).
 
 Failure modes this prevents (all observed):
 - Committing before the language is known → bubble on the wrong side.
