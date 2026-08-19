@@ -202,6 +202,46 @@ final class AbstentionTests: XCTestCase {
                           "the mute notice owns the slot while the mic is off")
     }
 
+    // MARK: - The second way a turn is lost (#139, device 2026-08-19)
+
+    // L1.77 — the deferral ladder running out is also an unresolved turn.
+    //
+    // The first slice only spoke up when the evidence contradicted itself. On
+    // device the home session went mute, so every turn the other person spoke
+    // deferred three times and vanished with nothing on screen for a minute —
+    // the same failure, by the route that was not covered.
+    func testL1_77_exhaustedDeferralsGiveUp() {
+        var policy = FinalizePolicy()
+        let reason = "codes-veto: settled ko, home session never translated"
+
+        for attempt in 1...FinalizePolicy.maxDeferrals {
+            XCTAssertEqual(policy.decide(committed: false, rejectReason: reason),
+                           .waitForTranslation,
+                           "attempt \(attempt) may still arrive")
+        }
+        XCTAssertEqual(policy.decide(committed: false, rejectReason: reason), .giveUp,
+                       "after the ladder there is nothing left to wait for")
+    }
+
+    // L1.77b — a turn nobody spoke in is not lost, and must not ask for a
+    // repeat. The guard that keeps a quiet room quiet.
+    func testL1_77b_aTurnWithNoTranscriptAsksForNothing() {
+        XCTAssertFalse(GeminiLiveTranslationService.turnHeardSpeech([:]),
+                       "no transcripts at all — nobody took this turn")
+        XCTAssertFalse(GeminiLiveTranslationService.turnHeardSpeech([.de: "", .en: ""]))
+        XCTAssertFalse(GeminiLiveTranslationService.turnHeardSpeech([.de: "   \n", .en: ""]),
+                       "whitespace is not speech")
+    }
+
+    // L1.77c — one session hearing something is enough, which is exactly the
+    // device shape: the mute session returned nothing while the other
+    // transcribed the speaker perfectly.
+    func testL1_77c_oneSessionHearingIsEnough() {
+        XCTAssertTrue(GeminiLiveTranslationService.turnHeardSpeech(
+            [.en: "", .ko: "오늘 할 일이 되게 많네요."]),
+            "the other person spoke; that the home session went deaf is the bug, not a reason to stay silent")
+    }
+
     // L1.76d — every language set answers. Without this, adding a seventh
     // language ships a build that shows nothing at the one moment the reader
     // is being asked to do something.
