@@ -374,6 +374,22 @@ final class GeminiLiveTranslationService: ObservableObject {
 
     private let outputQuietPause: TimeInterval = 0.9
 
+    /// Did anyone actually say anything this turn?
+    ///
+    /// The gate on asking for a repeat. A turn with no transcript from any
+    /// session was never a turn someone took — a stray buffer, a door, a
+    /// cough — and telling a quiet room to say it again is worse than saying
+    /// nothing, which is the whole standard #152 is held to.
+    ///
+    /// Static and pure so L1 can hold it without a clock: the surrounding
+    /// `finalizeTurn` runs on real timers, and #153 is open precisely because
+    /// tests that wait on wall-clock time flake into false regressions.
+    static func turnHeardSpeech(_ inputs: [TurnLogic.Lang: String]) -> Bool {
+        inputs.values.contains {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
     /// True only when the current turn has an endpoint confirmed by the mic,
     /// then both input and output streams have gone quiet. Transcript idleness
     /// may request this check; it never bypasses the speaker-end decision.
@@ -1529,6 +1545,30 @@ final class GeminiLiveTranslationService: ObservableObject {
             }
             return
         }
+        // The turn is being abandoned. Everything that could still have
+        // arrived has been waited for, so this is the last moment anyone can
+        // be told — and the one place BOTH ways of losing a turn arrive:
+        //
+        //   - the evidence contradicted itself (`turn.abstained`), and
+        //   - the deferral ladder ran out with nothing to show.
+        //
+        // Told in one place rather than at each rejection, because the user
+        // outcome is identical and the difference is diagnostic. Notifying at
+        // the rejection site instead would have fired three extra times per
+        // turn, once per deferral, for a translation still on its way.
+        //
+        // Measured 2026-08-19 (#139): the home session went mute, so every
+        // turn the other person spoke deferred three times and vanished. The
+        // app showed nothing for a minute — which is the failure #152 is
+        // about, reached by the route the first slice did not cover.
+        //
+        // Gated on having actually heard something. A turn with no transcript
+        // at all was never a turn anyone took, and asking a quiet room to
+        // repeat itself is worse than saying nothing.
+        if Self.turnHeardSpeech(inputs) {
+            diag("turn", "turn unresolved — asking for a repeat (\(turn.abstained ? "abstained" : "nothing arrived"))")
+            onTurnUnresolved?()
+        }
         resetForNextUtterance()
         // Clear the live provisional line even when the turn produced no
         // bubble (e.g. no translation ever arrived) — otherwise the faded
@@ -1612,11 +1652,6 @@ final class GeminiLiveTranslationService: ObservableObject {
             diag("turn", Self.inputTranscriptDiagnosticLine(inputs: inputs, sessions: activePair))
             diag("turn", said())
             diag("turn", why())
-            // Only the typed refusal reaches the user. The other rejections
-            // mean "not yet" and are retried by the deferral machinery; asking
-            // someone to repeat a sentence that is still on its way would be
-            // both wrong and, at three deferrals a turn, constant.
-            if turn.abstained { onTurnUnresolved?() }
             return
         }
         diag("turn", "commit \(bubble.isHome ? "RIGHT/home" : "LEFT/foreign") via \(turn.translator?.rawValue ?? "?") | \(bubble.original.prefix(60)) → \(bubble.translation.prefix(60))")

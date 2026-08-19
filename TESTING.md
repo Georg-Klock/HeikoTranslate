@@ -124,6 +124,9 @@ stated count against.
 | L1.76b | Home language is Spanish | The instruction follows the HOME language | **#152** |
 | L1.76c | Muted while a refusal is showing | `Mikrofon pausiert` still owns the slot | **#28/#152** |
 | L1.76d | Every home-capable language | All six sets carry the string | **#152** |
+| L1.77 | The deferral ladder runs out | `.giveUp` — also an unresolved turn, also asks for a repeat | **#139/#152** |
+| L1.77b | A turn with no transcript from any session | Asks for nothing; a quiet room stays quiet | **#152** |
+| L1.77c | One session heard, the other went mute | Enough — the other person did speak | **#139/#152** |
 | L1.46 | A cold launch, before any tap | Glyph reads muted, notice stays silent — two rules, disagreeing on purpose | **R8** |
 | L1.46c | Every combination of listening / launching | The glyph is muted whenever nothing is running; `hasEverStarted` does not enter into it | **R8** |
 | L1.47 | A fresh install, no stored settings | Opens ME: German, YOU: English | **§4.1** |
@@ -1253,7 +1256,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 245 XCTest cases bound to the real `TurnLogic`, `TurnCoordinator`, `SpeechEndPolicy`, `AppVersion`, `UIStrings`, `GeminiLiveTranslationService` and `ConversationViewModel`, including ten `#152` abstention cases and five `TurnCoordinator` cases binding speech-end confirmation and timer identity to the app/L3 finalization gate (2026-08-19, on the #152 branch) |
+| L1 | ✅ Built and passing — 248 XCTest cases bound to the real `TurnLogic`, `TurnCoordinator`, `SpeechEndPolicy`, `AppVersion`, `UIStrings`, `GeminiLiveTranslationService` and `ConversationViewModel`, including thirteen `#152` abstention cases and five `TurnCoordinator` cases binding speech-end confirmation and timer identity to the app/L3 finalization gate (2026-08-19, on the #152 branch) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Turn-arbiter branch measured on device 2026-08-18 (build 2.4.75 EC, ~13 min, two sessions): **direction correct on 17 of 17 bubbles** across three pairs — de↔en (3), de↔fr (8) and fr↔en (6). The fr↔en run is the load-bearing one: home was French, and one badly garbled utterance whose partner session reported German (`votes=de×2,fr×3`) still settled home correctly. Speech end held: 19 stops, no commit landed mid-utterance, and the single deferral behaved as designed — a loud mic buffer vetoed the stop, and it sealed 0.25 s later once the mic went quiet. No session errors, no reconnects. **One turn was lost**: a short fragment reached one session, neither session produced a translation, the finalize deferred three times and the turn was then cleared with no bubble and no indication. That is the repair-state gap `docs/TURN_ARBITER_EXPERIMENT.md` names in its own future work, not a coordinator regression — the rejection is the commit gate and the retry ladder is #21's. **Unproven on device:** the #83 resume path (`speaker resumed during the commit window`) did not occur once, so the reconciliation this branch made between #83 and the turn-ID threading rests on L1 alone. Also found, unrelated to this branch: scrolling the language wheel restarted the sessions five times and stopped the microphone five times for one language change (#146). |
