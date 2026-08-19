@@ -25,7 +25,7 @@ targets:
         # in parentheses. Bump BOTH on every install to a real device, so
         # "is my phone current?" is answerable at a glance.
         CFBundleShortVersionString: "2.4"
-        CFBundleVersion: "77"
+        CFBundleVersion: "78"
         # Two letters naming the experiment this build carries, appended to
         # the pill: "2.4.75 EC". Empty on main and on anything heading for
         # TestFlight — an unmarked number is a normal build, which is the
@@ -35,12 +35,18 @@ targets:
         # pill is deliberately small: E for experiment, then the initial of
         # what is being tried (EC was Experiment, Coordinator).
         #
-        # EP = Experiment, Pause: this branch shortens the wait before the
-        # translation is spoken (#151). The judgement is subjective, so the
-        # phone has to be able to say which build made the impression —
-        # otherwise a later main install silently changes the thing being
-        # judged. Cleared on merge, the way EC was.
-        HTExperimentTag: "EP"
+        # EK = Experiment, Korean: the build cut for a Korean-pair session.
+        # It carries three unmerged changes at once — the mute-session
+        # reconnect (#139/PR #140), the shorter pause (#151), and the refusal
+        # that asks for a repeat (#152) — so an impression from this session
+        # belongs to the combination, not to any one of them. Its own letters
+        # for that reason: EP and EB were different sets, and a pill that
+        # reuses a tag makes an impression untraceable, which is the one thing
+        # the tag exists to prevent.
+        #
+        # Counter fast-forwarded to 78 by hand so deploy mints 79: 77 (EP) and
+        # 78 (EB) are already on the phone. That is #148, hit again.
+        HTExperimentTag: "EK"
         # The app only uses the OS's own HTTPS/TLS, which is exempt. Without
         # this key App Store Connect asks the export-compliance question on
         # every single upload and holds the build back from testers until
