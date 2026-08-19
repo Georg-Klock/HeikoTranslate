@@ -233,7 +233,7 @@ permanent line that is wrong is not.
 turn contradicts itself — both sessions transcribing each other's languages,
 so nothing identifies who spoke — the app must not pick a side. It says so
 instead, in the reader's language, under the button: *"Nicht verstanden —
-bitte nochmal sagen."* Saying nothing leaves someone waiting for an answer
+bitte wiederholen."* Saying nothing leaves someone waiting for an answer
 that is never coming, when the repair — saying it again — takes two seconds
 and only happens if they know it is needed.
 

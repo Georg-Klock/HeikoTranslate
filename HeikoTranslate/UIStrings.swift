@@ -141,7 +141,7 @@ struct UIStrings {
         noServerResponse: "Keine Antwort vom Server — bitte Internetverbindung prüfen.",
         offline: "Keine Internetverbindung.",
         micResumed: "Mikrofon wieder aktiv — die Übersetzung läuft weiter.",
-        didNotCatch: "Nicht verstanden — bitte nochmal sagen.",
+        didNotCatch: "Nicht verstanden — bitte wiederholen.",
         othersSpeak: "Andere sprechen",
         iSpeak: "Ich spreche",
         textSize: "Textgröße",
