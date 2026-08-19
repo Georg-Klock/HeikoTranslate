@@ -10,10 +10,25 @@ import Foundation
 /// ending turn remains unchanged because the mic is already quiet when the
 /// transcript-idle timer fires.
 struct SpeechEndPolicy {
-    /// Transcript idleness that arms the release — the service's historical
-    /// `speechEndPause`, unchanged. The policy owns it now so the harness
-    /// and the app cannot drift (#21).
-    static let transcriptIdleThreshold: TimeInterval = 1.4
+    /// Transcript idleness that arms the release. The policy owns it so the
+    /// harness and the app cannot drift (#21).
+    ///
+    /// Was 1.4s, inherited unchanged from the service's `speechEndPause` —
+    /// a value chosen when transcript idleness was the ONLY evidence that a
+    /// speaker had finished, so it had to be long enough to sit out a breath
+    /// on its own. It is not the only evidence any more: since #36/#78 a
+    /// speech-level mic buffer vetoes the release outright, and `de_pause`
+    /// (one utterance with an internal breath pause) is an L3 case asserting
+    /// exactly one release. The conservatism now lives in the microphone,
+    /// which is a better instrument for "are they still talking" than a
+    /// transcript that arrives late by construction.
+    ///
+    /// Measured on device 2026-08-18 (build 2.4.76): the pause between the
+    /// last transcript and the translation being spoken ran about 3.2s — 1.4s
+    /// here plus a very consistent 1.8s of finalization. SPEC §3.3 describes
+    /// "quiet for about a second", so this is closing a gap with the stated
+    /// design rather than tuning past it.
+    static let transcriptIdleThreshold: TimeInterval = 1.2
 
     /// A speech-level mic buffer within this window of the attempt means
     /// the speaker is still talking. Wider would add latency after every
@@ -52,7 +67,7 @@ struct SpeechEndPolicy {
     /// with the half-sentence translation played over the still-talking
     /// speaker. A loud mic in that window un-stops the turn instead: back
     /// to normal listening, the regular end-of-turn clock re-governs, and
-    /// a cough merely re-runs the stop decision 1.4s later.
+    /// a cough merely re-runs the stop decision one `transcriptIdleThreshold` later.
     ///
     /// `isPlayingOutput` gates the echo: while the loudspeaker is playing
     /// (a previous turn's tail), loudness at the mic proves nothing, and an
