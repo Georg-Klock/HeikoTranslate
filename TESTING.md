@@ -313,7 +313,7 @@ Resumed speech un-stops the turn (#83, 2026-08-12). Device finding: once
 so speech resuming in that ~2s window was half-committed, half-dropped, and
 talked over. A loud mic buffer in the window now returns the turn to normal
 listening; the regular end-of-turn clock re-governs, so a cough merely
-re-runs the stop 1.4s later. Loudspeaker playback is gated out — an
+re-runs the stop 1.2s later. Loudspeaker playback is gated out — an
 echo-driven un-stop would hold turns open forever. Needs the device
 re-validation the next phone session: the case-1 long-breath run should now
 show `speaker resumed during the commit window` instead of losing words.
