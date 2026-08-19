@@ -45,3 +45,8 @@ design/*.jpeg
 Tools/ExportUpload.plist
 Tools/ExportOptions.plist
 __pycache__/
+
+# Machine-local build settings (DEVELOPMENT_TEAM). Never tracked: a real
+# team ID is an account identifier, and the privacy check can only catch one
+# it already knows from Tools/local.env.
+Local.xcconfig
