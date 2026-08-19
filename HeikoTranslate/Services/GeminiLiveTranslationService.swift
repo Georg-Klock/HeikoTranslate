@@ -126,6 +126,20 @@ final class GeminiLiveTranslationService: ObservableObject {
     private var anySessionReady = false
     private var readySessions: Set<Lang> = []
 
+    /// When each session last produced ANYTHING with content in it — a
+    /// transcript either side, or an audio chunk — and when it became ready.
+    ///
+    /// Both sessions transcribe the same microphone, so in a healthy run both
+    /// report input transcripts for every turn; only the OUTPUT is expected to
+    /// be one-sided. A session that stays empty while its partner is talking
+    /// is therefore not "the quiet side of the turn", it is broken.
+    private var lastContentAt: [Lang: Date] = [:]
+    private var readyAt: [Lang: Date] = [:]
+    /// Reconnects triggered by muteness, per session. Capped: a session that
+    /// comes back mute twice is telling us something a third reconnect will
+    /// not fix, and a silent reconnect loop is worse than a visible failure.
+    private var muteReconnects: [Lang: Int] = [:]
+
     /// Silence watchdog: finalizes a turn even when no translated audio ever
     /// played, so a stale `translator` can't persist into the next utterance.
     private var inputIdleTimer: Timer?
@@ -741,6 +755,7 @@ final class GeminiLiveTranslationService: ObservableObject {
                     self.lastMicHeartbeat = Date()
                     self.secondPeakRMS = 0
                     self.checkServerSilence()
+                    self.checkForMuteSession()
                 }
                 self.onInputLevel?(level)
             }
@@ -941,6 +956,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         case .setupComplete:
             lastServerEventAt = Date()
             readySessions.insert(lang)
+            readyAt[lang] = Date()
             retryAttempts[lang] = 0
             // A clean handshake means the network recovered — start the drop
             // cooldown over, so one bad tunnel doesn't leave this language on
@@ -950,6 +966,7 @@ final class GeminiLiveTranslationService: ObservableObject {
             openMicIfReady()
         case .audioChunk(let data):
             lastServerEventAt = Date()
+            lastContentAt[lang] = Date()
             handleAudioChunk(data, from: lang)
         case .inputLanguage(let code):
             noteInputLanguage(code, from: lang)
@@ -964,6 +981,7 @@ final class GeminiLiveTranslationService: ObservableObject {
             break
         case .inputTranscript(let text):
             lastServerEventAt = Date()
+            lastContentAt[lang] = Date()
             noteServerRecovered()
             // The straggler rule the codes gate has had since 2026-07-29,
             // extended to the transcript itself: a fragment arriving while
@@ -992,6 +1010,7 @@ final class GeminiLiveTranslationService: ObservableObject {
                 diag("turn", "[\(lang.rawValue)] output transcript ignored (no speech this turn): \(text.prefix(40))")
                 return
             }
+            lastContentAt[lang] = Date()
             outputs[lang, default: ""] += text
             turnCoordinator.noteOutput()
             // A session translating is the authoritative direction signal —
@@ -1275,6 +1294,47 @@ final class GeminiLiveTranslationService: ObservableObject {
             diag("session", "server SILENT for \(Int(silence))s while streaming (peak mic \(Int(peakMicRMS))) — starved uplink or server issue")
         }
         publishQuality()
+    }
+
+    /// A session that connected and then never spoke, while its partner did.
+    ///
+    /// **Measured on device 2026-08-17 (build 2.4.65).** The `de` session
+    /// completed its handshake and `setupComplete`, then produced ZERO
+    /// transcripts and zero audio for the whole run. Every turn therefore
+    /// lacked a home translation, the codes-veto fired correctly on each one,
+    /// and 20 of 21 turns were rejected over four minutes. Nothing detected
+    /// it: the startup watchdog only checks that sessions become READY, and
+    /// `checkServerSilence` watches the newest event from ANY session, so a
+    /// healthy partner kept that clock fresh the entire time. The one signal
+    /// that would have caught it — one side empty while the other talks — was
+    /// visible in every log line and consulted by nothing.
+    ///
+    /// The discriminator is the partner's liveness, not a bare timeout. Both
+    /// sessions transcribe the same microphone, so in a healthy run both
+    /// report input transcripts for every turn; only OUTPUT is legitimately
+    /// one-sided. Requiring positive evidence that another session is
+    /// currently producing is what separates "this one is broken" from
+    /// "nobody has said anything yet", and it is why this can run on a plain
+    /// 1Hz beat without a special case for silence, startup, or a long pause.
+    private func checkForMuteSession() {
+        guard isRunning, isSendingAudio else { return }
+        let mute = SessionLiveness.muteSessions(ready: readySessions,
+                                                lastContentAt: lastContentAt,
+                                                readyAt: readyAt,
+                                                reconnects: muteReconnects,
+                                                now: Date())
+        for lang in mute {
+            let attempts = muteReconnects[lang, default: 0] + 1
+            muteReconnects[lang] = attempts
+            diag("session", "[\(lang.rawValue)] MUTE while its partner kept talking "
+                 + "— reconnecting (\(attempts)/\(SessionLiveness.maxReconnects))")
+            // Clear both clocks so the replacement is judged from scratch
+            // rather than inheriting the dead instance's silence and being
+            // torn down again on the next beat.
+            lastContentAt[lang] = nil
+            readyAt[lang] = nil
+            reconnect(lang)
+        }
     }
 
     /// Hysteresis so the banner doesn't flap: degrading is immediate,
