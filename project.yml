@@ -25,7 +25,7 @@ targets:
         # in parentheses. Bump BOTH on every install to a real device, so
         # "is my phone current?" is answerable at a glance.
         CFBundleShortVersionString: "2.4"
-        CFBundleVersion: "76"
+        CFBundleVersion: "77"
         # Two letters naming the experiment this build carries, appended to
         # the pill: "2.4.75 EC". Empty on main and on anything heading for
         # TestFlight — an unmarked number is a normal build, which is the
