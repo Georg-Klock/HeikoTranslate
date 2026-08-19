@@ -115,6 +115,21 @@ sides swaps them. The choice is remembered; changing it mid-conversation
 restarts the translation. This is the ONLY settings surface, deliberately
 quiet — Heiko never needs it.
 
+**Choosing a language touches no connection.** While the sheet is open,
+nothing is torn down, opened or reconfigured: the wheels move a selection and
+nothing else. The new pair takes effect once, when the sheet is dismissed and
+the main screen is back, and only if it differs from the pair already running
+— so opening the sheet and closing it again is free, and an in-flight turn
+survives it.
+
+The reason is that a wheel has no way to say which values were chosen and
+which were merely scrolled past. Applying each one as it arrives made a single
+change from one partner language to another restart the sessions five times,
+stopping the microphone each time (GitHub #146) — which R4 forbids, since
+speech arriving during a teardown has nowhere to go. Sheet dismissal is the
+only signal that means "this is the pair I want"; no debounce interval can
+separate a rest between detents from a decision.
+
 Beneath the wheels sit three quiet rows, all in the reader's language: the
 text-size slider, the log-share row ("Protokoll an Georg senden", the one
 action he may ever be asked to perform), and a **Datenschutz** row that
