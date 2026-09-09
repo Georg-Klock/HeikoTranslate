@@ -367,7 +367,11 @@ final class LanguagePairTests: XCTestCase {
         // test (L1.75). The set is smaller than it was (SPEC §3.0), so the
         // spin repeats languages rather than visiting six distinct ones.
         // What this pins is the count of applies, not their variety.
-        for lang in [TurnLogic.Lang.es, .ko, .en, .ko, .es, .en] {
+        // Six notches, ending on a language that is not the running partner:
+        // under #146 the restart happens on dismissal only when the pair
+        // actually changed, so a spin that ends where it started restarts
+        // nothing (that is L1.45b).
+        for lang in [TurnLogic.Lang.es, .ko, .en, .ko, .es, .ko] {
             vm.partnerLang = lang
         }
         XCTAssertEqual(vm.languageApplyCount - baseline, 6,
@@ -405,7 +409,7 @@ final class LanguagePairTests: XCTestCase {
 
         // Scrolled away and back again: the pair the sessions run never
         // changed, so neither should the sessions.
-        vm.partnerLang = .fr
+        vm.partnerLang = .es
         vm.partnerLang = .ko
         vm.partnerLang = .en
         vm.languageSelectionDidFinish()
