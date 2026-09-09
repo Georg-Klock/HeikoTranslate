@@ -65,7 +65,8 @@ final class RoutingWitnessTests: XCTestCase {
     /// L1.102 — two witnesses for home outrank the home session's output.
     func testL1_102_concordantHomeCodesOutrankTheHomeSessionsNearEcho() {
         var (l, inputs, outputs) = settledHomeTurn()
-        XCTAssertTrue(l.concordantHomeEvidence, "both sessions and the settle say home — got: \(l.decisionSummary)")
+        XCTAssertTrue(l.concordantHomeEvidence(outputs: outputs, inputs: inputs),
+                      "both sessions and the settle say home, and the partner translated — got: \(l.decisionSummary)")
 
         let bubble = l.commit(inputs: inputs, outputs: outputs)
         XCTAssertEqual(bubble?.isHome, true, "home speech lands on the home side — got \(String(describing: bubble))")
@@ -92,10 +93,36 @@ final class RoutingWitnessTests: XCTestCase {
         vote(&l, "de", from: .de, at: 0.5)
         vote(&l, "de", from: .de, at: 1.6)
         XCTAssertEqual(l.spokenLang, .de)
-        XCTAssertFalse(l.concordantHomeEvidence, "no partner reading — one witness, not two")
+        XCTAssertFalse(l.concordantHomeCodes, "no partner reading — one witness, not two")
         let bubble = l.commit(inputs: [.de: "Do you want caramel sauce?"],
                               outputs: [.de: "Möchten Sie Karamellsauce?", .es: "¿Quieres salsa de caramelo?"])
         XCTAssertEqual(bubble?.isHome, false)
+    }
+
+    /// L1.102d — concordant codes over an ECHOING partner do not override.
+    /// Both sessions can hallucinate one wrong language together (#125
+    /// measured it for a third language); if that ever lands on home while
+    /// the speech is foreign, the partner session is echoing the foreign
+    /// speech, and the home session's own translation keeps deciding.
+    func testL1_102d_concordantCodesOverAnEchoingPartnerDoNotOverrideTheHomeTranslation() {
+        var l = TurnLogic(home: .de, partner: .en)
+        var now = 0.0
+        for _ in 0..<4 {
+            vote(&l, "de", from: .de, at: now); now += 0.3
+            vote(&l, "de", from: .en, at: now); now += 0.3
+        }
+        let heard = "Could we get the bill and two more coffees, please?"
+        let inputs: [TurnLogic.Lang: String] = [.de: heard, .en: heard]
+        let outputs: [TurnLogic.Lang: String] = [
+            .de: "Könnten wir die Rechnung und zwei weitere Kaffees bekommen, bitte?",
+            .en: heard,
+        ]
+        XCTAssertTrue(l.concordantHomeCodes)
+        XCTAssertFalse(l.concordantHomeEvidence(outputs: outputs, inputs: inputs),
+                       "an echoing partner is not a witness for home")
+        let bubble = l.commit(inputs: inputs, outputs: outputs)
+        XCTAssertEqual(bubble?.isHome, false, "the home session's real translation still wins")
+        XCTAssertEqual(bubble?.translation, outputs[.de])
     }
 
     // MARK: #137 — English on the home side, untranslated
@@ -192,7 +219,7 @@ final class RoutingWitnessTests: XCTestCase {
             .de: "Jemand hat einen geliebten Menschen verloren und beginnt dann zu sagen, wir hätten gerne die Zwiebelringe mit Ranch.",
             .en: "Nevertheless, excellent, we would like to start with the appetizers and take the onion rings.",
         ]
-        XCTAssertTrue(l.thirdLanguageSettleOverruled, "got: \(l.decisionSummary)")
+        XCTAssertTrue(l.thirdLanguageSettleOverruled(outputs: outputs, inputs: inputs), "got: \(l.decisionSummary)")
 
         let bubble = l.commit(inputs: inputs, outputs: outputs)
         XCTAssertEqual(bubble?.isHome, true, "German lands on the home side — got \(String(describing: bubble)); \(l.lastRejectReason ?? "")")
@@ -207,17 +234,37 @@ final class RoutingWitnessTests: XCTestCase {
         vote(&l, "ko", from: .en, at: 0.1)
         vote(&l, "ko", from: .de, at: 1.6)
         XCTAssertEqual(l.spokenLang, .ko)
-        XCTAssertFalse(l.thirdLanguageSettleOverruled)
+        XCTAssertFalse(l.thirdLanguageSettleWithPartnerHome)
         let bubble = l.commit(inputs: [.de: "irgendwas", .en: "irgendwas"],
                               outputs: [.de: "", .en: "something or other, anyway"])
         XCTAssertNil(bubble)
         XCTAssertTrue(l.lastRejectReason?.contains("codes-veto") == true)
     }
 
+    /// L1.104c — a partner-home quorum over a neither-side settle is not
+    /// enough when the partner is echoing: codes plus content, or the veto
+    /// stands.
+    func testL1_104c_aThirdLanguageSettleWithAnEchoingPartnerStillVetoes() {
+        var l = TurnLogic(home: .de, partner: .en)
+        vote(&l, "ko", from: .de, at: 0.0)
+        vote(&l, "ko", from: .en, at: 0.1)
+        vote(&l, "ko", from: .de, at: 1.6)
+        var now = 1.7
+        for _ in 0..<3 { vote(&l, "de", from: .en, at: now); now += 0.1; vote(&l, "ko", from: .de, at: now); now += 0.1 }
+        XCTAssertTrue(l.thirdLanguageSettleWithPartnerHome)
+        let heard = "Could we get the bill and two more coffees, please?"
+        let inputs: [TurnLogic.Lang: String] = [.de: "무언가 다른 것", .en: heard]
+        let outputs: [TurnLogic.Lang: String] = [.de: "", .en: heard]
+        XCTAssertFalse(l.thirdLanguageSettleOverruled(outputs: outputs, inputs: inputs))
+        XCTAssertNil(l.commit(inputs: inputs, outputs: outputs))
+        XCTAssertTrue(l.lastRejectReason?.contains("codes-veto") == true)
+    }
+
     // MARK: #128 — the home function-word list
 
     /// L1.105 — the German list shares no word with the languages it ships
-    /// against. `war` and `den` were both English nouns.
+    /// against. `war` and `den` were both English nouns; `des` is the French
+    /// plural article.
     func testL1_105_theHomeFunctionWordsCollideWithNoPartnerLanguage() {
         let list = TurnLogic.homeFunctionWords(for: .de)
         let english: Set<String> = ["war", "den", "was", "will", "hat", "man", "die", "in", "an", "am",
@@ -230,6 +277,11 @@ final class RoutingWitnessTests: XCTestCase {
                                     "más", "también", "ya", "hay", "está", "era", "fue", "ser", "sin"]
         XCTAssertTrue(list.isDisjoint(with: english), "English collisions: \(list.intersection(english))")
         XCTAssertTrue(list.isDisjoint(with: spanish), "Spanish collisions: \(list.intersection(spanish))")
+        let french: Set<String> = ["le", "la", "les", "des", "un", "une", "du", "de", "et", "ou", "que",
+                                   "qui", "est", "sont", "ne", "pas", "je", "tu", "il", "elle", "nous",
+                                   "vous", "ils", "mon", "ma", "mes", "ton", "sa", "ses", "dans", "sur",
+                                   "avec", "pour", "par", "mais", "si", "très", "aussi", "bien", "en", "au"]
+        XCTAssertTrue(list.isDisjoint(with: french), "French collisions: \(list.intersection(french))")
         XCTAssertTrue(list.contains("und") && list.contains("ist"), "the measured corpus words stay")
     }
 

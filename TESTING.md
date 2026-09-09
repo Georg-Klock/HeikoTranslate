@@ -133,20 +133,25 @@ session's own reading routes the turn), and `partnerEchoedForeignSpeech` (the
 partner session repeating its own transcript while the home session heard the
 partner language is foreign speech echoed, not a translation — the #75 echo
 test, on the other side, gated the same way). `homeFunctionWords` loses `war`
-and `den`, both English nouns, and L1.105 holds the list against English and
-Spanish function words.
+and `den`, both English nouns, and `des`, the French article; L1.105 holds
+the list against English, Spanish and French function words. Both overrides
+ask for content as well as codes — the partner's output must be a
+translation, not an echo of its own transcript — because #125 measured both
+sessions hallucinating one wrong language together.
 
 | ID | Given | Expect | Rule |
 |---|---|---|---|
 | L1.102 | #150's turn: settled home after an overturn, partner votes home ×9, home session home 5 against 4, the home session's output a near-echo at 0.571 | RIGHT, with the partner's translation — two witnesses outrank the size ratio | **R2/§4.1** |
 | L1.102b | The same turn streaming | The live line never crosses to the foreign side; it resolves home after the confirm delay | **R3/#150** |
 | L1.102c | L1.20's shape: a home settle from the home session alone, no partner reading | Still LEFT — one witness does not outrank a real home translation | **R2** |
+| L1.102d | Concordant home codes over a partner that is echoing its own transcript | Still LEFT — codes both sessions can hallucinate together are not enough without the content; the home translation decides | **R2** |
 | L1.103 | #137's turn: crossed votes, settled home on the opening votes, home output empty, partner output the English input verbatim | No bubble; `no session produced` (recoverable, the deferral waits); not an abstention | **R3/#137** |
 | L1.103b | The same turn streaming past the confirm delay | Direction stays undecided — home-session silence proves nothing beside an echo | **R3/#137** |
 | L1.103c | A home sentence of names ("Apple, Google, Netflix und Amazon …"), 0.86 overlap, home session heard home | Commits RIGHT — the gate is the home session's reading, not overlap | **R2** |
 | L1.104 | #125's turn: home session votes `ko` ×12, partner session votes home ×11, pool settled `ko`, both outputs full length | RIGHT, with the partner's translation — the corrupt pool yields to the partner's reading | **R2/#125** |
 | L1.104b | A neither-side settle with no partner reading for home | Still vetoed — nothing on screen could be trusted | **R3** |
-| L1.105 | `homeFunctionWords(for: .de)` | Disjoint from English and Spanish function words; the measured corpus words stay | **#128** |
+| L1.104c | A neither-side settle, partner votes home, partner output an echo of its own transcript | Still vetoed — codes plus content, or nothing | **R3** |
+| L1.105 | `homeFunctionWords(for: .de)` | Disjoint from English, Spanish and French function words (`war`, `den`, `des` gone); the measured corpus words stay | **#128** |
 | L1.105b | "They went into the den and the war was over." translated correctly | Does not read as home speech | **#128** |
 | L1.75e | Crossed codes with a HOME settle | Untouched — the measured #75 rescue still commits | **#75** |
 | L1.75f | A turn that abstained, then the next turn | The flag does not outlive its turn | **#152** |
