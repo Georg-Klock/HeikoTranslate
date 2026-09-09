@@ -246,7 +246,7 @@ final class AbstentionTests: XCTestCase {
     // language ships a build that shows nothing at the one moment the reader
     // is being asked to do something.
     func testL1_76d_everyLanguageSetHasTheString() {
-        for lang in TurnLogic.Lang.allCases where lang.canBeHome {
+        for lang in TurnLogic.Lang.allCases {   // every v1 language can be home (SPEC §3.0)
             let text = UIStrings.of(lang).didNotCatch
             XCTAssertFalse(text.trimmingCharacters(in: .whitespaces).isEmpty,
                            "\(lang.rawValue) has no text for the one instruction that asks for a repeat")
