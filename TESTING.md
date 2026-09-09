@@ -358,6 +358,27 @@ are the real values rather than plausible ones.
 | L1.89 | The same shape, a different title (`home=38 partner=35`) | Still an echo — not specific to one song | **#32** |
 | L1.90 | Genuinely foreign speech, home session produces real German | STILL a real translation | **#83/#75** |
 
+The clock seam (#153, 2026-09-08). Four L1 cases waited on the wall clock for
+the service's real timers — `Task.sleep` of 0.8s, 4s (several times), 0.9s
+and 1.4s — and under machine load the sleep lost the race: on 2026-08-18
+`main` went red twice on a byte-identical tree, with `LateFragmentTests`
+reporting a turn that did not commit, which is also what a genuine
+turn-taking break reports. The service and the view model now read time and
+arm timers through `TimerScheduling` only (`WallClock` in the app); a test
+injects `ManualClock` and advances it, so the same timers the app arms fire
+in due order on a virtual clock. Every decision rule already took `now:`
+(`TurnCoordinator`, `SpeechEndPolicy`, `FinalizePolicy`) — the seam is what
+lets the service hand them the same clock. The converted cases still drive
+the real service; nothing timing-related is mirrored in a test file.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.95 | The service and view model sources | No `Timer.scheduledTimer`, `Task.sleep`, `asyncAfter` or bare `Date()` outside the seam — the scan that keeps the next timer from going back to the old way | **#153** |
+| L1.96 | Timers armed out of order, one arming another as it fires | `ManualClock` fires them in due order, `now` at each timer's own instant, the chained one inside the same advance | **#153** |
+| L1.96b | An invalidated one-shot; a repeating timer invalidated from its own body | Never fires; fires each interval until invalidated | **#153** |
+| L1.97 | The shipping `WallClock` | Arms a real timer that fires on the main actor — the one deliberate wall-clock wait, 50ms against a 10s allowance | **#153** |
+| L1.98 | The mic notice, on the clock | Stays up for its whole reviewed duration, dismisses on the clock, and a clear cancels the dismissal | **#5/#153** |
+
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1
 219/219 and L3 89/89, and both `de_song_lead` fixtures committed
@@ -551,8 +572,10 @@ Late fragments (#39, 2026-08-11). The straggler rule the codes gate has had
 since 2026-07-29 now covers the transcripts too: a fragment arriving while
 the mic has heard no speech this turn is the previous turn still echoing out
 of the server, and it must not rebuild per-turn state. Driven through the
-real service — event route, idle and finalize timers — with fake sockets;
-~8s of wall clock per case, paid for the production path on purpose.
+real service — event route, idle and finalize timers — with fake sockets.
+The timers are the ones the service arms, fired on a `ManualClock` the test
+advances (#153); until then each case slept ~8s of wall clock and lost the
+race under load.
 Verified fail-first: with the gates removed, the repro case commits a second
 bubble whose lines are strict prefixes of the first, the filed shape
 verbatim. Known residual, same as the codes gate: a room loud enough to
@@ -736,9 +759,8 @@ depth, on purpose).
 > caught it. An earlier draft had exactly that ordering and no test failed when
 > the call was moved above the `await`.
 >
-> **Three things are deliberately NOT covered**, and are here rather than left
-> implied: the 5-second auto-dismiss is a `Task.sleep` and no test waits on it;
-> the real `AVAudioSession` notification payload is not synthesised, so L1
+> **Two things are deliberately NOT covered**, and are here rather than left
+> implied: the real `AVAudioSession` notification payload is not synthesised, so L1
 > starts at the seam the handler calls, one line in; and no test drives a
 > genuinely failing `beginListening()` — what is pinned is that a failed
 > *outcome* raises no notice, not that a real failure produces that outcome.

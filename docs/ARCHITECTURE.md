@@ -157,6 +157,11 @@ translator session's audio is played.
    doesn't send it reliably (see wire findings below), so the idle timers are
    the only *proposals* to finalize. `TurnCoordinator` still rejects them if
    the speaker is active or the callback belongs to a completed turn.
+   Every timer in this list, and every clock read the service makes, goes
+   through one seam — `TimerScheduling` (`WallClock` in the app, `ManualClock`
+   in L1) — so the pure rules above receive the same `now:` the timers were
+   armed against, and a test advances a virtual clock past the real timer
+   chain instead of sleeping on the wall clock and racing it (#153).
 8. `TurnLogic.commit` enforces SPEC §5.1's gates (language known — with a
    plurality fallback for short turns that never settled, something said,
    translation present, not already committed) and produces exactly one

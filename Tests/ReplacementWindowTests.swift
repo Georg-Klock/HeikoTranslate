@@ -37,9 +37,11 @@ final class ReplacementWindowTests: XCTestCase {
         for _ in 0..<25 { await Task.yield() }
     }
 
+    private let clock = ManualClock()
+
     private func startedService() throws -> (GeminiLiveTranslationService, Sockets) {
         let sockets = Sockets()
-        let service = GeminiLiveTranslationService()
+        let service = GeminiLiveTranslationService(clock: clock)
         service.skipAudioIOForTesting = true
         service.sessionFactoryForTesting = { lang, onEvent in
             let fake = FakeSocket(onEvent: onEvent)
@@ -109,8 +111,13 @@ final class ReplacementWindowTests: XCTestCase {
         XCTAssertEqual(firstEN.sent, [chunk(1)],
                        "a closed session must not be fed while its reconnect waits out the cooldown")
 
-        // The first drop's cooldown is 1s; wait it out.
-        try await Task.sleep(nanoseconds: 1_400_000_000)
+        // The first drop's cooldown is 1s. The reconnect timer is the real
+        // one `scheduleDropReconnect` armed; drive the clock past it
+        // (GitHub #153) rather than sleeping and hoping.
+        clock.advance(by: 0.99)
+        await drain()
+        XCTAssertTrue(sockets.current[.en]! === firstEN, "no replacement before the cooldown elapses")
+        clock.advance(by: 0.01)
         await drain()
         let replacement = sockets.current[.en]!
         XCTAssertTrue(replacement !== firstEN, "the drop must eventually be replaced")

@@ -202,7 +202,7 @@ final class ConversationViewModel: ObservableObject {
     /// read it, and it must not become wallpaper.
     static let micNoticeDuration: TimeInterval = 5
 
-    private var micNoticeDismissal: Task<Void, Never>?
+    private var micNoticeDismissal: (any ScheduledTimer)?
 
     /// Which occupant of the slot under the button wins, in one place.
     ///
@@ -616,7 +616,11 @@ final class ConversationViewModel: ObservableObject {
     /// reacts the instant someone speaks, without waiting for the API.
     @Published private(set) var micLevel: Double = 0
 
-    private let translator = GeminiLiveTranslationService()
+    /// Time, for the mic-notice dismissal, and handed to the service for
+    /// every timer it arms — one clock per run, so a test that drives it
+    /// drives both. GitHub #153.
+    let clock: any TimerScheduling
+    private let translator: GeminiLiveTranslationService
 
     /// The single control: tap to start listening, tap again to mute.
     /// Starting always goes through the permission gate — after a denial,
@@ -958,11 +962,9 @@ final class ConversationViewModel: ObservableObject {
     /// private so L1 can check what it puts on screen; the only caller in the
     /// app is `resumeAfterInterruption()`, after a start has succeeded.
     func showMicNotice() {
-        micNoticeDismissal?.cancel()
+        micNoticeDismissal?.invalidate()
         micNotice = StatusNotice(text: strings.micResumed, severity: .info)
-        micNoticeDismissal = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.micNoticeDuration * 1_000_000_000))
-            guard !Task.isCancelled else { return }
+        micNoticeDismissal = clock.schedule(after: Self.micNoticeDuration) { [weak self] in
             self?.clearMicNotice()
         }
     }
@@ -970,7 +972,7 @@ final class ConversationViewModel: ObservableObject {
     /// Take the notice down and cancel its timer. Idempotent, so every path
     /// that ends the resumed state can call it without checking first.
     func clearMicNotice() {
-        micNoticeDismissal?.cancel()
+        micNoticeDismissal?.invalidate()
         micNoticeDismissal = nil
         micNotice = nil
     }
@@ -1009,21 +1011,19 @@ final class ConversationViewModel: ObservableObject {
         isListening = true
         hasEverStarted = true
         var tick = 0.0
-        Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                tick += 1.0 / 30.0
-                let phase = tick.truncatingRemainder(dividingBy: 8)
-                if phase < 4 {
-                    self.activity = .understanding
-                    // Voice-ish: syllable wobble on a loudness envelope.
-                    let envelope = (sin(phase * 1.6) + 1) / 2
-                    let syllables = (sin(phase * 11) + 1) / 2
-                    self.micLevel = min(1, envelope * (0.35 + 0.65 * syllables))
-                } else {
-                    self.activity = .translating
-                    self.micLevel = 0
-                }
+        clock.schedule(after: 1.0 / 30.0, repeats: true) { [weak self] in
+            guard let self else { return }
+            tick += 1.0 / 30.0
+            let phase = tick.truncatingRemainder(dividingBy: 8)
+            if phase < 4 {
+                self.activity = .understanding
+                // Voice-ish: syllable wobble on a loudness envelope.
+                let envelope = (sin(phase * 1.6) + 1) / 2
+                let syllables = (sin(phase * 11) + 1) / 2
+                self.micLevel = min(1, envelope * (0.35 + 0.65 * syllables))
+            } else {
+                self.activity = .translating
+                self.micLevel = 0
             }
         }
         #endif
@@ -1129,7 +1129,9 @@ final class ConversationViewModel: ObservableObject {
     }
     #endif
 
-    init() {
+    init(clock: any TimerScheduling = WallClock()) {
+        self.clock = clock
+        translator = GeminiLiveTranslationService(clock: clock)
         // Remote-support hatch. Picking German on the PARTNER wheel swaps the
         // sides, which is the correct gesture in general but leaves this app
         // showing English as the large line — wrong for the one person it is
