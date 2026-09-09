@@ -340,11 +340,16 @@ struct TurnLogic {
     /// Function words of the HOME language that cannot be mistaken for the
     /// same word in English. Deliberately small, and admitted under
     /// `FillerWords`' rule: a token belongs here only if it is unambiguously
-    /// a function word of this language AND not an English word AND not a
-    /// name. `in`, `an`, `am`, `so`, `man`, `will`, `was`, `hat`, `die` are
-    /// all excluded for exactly that reason — every one of them is also
-    /// English, and `in` in particular is shared by two of the measured
-    /// FOREIGN turns ("Apple and Google are both **in** California").
+    /// a function word of this language AND not a word of any language it
+    /// ships against AND not a name. `in`, `an`, `am`, `so`, `man`, `will`,
+    /// `was`, `hat`, `die` are all excluded for exactly that reason — every
+    /// one of them is also English, and `in` in particular is shared by two
+    /// of the measured FOREIGN turns ("Apple and Google are both **in**
+    /// California"). `war` and `den` left for the same reason (#128): both are
+    /// English nouns, and an English sentence carrying both, translated
+    /// correctly, cleared the two-word bar and read as home speech. The list
+    /// is checked against English and Spanish function words by L1.105;
+    /// Korean is a different script and cannot collide.
     ///
     /// German only. The other home languages return an empty set, so the
     /// rule below is inert for them — no new behaviour for a shipped
@@ -353,9 +358,9 @@ struct TurnLogic {
     static func homeFunctionWords(for home: Lang) -> Set<String> {
         switch home {
         case .de:
-            return ["ist", "sind", "war", "waren", "mein", "meine", "meinen",
+            return ["ist", "sind", "waren", "mein", "meine", "meinen",
                     "meinem", "und", "nicht", "ich", "wir", "ihr", "der",
-                    "das", "den", "dem", "des", "ein", "eine", "einen",
+                    "das", "dem", "des", "ein", "eine", "einen",
                     "einem", "kein", "keine", "für", "über", "auch", "noch",
                     "schon", "sehr", "mit", "von", "zum", "zur", "aus",
                     "nach", "bei", "vom", "beim", "dass", "weil", "aber",
@@ -479,7 +484,9 @@ struct TurnLogic {
             + "votes=\(global.isEmpty ? "-" : global) "
             + "sessions=\(perSession.isEmpty ? "-" : perSession) "
             + "partnerHeardHome=\(partnerHeardHome) "
-            + "crossed=\(homeSettleWithCrossedEvidence)"
+            + "crossed=\(homeSettleWithCrossedEvidence) "
+            + "concordant=\(concordantHomeEvidence) "
+            + "thirdLang=\(thirdLanguageSettleOverruled)"
     }
 
     /// The code-only half of the crossed pattern. This is deliberately
@@ -556,6 +563,101 @@ struct TurnLogic {
     /// partner, and every guard that consumes them sat out because each is
     /// gated on a home settle.
     var crossedEvidence: Bool { homeHeardPartner && partnerHeardHome }
+
+    /// The mirror of `partnerHeardHome` on the home side: the HOME session's
+    /// own votes favour the home language, by the same strict plurality and
+    /// quorum. On its own this proves little — it is the session with a
+    /// stake in the mistake — which is why it only ever appears beside the
+    /// partner's reading.
+    var homeHeardHome: Bool {
+        guard let tally = sessionVotes[home],
+              let homeCount = tally[home.rawValue],
+              homeCount >= Self.partnerCorroborationQuorum else { return false }
+        return tally.allSatisfy { $0.key == home.rawValue || $0.value < homeCount }
+    }
+
+    /// Two witnesses that agree, and a settle that agrees with them: the
+    /// pooled codes settled on HOME, the partner session's own votes say
+    /// home, and the home session's own votes say home as well.
+    ///
+    /// Measured on device 2026-08-18, build 2.4.76, one turn on a non-German
+    /// home pair (#150). Both sessions transcribed the same home-language
+    /// sentence; the partner session voted home nine times, the home session
+    /// home five against four, and the pooled settle — first on the partner,
+    /// then overturned by the home session's own run — landed on home. The
+    /// partner session produced the correct translation. The home session
+    /// produced a short near-echo of the input that scored 0.571 against the
+    /// 0.6 echo threshold, and `homeIsRealTranslation` read that output as
+    /// proof of foreign speech on its size ratio alone (0.60 against the 0.40
+    /// floor). The bubble went to the foreign side with a home-language
+    /// "translation" under it, and the real translation was discarded.
+    ///
+    /// The echo threshold cannot carry this (`echoShareThreshold` says why —
+    /// the populations interleave), and no ratio can either. What can is the
+    /// shape of the codes: L1.20's lying-codes case, where the home session's
+    /// substantial output rightly beats a home settle, has ONE witness for
+    /// home — the pooled tally. Here there are two independent ones, and the
+    /// home session's output cannot outrank both: a session that reports
+    /// hearing its own language and then emits its own language is repeating
+    /// or paraphrasing, not translating. Deliberately not `partnerHeardHome`
+    /// alone — that half already governs the crossed shape, and the #84
+    /// review showed two partner-home strays committing an echo RIGHT; this
+    /// asks for the home session's own concurrence as well.
+    var concordantHomeEvidence: Bool {
+        spokenLang == home && homeHeardHome && partnerHeardHome
+    }
+
+    /// The pooled codes settled on a language that is on NEITHER side of the
+    /// pair, while the partner session's own votes say home.
+    ///
+    /// Measured on device 2026-08-17, build 2.4.63, on the default pair
+    /// (#125). Ordinary German: the home session transcribed Korean and voted
+    /// Korean twelve times; the partner session transcribed the German
+    /// correctly and voted home eleven times; both produced full-length
+    /// output; the pooled tally settled `ko`, and the neither-side veto
+    /// dropped the turn four times. A settle on a language nobody in the pair
+    /// speaks is proof that the pool is corrupt, not evidence about the
+    /// speech — and the per-session votes that were pooled into it are the
+    /// better evidence, exactly as the crossed shape already treats them. The
+    /// veto still stands when the partner session offers no such reading:
+    /// with no witness for home there is still nothing on screen to trust.
+    var thirdLanguageSettleOverruled: Bool {
+        guard let settled = spokenLang, settled != home, settled != partner else { return false }
+        return partnerHeardHome
+    }
+
+    /// The partner session repeated what was heard, and the home session
+    /// heard the partner language: that output is foreign speech echoed back,
+    /// not a translation of home speech, and the home branch must not commit
+    /// it as one.
+    ///
+    /// Measured on device 2026-08-17, build 2.4.61, three consecutive English
+    /// turns on the default pair (#137). The partner session voted home
+    /// throughout while the home session voted the partner language; the
+    /// pooled codes settled home on their opening votes; the home session
+    /// produced nothing at all, and the partner session's output was the
+    /// English input verbatim. The home branch saw a settle on home and a
+    /// non-empty partner output, and committed English on the home side with
+    /// itself as the translation — the one failure R3 exists to prevent,
+    /// silent and confident. The foreign branch has had this echo test since
+    /// #75, gated on the partner's reading; this is the same test on the
+    /// other side, gated the same way on the home session's reading, so a
+    /// home sentence full of names that survive translation ("Apple, Google,
+    /// Netflix und Amazon" → "… and Amazon", 0.86 overlap) is untouched
+    /// unless the home session itself says it heard the partner language.
+    ///
+    /// Judged against the PARTNER session's own transcript, not the union
+    /// the foreign-branch test uses. In the crossed mis-hearing shape (#75,
+    /// L1.47h, L1.64) the home session's transcript is its misreading of
+    /// home speech in the partner language, and a genuine partner
+    /// translation overlaps that misreading heavily — the union would call
+    /// the translation an echo. What the partner session heard is the one
+    /// transcript its own output can be an echo OF.
+    func partnerEchoedForeignSpeech(outputs: [Lang: String], inputs: [Lang: String]) -> Bool {
+        guard homeHeardPartner else { return false }
+        let partnerText = (outputs[partner] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return Self.isRoundTripEcho(partnerText, inputs: [partner: inputs[partner] ?? ""])
+    }
 
     /// Set by `commit` when it refused to pick a side because the evidence
     /// contradicted itself, rather than because something was missing.
@@ -696,7 +798,7 @@ struct TurnLogic {
         // session's own output (see `homeSettleWithCrossedEvidence`). Without
         // it the size ratio re-decides on every streamed chunk and the
         // direction oscillates against two agreeing witnesses. L1.64.
-        if !homeSettleWithCrossedEvidence,
+        if !homeSettleWithCrossedEvidence, !concordantHomeEvidence,
            Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
                                       spokenLang: spokenLang,
                                       partnerHomeEvidence: partnerHeardHome) {
@@ -738,7 +840,8 @@ struct TurnLogic {
         // language that is NEITHER side still veto unconditionally —
         // nothing on screen could be trusted there.
         let partnerVouches = partnerEvidenceOverridesForeignVeto(outputs: outputs, inputs: inputs)
-        let vetoBarsHome = !(spokenLang == nil || spokenLang == home || partnerVouches)
+        let vetoBarsHome = !(spokenLang == nil || spokenLang == home || partnerVouches
+                             || thirdLanguageSettleOverruled)
         // BOTH provisional directions re-derive, not just foreign (#84
         // review): a homeSpoken resolved before the codes arrived must
         // clear when a late foreign settle arms the veto — otherwise
@@ -746,7 +849,11 @@ struct TurnLogic {
         // flushes (and deletes) held audio for an echo that commit is
         // about to reject. L1.56.
         if direction == .homeSpoken, vetoBarsHome { direction = nil }
+        // Same gate as the home branch of `commit` (#137): a partner output
+        // that repeats the input is not a translation the live line may
+        // follow either — the two must not disagree about the side.
         if direction == nil, !vetoBarsHome,
+           !partnerEchoedForeignSpeech(outputs: outputs, inputs: inputs),
            let since = firstPartnerOutputAt,
            now.timeIntervalSince(since) >= Self.homeSilenceConfirmDelay {
             direction = .homeSpoken
@@ -849,12 +956,9 @@ struct TurnLogic {
             }
             // The settle is not immutable: a run of unanimous disagreement
             // means the settle itself was wrong (stragglers), not the codes.
-            if contradiction?.lang == spoken {
-                contradiction = (spoken, contradiction!.count + 1)
-            } else {
-                contradiction = (spoken, 1)
-            }
-            if contradiction!.count >= Self.overturnVotes {
+            let run = (contradiction?.lang == spoken ? contradiction?.count ?? 0 : 0) + 1
+            contradiction = (spoken, run)
+            if run >= Self.overturnVotes {
                 spokenLang = spoken
                 contradiction = nil
                 partnerHadHomeEvidenceAtPartnerSettle =
@@ -993,7 +1097,7 @@ struct TurnLogic {
         // share `homeIsRealTranslation` at all: the live line and the
         // committed bubble must not be able to disagree about the side
         // (L1.47g's doctrine). L1.64b.
-        if !homeSettleWithCrossedEvidence,
+        if !homeSettleWithCrossedEvidence, !concordantHomeEvidence,
            Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
                                       spokenLang: spokenLang,
                                       partnerHomeEvidence: partnerHeardHome) {
@@ -1035,7 +1139,7 @@ struct TurnLogic {
         // `noteOutputs`: codes settled on the PARTNER language while the
         // complete crossed evidence says HOME means the settle came from
         // the mis-hearing home session, not from the speech (#75).
-        if let guess = spokenLang, guess != home,
+        if let guess = spokenLang, guess != home, !thirdLanguageSettleOverruled,
            !partnerEvidenceOverridesForeignVeto(outputs: outputs, inputs: inputs) {
             // A veto rejection decided nothing — clear any provisional
             // direction so `translator` names no session while the deferral
@@ -1048,6 +1152,15 @@ struct TurnLogic {
         let partnerText = text(partner)
         guard !partnerText.isEmpty else {
             lastRejectReason = "no session produced any translation"
+            return nil
+        }
+        // The reason keeps "no session produced" on purpose: FinalizePolicy
+        // matches that substring, and the home translation this turn is
+        // missing may still be in flight, so the deferral machinery waits
+        // for it the way it waits for any other missing translation.
+        if partnerEchoedForeignSpeech(outputs: outputs, inputs: inputs) {
+            direction = nil
+            lastRejectReason = "no session produced any translation: the partner session echoed foreign speech (#137)"
             return nil
         }
         direction = .homeSpoken

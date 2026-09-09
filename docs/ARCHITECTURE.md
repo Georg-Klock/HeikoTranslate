@@ -120,6 +120,29 @@ translator session's audio is played.
    wins": L1.20 is a measured turn where the codes lie about home and the home
    session's substantial translation is right to beat them — there the home
    session reads HOME, so the crossed shape never forms.
+
+   Three more readings of the same per-session evidence, each from a device
+   turn the pooled tally got wrong (2026-09-08; #150, #137, #125):
+
+   - **Concordant home** — the pool settled home AND each session's own votes
+     say home. L1.20 has one witness for home; this has two, and the home
+     session's output no longer outranks them. Measured: a home-language turn
+     whose home session emitted a near-echo at 0.571 against the 0.6 echo
+     threshold, read as a real translation on its size ratio and committed
+     to the foreign side with the correct translation discarded.
+   - **A settle on neither side** — the pool named a language nobody in the
+     pair speaks (`ko` on de↔en, clean German). That is proof the pool is
+     corrupt, not evidence about the speech; when the partner session's own
+     votes say home, its reading routes the turn instead of the veto dropping
+     it. With no such reading the veto stands.
+   - **The partner echoed** — the partner session's output repeats what that
+     session itself heard while the home session's votes say it heard the
+     partner language. That is foreign speech echoed back, and the home
+     branch no longer commits it as a translation (three English turns
+     landed on the home side with themselves as the "translation"). Judged
+     against the partner's own transcript, not the union: in the crossed
+     shape the home session's transcript is a misreading in the partner
+     language that a genuine translation overlaps.
 5. Pre-commit a direction is **provisional and re-derivable**. Streaming can
    set `.foreignSpoken` from an echo prefix that arrives before the votes
    exposing it, so a direction whose evidence no longer holds is cleared

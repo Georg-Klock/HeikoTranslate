@@ -1150,6 +1150,12 @@ final class TurnLogicTests: XCTestCase {
         .de: "Big Mac and extra spicy to take away please",
         .en: "Einen Big Mac und extra scharf zum Mitnehmen bitte"
     ]
+    /// What the partner session SAID on the measured turn: a translation.
+    /// The fixture used to stand the partner's own German transcript in for
+    /// it, which is not a translation of anything — it is the one output
+    /// shape the home branch now refuses (#137, L1.103) — and the measured
+    /// turn never had that shape.
+    private static let crossedPartnerTranslation = "A Big Mac and extra spicy to take away, please."
 
     /// L1.64 — the measured 2.3.48 turn. The codes settle on HOME two seconds
     /// in and never move, and the partner session's own votes agree. Yet
@@ -1173,7 +1179,7 @@ final class TurnLogicTests: XCTestCase {
         var flips = 0
         var previous: TurnLogic.Direction?
         let homeWords = Self.crossedHomeInputs[.de]!.split(separator: " ")
-        let partnerWords = Self.crossedHomeInputs[.en]!.split(separator: " ")
+        let partnerWords = Self.crossedPartnerTranslation.split(separator: " ")
         for step in 1...max(homeWords.count, partnerWords.count) {
             l.noteOutputs([.de: homeWords.prefix(step).joined(separator: " "),
                            .en: partnerWords.prefix(step).joined(separator: " ")],
@@ -1197,7 +1203,7 @@ final class TurnLogicTests: XCTestCase {
         replayDeviceCrossedCodes(&l, from: t(0))
         let bubble = l.commit(inputs: Self.crossedHomeInputs,
                               outputs: [.de: Self.crossedHomeInputs[.de]!,
-                                        .en: Self.crossedHomeInputs[.en]!])
+                                        .en: Self.crossedPartnerTranslation])
         XCTAssertNotNil(bubble, "reason: \(l.lastRejectReason ?? "none")")
         XCTAssertEqual(bubble?.isHome, true, "German speech belongs on the RIGHT")
         XCTAssertEqual(l.translator, .en)
