@@ -373,9 +373,11 @@ final class LanguagePairTests: XCTestCase {
         // Long enough that any reintroduced settle timer would have fired.
         // This is the assertion that distinguishes "waits for dismissal" from
         // "waits a bit longer": the old 0.4s debounce passes the check above
-        // and fails this one. The clock is the view model's own (and its
-        // service's), driven rather than slept on — GitHub #153; L1.95 is
-        // what keeps a timer from being armed anywhere else.
+        // and fails this one. The clock is the view model's own, driven
+        // rather than slept on (GitHub #153). The service never starts under
+        // the stub, so what this covers is the view model's own timers — and
+        // L1.95 is what keeps one from being armed anywhere but this clock,
+        // `Task.sleep` included, which is what the old debounce was.
         XCTAssertEqual(clock.armedCount, 0, "nothing is even armed while the sheet is open")
         clock.advance(by: 10)
         XCTAssertEqual(vm.languageRestartCount, 0,

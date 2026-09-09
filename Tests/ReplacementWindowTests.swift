@@ -114,10 +114,10 @@ final class ReplacementWindowTests: XCTestCase {
         // The first drop's cooldown is 1s. The reconnect timer is the real
         // one `scheduleDropReconnect` armed; drive the clock past it
         // (GitHub #153) rather than sleeping and hoping.
-        clock.advance(by: 0.99)
+        clock.advance(by: 0.95)
         await drain()
         XCTAssertTrue(sockets.current[.en]! === firstEN, "no replacement before the cooldown elapses")
-        clock.advance(by: 0.01)
+        clock.advance(by: 0.1)
         await drain()
         let replacement = sockets.current[.en]!
         XCTAssertTrue(replacement !== firstEN, "the drop must eventually be replaced")

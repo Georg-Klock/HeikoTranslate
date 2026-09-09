@@ -217,10 +217,10 @@ final class AudioStartupTests: XCTestCase {
         // rebuilds — which is exactly the path under test. The timer is the
         // real one `startWatchdogs` armed; the clock is driven past it
         // instead of slept through (GitHub #153).
-        clock.advance(by: 0.49)
+        clock.advance(by: 0.45)
         XCTAssertEqual(graph.events.filter { $0 == "engine" }.count, 1,
                        "nothing fires before the watchdog's half second")
-        clock.advance(by: 0.01)
+        clock.advance(by: 0.1)
 
         XCTAssertTrue(graph.events.filter { $0 == "engine" }.count >= 2,
                       "the watchdog rebuilt the audio path")

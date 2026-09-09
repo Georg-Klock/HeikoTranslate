@@ -50,6 +50,9 @@ final class ManualClock: TimerScheduling {
     func schedule(after interval: TimeInterval, repeats: Bool,
                   _ body: @escaping @MainActor () -> Void) -> any ScheduledTimer {
         nextSerial += 1
+        // Foundation clamps a timer's interval to 0.1ms; a repeating timer at
+        // zero would otherwise never advance and `advance(by:)` would spin.
+        let interval = max(interval, 0.0001)
         let entry = Entry(fireAt: now.addingTimeInterval(interval), interval: interval,
                           repeats: repeats, serial: nextSerial, body: body)
         pending.append(entry)
@@ -58,7 +61,9 @@ final class ManualClock: TimerScheduling {
 
     /// Move time forward, firing every timer due inside the window in the
     /// order it is due (ties in arming order), with `now` at each timer's
-    /// own fire instant while its body runs.
+    /// own fire instant while its body runs. Due means `fireAt <= target`
+    /// on `Date`'s double, so a test that wants to land exactly on a
+    /// boundary should overshoot it by a little rather than trust the sum.
     func advance(by interval: TimeInterval) {
         let target = now.addingTimeInterval(interval)
         while true {
