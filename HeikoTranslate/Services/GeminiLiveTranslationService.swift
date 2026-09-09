@@ -425,7 +425,33 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// connect so a sentence spoken immediately after launch isn't lost (which
     /// is what forced a mute/unmute to get the first translation).
     private var pendingAudio: [Data] = []
-    private let maxPendingChunks = 250
+    /// Both audio windows are stated in SECONDS and sized into chunk counts
+    /// by `AudioWindow` once the tap reports what a chunk is (GitHub #131).
+    /// The old constants — 250 at launch, 50 across a reconnect — assumed a
+    /// 64ms chunk the hardware does not deliver: device logs of 2026-08-18
+    /// count ~11 buffers a second, so on that phone the counts held more
+    /// than documented, and on one delivering 1024 frames at 48kHz they
+    /// would hold a third of it. Until the first buffer the counts are the
+    /// old ones exactly.
+    static let pendingAudioWindow: TimeInterval = 16
+    static let replacementAudioWindow: TimeInterval = 3.2
+    private var maxPendingChunks = AudioWindow.chunks(spanning: pendingAudioWindow,
+                                                      chunkDuration: AudioWindow.assumedChunkDuration)
+    private var measuredChunkDuration: TimeInterval?
+
+    /// The tap's real chunk, measured once per audio path: sizes both
+    /// windows and writes the number the counts were guessed against into
+    /// the log, so the next device run states it instead of assuming it.
+    private func noteMicChunkShape(frames: Int, sampleRate: Double) {
+        guard measuredChunkDuration == nil,
+              let duration = AudioWindow.chunkDuration(frames: frames, sampleRate: sampleRate) else { return }
+        measuredChunkDuration = duration
+        maxPendingChunks = AudioWindow.chunks(spanning: Self.pendingAudioWindow, chunkDuration: duration)
+        maxReplacementChunks = AudioWindow.chunks(spanning: Self.replacementAudioWindow, chunkDuration: duration)
+        diag("audio", "mic chunk \(frames) frames @ \(Int(sampleRate)) Hz = \(Int((duration * 1000).rounded()))ms"
+             + " — holding \(maxPendingChunks) chunks at launch (\(Self.pendingAudioWindow)s),"
+             + " \(maxReplacementChunks) across a reconnect (\(Self.replacementAudioWindow)s)")
+    }
 
     /// Mic audio captured for a session that is mid-replacement — between its
     /// predecessor closing (goAway renewal, abrupt drop) and its own
@@ -436,14 +462,15 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// streaming live. GitHub #15.
     private var pendingReplacementAudio: [Lang: [Data]] = [:]
 
-    /// ~3.2s of 64ms chunks, kept as a ROLLING window (newest win). The
+    /// `replacementAudioWindow` of chunks, kept as a ROLLING window (newest win). The
     /// opposite trade from `pendingAudio`, which keeps the oldest because at
     /// launch the start of the first utterance is what must survive (R4).
     /// Mid-conversation, the newest audio is the speech being said right
     /// now — and the roll is also the staleness bound: a reconnect that takes
     /// 10s flushes at most ~3s of tail into the fresh session, not 10s of
     /// history into a turn whose timers have long moved on. GitHub #15.
-    private let maxReplacementChunks = 50
+    private var maxReplacementChunks = AudioWindow.chunks(spanning: replacementAudioWindow,
+                                                          chunkDuration: AudioWindow.assumedChunkDuration)
 
     #if DEBUG
     /// Test seams (GitHub #15): stand in for the WebSocket sessions so the
@@ -496,6 +523,14 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// One mic buffer, delivered without an audio graph — the counter the
     /// watchdog reads is the real one the tap increments. GitHub #87.
     func noteMicBufferForTesting() { micBufferCount += 1 }
+    /// The tap's chunk shape, reported without an audio graph — the same
+    /// method the tap calls, so the windows it sizes are the real ones.
+    /// GitHub #131.
+    func noteMicChunkShapeForTesting(frames: Int, sampleRate: Double) {
+        noteMicChunkShape(frames: frames, sampleRate: sampleRate)
+    }
+    var replacementWindowChunksForTesting: Int { maxReplacementChunks }
+    var pendingWindowChunksForTesting: Int { maxPendingChunks }
     #endif
 
     func requestPermissions() async -> Bool {
@@ -756,6 +791,10 @@ final class GeminiLiveTranslationService: ObservableObject {
             // on the rare rebuild — and log it from the main-actor hop below
             // rather than from the render thread.
             let rebuiltFormat = resolved.didRebuild ? "\(buffer.format)" : nil
+            // What a chunk is, in the tap's own terms — read here, applied
+            // on the main actor below. GitHub #131.
+            let chunkFrames = Int(buffer.frameLength)
+            let chunkRate = buffer.format.sampleRate
 
             // Loudness for the UI, before any network round trip.
             let rms = Self.rms(of: pcmData)
@@ -764,8 +803,10 @@ final class GeminiLiveTranslationService: ObservableObject {
                 guard self.isRunning else { return }
                 if let rebuiltFormat {
                     diag("audio", "format changed to \(rebuiltFormat) — converter rebuilt")
+                    self.measuredChunkDuration = nil   // a new route may deliver a new chunk
                 }
                 self.micBufferCount += 1
+                self.noteMicChunkShape(frames: chunkFrames, sampleRate: chunkRate)
                 self.peakMicRMS = max(self.peakMicRMS, rms)
                 self.secondPeakRMS = max(self.secondPeakRMS, rms)
                 if rms > Self.micSpeechRMSFloor {
