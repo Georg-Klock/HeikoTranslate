@@ -971,11 +971,9 @@ final class ConversationViewModel: ObservableObject {
     /// could not tell who said it, and the person can fix that in two seconds
     /// by saying it again.
     func showUnresolvedTurnNotice() {
-        micNoticeDismissal?.cancel()
+        micNoticeDismissal?.invalidate()
         micNotice = StatusNotice(text: strings.didNotCatch, severity: .info)
-        micNoticeDismissal = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.micNoticeDuration * 1_000_000_000))
-            guard !Task.isCancelled else { return }
+        micNoticeDismissal = clock.schedule(after: Self.micNoticeDuration) { [weak self] in
             self?.clearMicNotice()
         }
     }
