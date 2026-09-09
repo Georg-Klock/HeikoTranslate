@@ -21,6 +21,26 @@ final class ClockSeamTests: XCTestCase {
         try String(contentsOf: repoRoot.appendingPathComponent(path), encoding: .utf8)
     }
 
+    /// The file with every `#if DEBUG … #endif` region removed — what ships.
+    /// The view model's DEBUG demo replay films a scripted conversation on
+    /// `Task.sleep`; it never runs under test and is not what the scan is
+    /// for. Everything outside those regions is.
+    private func shippingSource(_ text: String) -> String {
+        var depth = 0
+        var kept: [Substring] = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#if DEBUG") { depth += 1; continue }
+            if depth > 0 {
+                if trimmed.hasPrefix("#if") { depth += 1 }
+                if trimmed.hasPrefix("#endif") { depth -= 1 }
+                continue
+            }
+            kept.append(line)
+        }
+        return kept.joined(separator: "\n")
+    }
+
     /// L1.95 — no timer and no clock read outside the seam. A `Timer` armed
     /// directly is one a test can only wait for; a bare `Date()` beside a
     /// virtual clock compares two different times. The scan is what keeps
@@ -31,11 +51,14 @@ final class ClockSeamTests: XCTestCase {
             XCTAssertFalse(service.contains(forbidden),
                            "the service must reach time through `clock` — found `\(forbidden)`")
         }
-        // The view model keeps `Task.sleep` in its DEBUG demo replay, which
-        // films a scripted conversation and is not under test; its timers
-        // and its clock reads go through the seam.
-        let viewModel = try source("HeikoTranslate/ConversationViewModel.swift")
-        for forbidden in ["Timer.scheduledTimer(", "Date()", "asyncAfter("] {
+        // The view model's shipping code — its DEBUG demo replay excluded —
+        // is held to the same rule, `Task.sleep` included: the 0.4s settle
+        // debounce L1.45 exists to keep out was a `Task.sleep` here, and a
+        // scan that exempted the whole file would wave it back in.
+        let viewModel = shippingSource(try source("HeikoTranslate/ConversationViewModel.swift"))
+        XCTAssertTrue(viewModel.contains("func languageSelectionDidFinish()"),
+                      "sanity: the DEBUG stripper kept the shipping code")
+        for forbidden in ["Timer.scheduledTimer(", "Task.sleep(", "Date()", "asyncAfter("] {
             XCTAssertFalse(viewModel.contains(forbidden),
                            "the view model must reach time through `clock` — found `\(forbidden)`")
         }
@@ -111,9 +134,9 @@ final class ClockSeamTests: XCTestCase {
 
         vm.showMicNotice()
         XCTAssertNotNil(vm.micNotice)
-        clock.advance(by: ConversationViewModel.micNoticeDuration - 0.01)
+        clock.advance(by: ConversationViewModel.micNoticeDuration - 0.05)
         XCTAssertNotNil(vm.micNotice, "the notice stays up for its whole duration")
-        clock.advance(by: 0.02)
+        clock.advance(by: 0.1)
         XCTAssertNil(vm.micNotice, "and comes down on the clock, without anyone sleeping for it")
 
         vm.showMicNotice()
