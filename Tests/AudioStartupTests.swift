@@ -41,8 +41,9 @@ final class AudioStartupTests: XCTestCase {
         func sendAudio(_ pcm16kData: Data) {}
     }
 
-    private func makeService(graph: FakeAudioGraph) -> GeminiLiveTranslationService {
-        let service = GeminiLiveTranslationService()
+    private func makeService(graph: FakeAudioGraph,
+                             clock: ManualClock = ManualClock()) -> GeminiLiveTranslationService {
+        let service = GeminiLiveTranslationService(clock: clock)
         service.audioGraphForTesting = graph
         service.sessionFactoryForTesting = { _, _ in FakeSocket() }
         return service
@@ -205,14 +206,21 @@ final class AudioStartupTests: XCTestCase {
 
     // The 0.5s mic watchdog rebuild takes exactly the same safe path: shared
     // teardown, then a restart that does not re-wire the player.
-    func testWatchdogRebuildFollowsTheSameSafePath() async throws {
+    func testWatchdogRebuildFollowsTheSameSafePath() throws {
         let graph = FakeAudioGraph()
-        let service = makeService(graph: graph)
+        let clock = ManualClock()
+        let service = makeService(graph: graph, clock: clock)
         try start(service)
+        XCTAssertEqual(graph.events.filter { $0 == "engine" }.count, 1, "precondition: one start")
 
         // No mic buffers arrive from a fake graph, so the 0.5s watchdog
-        // rebuilds — which is exactly the path under test.
-        try await Task.sleep(nanoseconds: 800_000_000)
+        // rebuilds — which is exactly the path under test. The timer is the
+        // real one `startWatchdogs` armed; the clock is driven past it
+        // instead of slept through (GitHub #153).
+        clock.advance(by: 0.49)
+        XCTAssertEqual(graph.events.filter { $0 == "engine" }.count, 1,
+                       "nothing fires before the watchdog's half second")
+        clock.advance(by: 0.01)
 
         XCTAssertTrue(graph.events.filter { $0 == "engine" }.count >= 2,
                       "the watchdog rebuilt the audio path")

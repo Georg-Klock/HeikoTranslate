@@ -15,9 +15,10 @@ import XCTest
 ///
 /// Drives the REAL service — `start()`, the event route with its registry
 /// token check, the real idle/finalize timers — with sessions faked at the
-/// `LiveTranslationSocket` seam. Real timers mean real waiting: this file
-/// trades ~10s of wall clock for the production code path, per the issue's
-/// done-when.
+/// `LiveTranslationSocket` seam. The timers are the ones the service arms;
+/// they fire on a `ManualClock` the test advances, not on the wall clock
+/// this file used to sleep through (GitHub #153 — that sleep lost the race
+/// under load and read as a turn-taking regression).
 @MainActor
 final class LateFragmentTests: XCTestCase {
 
@@ -37,19 +38,22 @@ final class LateFragmentTests: XCTestCase {
         var all: [(original: String, translation: String, wasHome: Bool)] = []
     }
 
+    private let clock = ManualClock()
+
     private func drain() async { for _ in 0..<25 { await Task.yield() } }
 
-    /// Real timers need real time; the finalize chain is idle 1.6s + the
-    /// output-quiet gate's possible re-arm.
-    private func settle() async throws {
-        try await Task.sleep(nanoseconds: 4_000_000_000)
+    /// The finalize chain is transcript-idle 1.4s → speaker stopped, idle
+    /// 1.6s → finalize, then the 0.45s output tail; 4s of clock covers it
+    /// with the same slack the wall-clock version allowed.
+    private func settle() async {
+        clock.advance(by: 4.0)
         await drain()
     }
 
     private func startedService() throws -> (GeminiLiveTranslationService, Sockets, Bubbles) {
         let sockets = Sockets()
         let bubbles = Bubbles()
-        let service = GeminiLiveTranslationService()
+        let service = GeminiLiveTranslationService(clock: clock)
         service.skipAudioIOForTesting = true
         service.sessionFactoryForTesting = { lang, onEvent in
             let fake = FakeSocket(onEvent: onEvent)
@@ -96,7 +100,7 @@ final class LateFragmentTests: XCTestCase {
         await driveEnglishTurn(service, sockets,
                                heard: "Where is the nearest station?",
                                translated: "Wo ist der nächste Bahnhof?")
-        try await settle()
+        await settle()
         XCTAssertEqual(bubbles.all.count, 1, "the legitimate turn commits — got \(bubbles.all)")
         XCTAssertFalse(bubbles.all[0].wasHome, "English spoken lands LEFT")
 
@@ -106,7 +110,7 @@ final class LateFragmentTests: XCTestCase {
         sockets.current[.de]?.onEvent(.outputTranscript("Wo ist der"))
         sockets.current[.en]?.onEvent(.inputLanguage("en"))
         await drain()
-        try await settle()
+        await settle()
 
         XCTAssertEqual(bubbles.all.count, 1,
                        "late fragments must not become a second, partial bubble — got \(bubbles.all)")
@@ -120,7 +124,7 @@ final class LateFragmentTests: XCTestCase {
         await driveEnglishTurn(service, sockets,
                                heard: "Where is the nearest station?",
                                translated: "Wo ist der nächste Bahnhof?")
-        try await settle()
+        await settle()
         XCTAssertEqual(bubbles.all.count, 1)
 
         // Immediately after: a real second utterance — mic energy first,
@@ -128,7 +132,7 @@ final class LateFragmentTests: XCTestCase {
         await driveEnglishTurn(service, sockets,
                                heard: "And how long does the ride take?",
                                translated: "Und wie lange dauert die Fahrt?")
-        try await settle()
+        await settle()
 
         XCTAssertEqual(bubbles.all.count, 2,
                        "the gate is a straggler filter, not a cooldown — a real reply commits")

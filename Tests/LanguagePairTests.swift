@@ -331,9 +331,10 @@ final class LanguagePairTests: XCTestCase {
     /// once answers from its stored decision. Measured — two cancelled CI runs
     /// on this branch while every other branch finished in five minutes.
     private func makeListeningViewModel(
-        home: TurnLogic.Lang = .de, partner: TurnLogic.Lang = .en
+        home: TurnLogic.Lang = .de, partner: TurnLogic.Lang = .en,
+        clock: ManualClock = ManualClock()
     ) async -> ConversationViewModel {
-        let vm = ConversationViewModel()
+        let vm = ConversationViewModel(clock: clock)
         vm.homeLang = home
         vm.partnerLang = partner
         vm.permissionRequestForTesting = { true }
@@ -356,7 +357,8 @@ final class LanguagePairTests: XCTestCase {
     /// truth. Only the restart waits, and it waits for a signal rather than a
     /// clock.
     func testL1_45_aSpinReachesTheSessionsOnceOnDismiss() async {
-        let vm = await makeListeningViewModel()
+        let clock = ManualClock()
+        let vm = await makeListeningViewModel(clock: clock)
         let baseline = vm.languageApplyCount
         XCTAssertEqual(vm.languageRestartCount, 0)
 
@@ -371,8 +373,11 @@ final class LanguagePairTests: XCTestCase {
         // Long enough that any reintroduced settle timer would have fired.
         // This is the assertion that distinguishes "waits for dismissal" from
         // "waits a bit longer": the old 0.4s debounce passes the check above
-        // and fails this one.
-        try? await Task.sleep(nanoseconds: 900_000_000)
+        // and fails this one. The clock is the view model's own (and its
+        // service's), driven rather than slept on — GitHub #153; L1.95 is
+        // what keeps a timer from being armed anywhere else.
+        XCTAssertEqual(clock.armedCount, 0, "nothing is even armed while the sheet is open")
+        clock.advance(by: 10)
         XCTAssertEqual(vm.languageRestartCount, 0,
                        "no clock may restart the sessions — only the dismissal")
 
