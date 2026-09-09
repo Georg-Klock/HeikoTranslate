@@ -118,6 +118,36 @@ stated count against.
 | L1.75b | The same refusal | Typed, not matched on the log string (#28) | **#152** |
 | L1.75c | No translation from either session | NOT an abstention — still retried by the deferral machinery | **#152** |
 | L1.75d | An ordinary agreed turn | Commits normally; never refused | **#152** |
+
+The witnesses the routing failures needed were already in the turn (2026-09-08;
+#150, #137, #125, #128). Four device failures, one shape: the turn went to the
+wrong side or to no side while the sessions' own per-session votes and outputs
+held the evidence to route it. Each case below is a logged vote sequence and
+output shape with the words replaced; each drives the real `TurnLogic` and
+failed before its rule landed. The rules, in `TurnLogic`: `concordantHomeEvidence`
+(the pooled codes settled home AND each session's own votes say home — two
+independent witnesses, which outrank the home session's output where L1.20's
+single witness does not), `thirdLanguageSettleOverruled` (a settle on a
+language in neither side of the pair is proof the pool is corrupt; the partner
+session's own reading routes the turn), and `partnerEchoedForeignSpeech` (the
+partner session repeating its own transcript while the home session heard the
+partner language is foreign speech echoed, not a translation — the #75 echo
+test, on the other side, gated the same way). `homeFunctionWords` loses `war`
+and `den`, both English nouns, and L1.105 holds the list against English and
+Spanish function words.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.102 | #150's turn: settled home after an overturn, partner votes home ×9, home session home 5 against 4, the home session's output a near-echo at 0.571 | RIGHT, with the partner's translation — two witnesses outrank the size ratio | **R2/§4.1** |
+| L1.102b | The same turn streaming | The live line never crosses to the foreign side; it resolves home after the confirm delay | **R3/#150** |
+| L1.102c | L1.20's shape: a home settle from the home session alone, no partner reading | Still LEFT — one witness does not outrank a real home translation | **R2** |
+| L1.103 | #137's turn: crossed votes, settled home on the opening votes, home output empty, partner output the English input verbatim | No bubble; `no session produced` (recoverable, the deferral waits); not an abstention | **R3/#137** |
+| L1.103b | The same turn streaming past the confirm delay | Direction stays undecided — home-session silence proves nothing beside an echo | **R3/#137** |
+| L1.103c | A home sentence of names ("Apple, Google, Netflix und Amazon …"), 0.86 overlap, home session heard home | Commits RIGHT — the gate is the home session's reading, not overlap | **R2** |
+| L1.104 | #125's turn: home session votes `ko` ×12, partner session votes home ×11, pool settled `ko`, both outputs full length | RIGHT, with the partner's translation — the corrupt pool yields to the partner's reading | **R2/#125** |
+| L1.104b | A neither-side settle with no partner reading for home | Still vetoed — nothing on screen could be trusted | **R3** |
+| L1.105 | `homeFunctionWords(for: .de)` | Disjoint from English and Spanish function words; the measured corpus words stay | **#128** |
+| L1.105b | "They went into the den and the war was over." translated correctly | Does not read as home speech | **#128** |
 | L1.75e | Crossed codes with a HOME settle | Untouched — the measured #75 rescue still commits | **#75** |
 | L1.75f | A turn that abstained, then the next turn | The flag does not outlive its turn | **#152** |
 | L1.76 | A refused turn reaches the screen | The reader is told what to do, severity `.info` | **#152** |

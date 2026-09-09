@@ -215,7 +215,9 @@ are true:
    belongs on.
 2. **The speaker has actually stopped** — a real end, not a mid-sentence
    pause.
-3. **The translation is present.** A bubble with no translation is broken.
+3. **The translation is present.** A bubble with no translation is broken —
+   and a session's output that repeats what that session heard is not a
+   translation (#137).
 4. **This turn has not already been committed.**
 
 If any is false: keep showing live text and wait. **Never commit early and
