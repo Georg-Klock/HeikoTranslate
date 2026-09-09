@@ -427,6 +427,19 @@ the real service; nothing timing-related is mirrored in a test file.
 | L1.97 | The shipping `WallClock` | Arms a real timer that fires on the main actor — the one deliberate wall-clock wait, 50ms against a 10s allowance | **#153** |
 | L1.98 | The mic notice, on the clock | Stays up for its whole reviewed duration, dismisses on the clock, and a clear cancels the dismissal | **#5/#153** |
 
+Audio windows in seconds (#131, 2026-09-08). `maxPendingChunks` (250) and
+`maxReplacementChunks` (50) were chunk counts calibrated against a 64ms
+chunk; the tap delivers whatever the hardware does, and the 2026-08-18
+device logs count ~11 buffers a second. Both windows are now stated in
+seconds (16s at launch, 3.2s across a reconnect), sized by `AudioWindow`
+from the first buffer's frames and rate, and the measured chunk is logged
+once per run. Until the first buffer the counts are the old ones exactly.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.107 | 3.2s and 16s at 64ms, 21ms and 85ms chunks; a zero duration | 50/250 (the old constants), 150, 38; the fallback never divides by zero | **R4/#131** |
+| L1.107b | The service told its chunk is 4096 frames at 48kHz, then a replacement window with 60 chunks | The rolling window holds 38 (3.2s), newest first; a later chunk report does not re-size the same path | **R4/#131** |
+
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1
 219/219 and L3 89/89, and both `de_song_lead` fixtures committed

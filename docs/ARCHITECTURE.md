@@ -61,7 +61,10 @@ translator session's audio is played.
 
 ## Turn lifecycle
 
-1. Mic chunks (64ms, 16kHz PCM) stream to both sessions of the pair. Audio captured
+1. Mic chunks (16kHz PCM; the chunk is whatever the tap delivers — device
+   logs of 2026-08-18 count ~11 a second, and since #131 the first buffer's
+   frames and rate are logged once per run and both audio windows are sized
+   in seconds from them) stream to both sessions of the pair. Audio captured
    before the sockets finish connecting is buffered and flushed on connect
    (SPEC R4) — the mic "opens" only when **all** sessions are ready.
 2. Sessions stream back `inputTranscription` (detected language code +

@@ -44,12 +44,24 @@ explicit, so nothing is inferred from the conversation anymore.
 One button. Tap it to mute; tap again to unmute. Nothing else is
 interactive.
 
-> **Temporary deviation (2026-07-27):** the app is *supposed* to start
-> already listening, and R4 depends on it. On device, speech at launch is
-> still being lost (TESTING.md, open bug), so for now the app opens muted
-> and says `Zum Sprechen antippen` under the button — honest about not
-> listening rather than looking alive while hearing nothing. Restore the
-> hot mic once the launch-capture bug is fixed.
+> **Deviation, first noted 2026-07-27, status 2026-09-08:** the app is
+> *supposed* to start already listening, and R4 depends on it. It still
+> opens muted and says `Zum Sprechen antippen` under the button — honest
+> about not listening rather than looking alive while hearing nothing.
+>
+> The launch-capture bug it waits on still reproduces, on every cold start
+> in the 26 device logs of 2026-08-17 to 08-19: the first audio tap of a
+> process delivers zero buffers, the 0.5s mic watchdog rebuilds the audio
+> path, and buffers flow from about 1.1s after the start (2.4.77: engine
+> started at +1.5s, rebuilt at +2.6s, 19 buffers by +4.5s). With the hot mic
+> that dead window would sit at launch, so speech in the first ~1.1s after
+> launch would be lost; behind a tap it sits after the tap, where nobody has
+> started speaking. Restoring the hot mic therefore waits on the
+> dead-first-tap defect itself — the watchdog's rebuild is what works, and
+> the open question is why the first start needs it — which is a device
+> question the L1 suite cannot reach. Restoring the mic changes what a
+> tester sees on launch, which by `docs/release.md`'s own test is a
+> marketing-version question.
 
 ### 3.3 Turn-taking
 1. A person speaks.
