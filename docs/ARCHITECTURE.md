@@ -125,16 +125,20 @@ translator session's audio is played.
    turn the pooled tally got wrong (2026-09-08; #150, #137, #125):
 
    - **Concordant home** — the pool settled home AND each session's own votes
-     say home. L1.20 has one witness for home; this has two, and the home
-     session's output no longer outranks them. Measured: a home-language turn
+     say home AND the partner's output is a translation rather than an echo
+     of its own transcript (both sessions can hallucinate one language
+     together — #125 measured it — so codes alone are not two witnesses).
+     L1.20 has one witness for home; this has two plus the content, and the
+     home session's output no longer outranks them. Measured: a home-language turn
      whose home session emitted a near-echo at 0.571 against the 0.6 echo
      threshold, read as a real translation on its size ratio and committed
      to the foreign side with the correct translation discarded.
    - **A settle on neither side** — the pool named a language nobody in the
      pair speaks (`ko` on de↔en, clean German). That is proof the pool is
      corrupt, not evidence about the speech; when the partner session's own
-     votes say home, its reading routes the turn instead of the veto dropping
-     it. With no such reading the veto stands.
+     votes say home and its output is a translation rather than an echo, its
+     reading routes the turn instead of the veto dropping it. With no such
+     reading, or with an echoing partner, the veto stands.
    - **The partner echoed** — the partner session's output repeats what that
      session itself heard while the home session's votes say it heard the
      partner language. That is foreign speech echoed back, and the home
