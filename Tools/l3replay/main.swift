@@ -36,10 +36,12 @@ struct ExpectedBubble {
 let pairs: [String: (TurnLogic.Lang, TurnLogic.Lang)] = [
     "es_short": (.de, .es),
     "de_after_es": (.de, .es),
-    // #29: German spoken under a CHINESE-home pair — the zh session is the
+    // #29: German spoken under a KOREAN-home pair. The ko session is the
     // home translator, and its few-character output is what the per-script
-    // floors exist to admit.
-    "de_price_short": (.zh, .de),
+    // floors exist to admit. This ran zh-home until 2026-08-18; Chinese left
+    // the language set (SPEC §3.0) and Korean carries the same measured
+    // dense-script floors, so the case survives the narrowing intact.
+    "de_price_short": (.ko, .de),
 ]
 
 let expectations: [String: [ExpectedBubble]] = [
@@ -88,10 +90,10 @@ let expectations: [String: [ExpectedBubble]] = [
     // One German utterance with an internal breath pause (#78): ONE bubble,
     // both halves present (word floor), ONE release.
     "de_pause": [ExpectedBubble(isHome: true, translator: .en, minOriginalWords: 10)],
-    // Foreign (German) speech under the zh-home pair: LEFT bubble, the home
-    // (zh) session translating. The translation is legitimately only a few
+    // Foreign (German) speech under the ko-home pair: LEFT bubble, the home
+    // (ko) session translating. The translation is legitimately only a few
     // characters — the #29 discriminator.
-    "de_price_short": [ExpectedBubble(isHome: false, translator: .zh)],
+    "de_price_short": [ExpectedBubble(isHome: false, translator: .ko)],
     "silence": [],
     "noise": [],
 ]

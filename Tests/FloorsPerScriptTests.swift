@@ -29,7 +29,7 @@ final class FloorsPerScriptTests: XCTestCase {
         // And the Latin homes keep the baseline exactly: their campaign
         // minima sit below it, but the binding constraint is the German
         // false-start corpus, which the campaign deliberately does not model.
-        for lang in [TurnLogic.Lang.de, .en, .es, .fr] {
+        for lang in [TurnLogic.Lang.de, .en, .es] {
             XCTAssertEqual(TurnLogic.floors(for: lang).corroborated, base.corroborated, "\(lang)")
             XCTAssertEqual(TurnLogic.floors(for: lang).decisive, base.decisive, "\(lang)")
         }
@@ -38,50 +38,44 @@ final class FloorsPerScriptTests: XCTestCase {
     // Shape coverage, deliberately labelled as such: with codes cleanly
     // settled foreign, the settled-codes route admits a short answer
     // REGARDLESS of the floors (the L1.26 doctrine) — verified by this
-    // passing under the baseline too. What these two pin is that the dense-
-    // script turn shapes flow through commit intact; the floors' own bite
-    // is pinned by the decisive and ratio cases below, which fail-first.
-    func testChineseShortAnswerCommitsUnderSettledForeignCodes() {
-        var l = TurnLogic(home: .zh, partner: .de)
-        settle(&l, "de", at: t(0))
-        let echo = "Vielen Dank für alles."
-        l.noteOutputs([.zh: "谢谢。"], inputs: [.de: echo], at: t(3))
-        XCTAssertEqual(l.direction, .foreignSpoken,
-                       "a real 3-char Chinese answer must survive the corroborated floor")
-        XCTAssertEqual(l.translator, .zh)
-        let bubble = l.commit(inputs: [.de: echo], outputs: [.zh: "谢谢。"])
-        XCTAssertEqual(bubble?.isHome, false)
-        XCTAssertEqual(bubble?.translation, "谢谢。")
-    }
-
-    // The Korean mirror: "네." (2 chars) beside a long echo, codes settled
-    // foreign — at the measured floor exactly.
+    // passing under the baseline too. What it pins is that the dense-script
+    // turn shape flows through commit intact; the floors' own bite is pinned
+    // by the decisive and ratio cases below, which fail-first.
+    //
+    // Korean is the only dense script left (SPEC §3.0 retired Chinese), so
+    // the paired zh case that used to sit above this one is gone. Its
+    // measurement survives in the committed floor table, not here.
     func testKoreanShortAnswerCommitsUnderSettledForeignCodes() {
         var l = TurnLogic(home: .ko, partner: .de)
         settle(&l, "de", at: t(0))
         let echo = "Ist das für Sie in Ordnung?"
         l.noteOutputs([.ko: "네."], inputs: [.de: echo], at: t(3))
-        XCTAssertEqual(l.direction, .foreignSpoken)
+        XCTAssertEqual(l.direction, .foreignSpoken,
+                       "a real 2-char Korean answer must survive the corroborated floor")
+        XCTAssertEqual(l.translator, .ko)
         let bubble = l.commit(inputs: [.de: echo], outputs: [.ko: "네."])
         XCTAssertEqual(bubble?.isHome, false)
+        XCTAssertEqual(bubble?.translation, "네.")
     }
 
     // The RATIO floor, in the shape where it decides SIDES (the L1.20
     // doctrine: session behaviour beats lying codes — but only if the
     // output READS as a real translation, which is the ratio's call).
-    // A 7-char Chinese translation against a 22-char German echo is 0.32:
+    // An 8-char Korean translation against a 22-char German echo is 0.36:
     // under the baseline 0.4 it is "not a translation", the lying home
     // codes win, and the turn lands as Heiko's own words — the wrong-side
-    // class. Under the measured zh floor (0.23) the translation counts and
-    // the turn lands LEFT, translated by the home session.
+    // class. Under the measured ko floor (0.34) the translation counts and
+    // the turn lands LEFT, translated by the home session. The gap between
+    // 0.34 and 0.4 is narrow on purpose: it is the whole of what the
+    // per-script floor buys, so the case is written to sit inside it.
     func testRatioFloorPerScriptBeatsLyingCodes() {
-        var l = TurnLogic(home: .zh, partner: .de)
-        settleFromBoth(&l, "zh", at: t(0))   // the codes LIE toward home
+        var l = TurnLogic(home: .ko, partner: .de)
+        settleFromBoth(&l, "ko", at: t(0))   // the codes LIE toward home
         let echo = "Vielen Dank für alles."
-        l.noteOutputs([.zh: "非常感谢一切。"], inputs: [.de: echo], at: t(3))
+        l.noteOutputs([.ko: "모두 감사해요."], inputs: [.de: echo], at: t(3))
         XCTAssertEqual(l.direction, .foreignSpoken,
                        "a genuine dense-script translation must beat lying codes, as German's does (L1.20)")
-        XCTAssertEqual(l.translator, .zh)
+        XCTAssertEqual(l.translator, .ko)
     }
 
     /// Codes from BOTH sessions, so no crossed shape forms — the pure
@@ -98,13 +92,13 @@ final class FloorsPerScriptTests: XCTestCase {
     // a three-character real answer now stands, which the German-calibrated
     // 8 rejected — the other half of #29's defect.
     func testDecisiveFloorPerScript() {
-        var oneChar = TurnLogic(home: .zh, partner: .de)
-        oneChar.noteOutputs([.zh: "好"], inputs: [:], at: t(0))
+        var oneChar = TurnLogic(home: .ko, partner: .de)
+        oneChar.noteOutputs([.ko: "네"], inputs: [:], at: t(0))
         XCTAssertNil(oneChar.direction, "one character alone proves nothing, loosened is not gone")
 
-        var shortAnswer = TurnLogic(home: .zh, partner: .de)
-        shortAnswer.noteOutputs([.zh: "好的。"], inputs: [:], at: t(0))
+        var shortAnswer = TurnLogic(home: .ko, partner: .de)
+        shortAnswer.noteOutputs([.ko: "좋아요"], inputs: [:], at: t(0))
         XCTAssertEqual(shortAnswer.direction, .foreignSpoken,
-                       "3 chars meets the measured zh decisive floor — the baseline 8 swallowed it")
+                       "3 chars meets the measured ko decisive floor, which the baseline 8 swallowed")
     }
 }

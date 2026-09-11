@@ -29,17 +29,25 @@ import Foundation
 /// Codes lie (measured: "ja" for plain English); they are used only as a
 /// veto — never to decide a side.
 struct TurnLogic {
-    /// Languages offered in settings. Raw value is the BCP-47 code sent to
-    /// the API — every one verified against the live model (2026-07-28
-    /// target probe: de/en/es/fr/ko/zh all translate).
+    /// The v1 language set: four languages, fully interchangeable, so either
+    /// side of the pair may be any of them and six pairs are on offer. Raw
+    /// value is the BCP-47 code sent to the API, every one verified against
+    /// the live model (2026-07-28 target probe).
+    ///
+    /// **The set is small on purpose, and the reason is this file.** Direction
+    /// is inferred from which fixed-language session produced plausible
+    /// output, which is a circular signal: a session pinned to one language
+    /// transcribes a neighbouring language as its own and votes for it
+    /// confidently (#125, #121, #137, #128). Pair difficulty therefore tracks
+    /// acoustic distance and shared vocabulary, and every pair in this set is
+    /// far enough apart that the crossed-evidence machinery below has
+    /// something to work with. French, Chinese, Tagalog and Vietnamese were
+    /// retired from the set on 2026-08-18; French specifically because fr↔es
+    /// and en↔fr are high-cognate, low-distance edges that would put the #125
+    /// failure mode back into a clean mesh. The full rationale, and the
+    /// conditions under which this relaxes, are SPEC §3.0.
     enum Lang: String, CaseIterable, Codable {
-        case de, en, es, fr, ko, zh
-        // Partner-side only (Georg's decision, #30/#28, 2026-08-12): the
-        // model translates both (verified live 2026-08-12,
-        // Tools/targetprobe.sh tl vi), but neither is an app language — the
-        // home wheel never offers them, so no UI set exists for them and
-        // #6's review surface does not grow.
-        case tl, vi
+        case de, en, es, ko
 
         /// Flag shown in the picker and on the split button. English uses
         /// the US flag and Spanish the Mexican flag by product decision.
@@ -48,11 +56,7 @@ struct TurnLogic {
             case .de: return "🇩🇪"
             case .en: return "🇺🇸"
             case .es: return "🇲🇽"
-            case .fr: return "🇫🇷"
             case .ko: return "🇰🇷"
-            case .zh: return "🇨🇳"
-            case .tl: return "🇵🇭"
-            case .vi: return "🇻🇳"
             }
         }
 
@@ -65,24 +69,17 @@ struct TurnLogic {
             case .de: return "Deutsch"
             case .en: return "Englisch"
             case .es: return "Spanisch"
-            case .fr: return "Französisch"
             case .ko: return "Koreanisch"
-            case .zh: return "Chinesisch"
-            case .tl: return "Tagalog"
-            case .vi: return "Vietnamesisch"
             }
         }
 
-        /// Whether this language may take the HOME side — the reader's
-        /// side, whose language the whole UI renders in. Partner-only
-        /// languages have no UI set, so home must never become one; the
-        /// wheel filter and the collision swap both consult this. #30.
-        var canBeHome: Bool {
-            switch self {
-            case .tl, .vi: return false
-            default: return true
-            }
-        }
+        // Every language in the v1 set may take either side, so there is no
+        // `canBeHome` any more. It existed for the partner-only pair (#30,
+        // Tagalog and Vietnamese), which had no UI set and therefore could
+        // never be the reader's side; with those retired, the property was
+        // true for every case and the four gates built on it could not fire.
+        // A stored value naming a retired language is handled where it can
+        // actually arrive, in `ConversationViewModel.init`.
 
         // `name(in:)` and `endonym` live on this type but are DEFINED in
         // UIStrings.swift. TurnLogic is compiled on its own by the L3 harness
@@ -142,14 +139,14 @@ struct TurnLogic {
         // Measured 2026-08-11, Tools/floor_measurement.py on the Swift wire
         // path (60 probes; the table is committed beside the tool). Korean
         // short answers ran 2-7 chars ("네."=2) with answer ratios down to
-        // 0.5; Chinese 2-4 ("谢谢。"=3, "好的。"=4) with ratios to 0.34 —
-        // both sides of the German baseline would reject most of them. The
-        // suggested floors take the observed minimum (corroborated), keep
-        // the German 8:5 shape above it (decisive), and put the same 0.67
-        // safety factor under the observed minimum ratio that 0.4 has
-        // against German's measured ~0.6.
+        // 0.5, and the German baseline would reject most of them. The floor
+        // takes the observed minimum (corroborated), keeps the German 8:5
+        // shape above it (decisive), and puts the same 0.67 safety factor
+        // under the observed minimum ratio that 0.4 has against German's
+        // measured ~0.6. The campaign also measured Chinese (3/2, ratio
+        // 0.23); that row is retired with the language (SPEC §3.0) and the
+        // measurement stands in the committed table if zh ever returns.
         case .ko: return OutputFloors(decisive: 3, corroborated: 2, ratio: 0.34)
-        case .zh: return OutputFloors(decisive: 3, corroborated: 2, ratio: 0.23)
         // The Latin homes measured SAFELY ABOVE the baseline (short answers
         // ≥3 chars — "No."=3, "Vale."≈5 — ratios ≥0.84), so they keep the
         // German values: the binding constraint there is the false-start
