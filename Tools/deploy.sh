@@ -236,7 +236,7 @@ if [[ "$BUILD" == "1" && "$BUMP" == "1" ]]; then
     echo "Fix it there, or pass --no-bump." >&2
     exit 2
   fi
-  NEXT_BUILD=$((CURRENT_BUILD + 1))
+  NEXT_BUILD=$(next_build_number "$CURRENT_BUILD")
   set_build_number "$CURRENT_BUILD" "$NEXT_BUILD"
   BUMPED=1
   # Nothing between here and the commit is guaranteed to succeed — the build
