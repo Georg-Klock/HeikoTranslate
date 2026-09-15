@@ -541,6 +541,58 @@ case_start "deploy: a failed deploy preserves unrelated project.yml edits"
   check "hand edit kept" yes          "$(grep -q 'a hand edit' "$REPO_DIR/project.yml" && echo yes || echo no)"
 case_end
 
+# --- the cross-branch collision (#148) --------------------------------------
+#
+# Every case above asks "did this run record the number it installed?", and in
+# a collision the answer is yes for both runs — each is individually correct.
+# The number is spent by a run that never sees this one, so the only thing that
+# can catch it is deriving the next number from history rather than from this
+# branch's project.yml. Measured on 2026-09-14: a deploy from main minted
+# 2.4.78 while the phone already carried 78 and 79 from a device branch.
+
+case_start "deploy: a number spent on another branch is not minted again"
+  # A second branch deployed 41 and 42; this branch's project.yml still says 40.
+  git -C "$REPO_DIR" checkout -q -b other
+  git -C "$REPO_DIR" commit -q --allow-empty -m "Build 2.3.41 (device)"
+  git -C "$REPO_DIR" commit -q --allow-empty -m "Build 2.3.42 (device)"
+  git -C "$REPO_DIR" checkout -q -
+  check "precondition: this branch still reads" 40 "$(build_number)"
+  status=$(FAIL_AT='' run deploy.sh)
+  check "exit"          0                       "$status"
+  check "build number"  43                      "$(build_number)"
+  check "head"          "Build 2.3.43 (device)" "$(head_subject)"
+case_end
+
+case_start "release: a number spent by a device build is not uploaded again"
+  # The counter is shared, so a TestFlight cut must clear device numbers too —
+  # the case that matters most, because this number reaches Apple.
+  git -C "$REPO_DIR" commit -q --allow-empty -m "Build 2.3.44 (device)"
+  status=$(FAIL_AT='' run release.sh)
+  check "exit"          0                "$status"
+  check "build number"  45               "$(build_number)"
+  check "head"          "Release 2.3.45" "$(head_subject)"
+case_end
+
+case_start "deploy: a number spent by a TestFlight cut is not installed again"
+  # And the mirror: release.sh writes "Release <v>.<n>", so a scan that knows
+  # only the "Build" shape lets the two kinds collide with each other.
+  git -C "$REPO_DIR" commit -q --allow-empty -m "Release 2.3.47"
+  status=$(FAIL_AT='' run deploy.sh)
+  check "exit"          0                       "$status"
+  check "build number"  48                      "$(build_number)"
+  check "head"          "Build 2.3.48 (device)" "$(head_subject)"
+case_end
+
+case_start "deploy: history BELOW the current value never walks the counter back"
+  # The counter only ever goes up. A branch whose project.yml is ahead of every
+  # committed number keeps its own value as the floor.
+  git -C "$REPO_DIR" commit -q --allow-empty -m "Build 2.3.12 (device)"
+  status=$(FAIL_AT='' run deploy.sh)
+  check "exit"          0                       "$status"
+  check "build number"  41                      "$(build_number)"
+  check "head"          "Build 2.3.41 (device)" "$(head_subject)"
+case_end
+
 # --- release.sh ------------------------------------------------------------
 
 case_start "release: archive fails -> number goes back, tree left clean"

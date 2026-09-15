@@ -222,7 +222,7 @@ if ! [[ "$CURRENT_BUILD" =~ ^[0-9]+$ ]]; then
   echo "Could not read CFBundleVersion from project.yml (got '$CURRENT_BUILD')." >&2
   exit 2
 fi
-NEXT_BUILD=$((CURRENT_BUILD + 1))
+NEXT_BUILD=$(next_build_number "$CURRENT_BUILD")
 VERSION=$(grep CFBundleShortVersionString project.yml | sed 's/.*"\(.*\)"/\1/')
 set_build_number "$CURRENT_BUILD" "$NEXT_BUILD"
 BUMPED=1
