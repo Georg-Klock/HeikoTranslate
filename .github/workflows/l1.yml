@@ -148,3 +148,36 @@ jobs:
             exit 1
           fi
           grep -E "Executed [0-9]+ tests?, with 0 failures" /tmp/l1.log | tail -1
+
+      # The configuration that ships, compiled the way it ships. Everything
+      # above builds Debug for the simulator, and that is structurally unable
+      # to see a `#if DEBUG` mistake: a declaration inside such a block exists
+      # for every test and vanishes from the archive. `liveAPIKey` sat inside
+      # the test-seam block from 2026-08-11, both of its callers are
+      # unconditional, and every Release build since failed with "cannot find
+      # 'liveAPIKey' in scope" — discovered only when a TestFlight cut reached
+      # the archive step on 2026-09-14, five weeks later. L1 was green
+      # throughout, because L1 cannot fail on this.
+      #
+      # Compile only: no signing, no archive, no secrets, so it stays safe on
+      # a fork's pull request. It costs about a minute and it is the only
+      # check in this repository that reads the Release configuration at all.
+      - name: Release compiles for the device SDK
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project HeikoTranslate.xcodeproj \
+            -scheme HeikoTranslate \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            | tee /tmp/release-build.log
+
+          if ! grep -q "BUILD SUCCEEDED" /tmp/release-build.log; then
+            echo "::error::The Release configuration does not compile for the device SDK — the archive would fail."
+            grep -E "error:" /tmp/release-build.log | head -20 || true
+            exit 1
+          fi
