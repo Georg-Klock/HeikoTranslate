@@ -18,7 +18,7 @@ final class SessionLivenessTests: XCTestCase {
     private let t0 = Date(timeIntervalSinceReferenceDate: 0)
     private func t(_ seconds: TimeInterval) -> Date { t0.addingTimeInterval(seconds) }
 
-    private func mute(ready: Set<TurnLogic.Lang> = [.de, .fr],
+    private func mute(ready: Set<TurnLogic.Lang> = [.de, .en],
                       content: [TurnLogic.Lang: Date] = [:],
                       readyAt: [TurnLogic.Lang: Date] = [:],
                       reconnects: [TurnLogic.Lang: Int] = [:],
@@ -30,8 +30,8 @@ final class SessionLivenessTests: XCTestCase {
     // L1.107 — the measured failure: one session ready and permanently silent while the
     // other transcribes.
     func testL1_107_aSessionThatNeverSpokeWhileItsPartnerDidIsMute() {
-        let found = mute(content: [.fr: t(58)],
-                         readyAt: [.de: t(0), .fr: t(0)],
+        let found = mute(content: [.en: t(58)],
+                         readyAt: [.de: t(0), .en: t(0)],
                          now: 60)
         XCTAssertEqual(found, [.de], "de never produced anything while fr kept transcribing")
     }
@@ -39,7 +39,7 @@ final class SessionLivenessTests: XCTestCase {
     // L1.107a — a quiet room is not a broken session. Nothing has been said,
     // so nothing may be torn down.
     func testL1_107a_silenceFromEveryoneIsNotEvidence() {
-        XCTAssertTrue(mute(readyAt: [.de: t(0), .fr: t(0)], now: 60).isEmpty,
+        XCTAssertTrue(mute(readyAt: [.de: t(0), .en: t(0)], now: 60).isEmpty,
                       "no session is producing — there is no live partner to compare against")
     }
 
@@ -49,8 +49,8 @@ final class SessionLivenessTests: XCTestCase {
     func testL1_107b_staleEvidenceDoesNotCondemn() {
         // fr last spoke 30s ago: outside the evidence window, so it proves
         // nothing about now.
-        XCTAssertTrue(mute(content: [.fr: t(30)],
-                           readyAt: [.de: t(0), .fr: t(0)],
+        XCTAssertTrue(mute(content: [.en: t(30)],
+                           readyAt: [.de: t(0), .en: t(0)],
                            now: 60).isEmpty)
     }
 
@@ -58,16 +58,16 @@ final class SessionLivenessTests: XCTestCase {
     // legitimately one-sided; both sessions transcribe the same microphone, so
     // a session producing recently is healthy however little it said.
     func testL1_107c_aRecentlyProducingSessionIsNeverMute() {
-        XCTAssertTrue(mute(content: [.de: t(57), .fr: t(59)],
-                           readyAt: [.de: t(0), .fr: t(0)],
+        XCTAssertTrue(mute(content: [.de: t(57), .en: t(59)],
+                           readyAt: [.de: t(0), .en: t(0)],
                            now: 60).isEmpty)
     }
 
     // L1.107d — under the limit, nothing fires. A pause between utterances
     // must not cost a reconnect.
     func testL1_107d_belowTheLimitNothingFires() {
-        XCTAssertTrue(mute(content: [.de: t(50), .fr: t(59)],
-                           readyAt: [.de: t(0), .fr: t(0)],
+        XCTAssertTrue(mute(content: [.de: t(50), .en: t(59)],
+                           readyAt: [.de: t(0), .en: t(0)],
                            now: 60).isEmpty,
                       "10s of quiet is a pause, not a fault")
     }
@@ -77,8 +77,8 @@ final class SessionLivenessTests: XCTestCase {
     // worse than a visible failure.
     func testL1_107e_reconnectsAreCapped() {
         func args(_ spent: Int) -> Set<TurnLogic.Lang> {
-            mute(content: [.fr: t(58)],
-                 readyAt: [.de: t(0), .fr: t(0)],
+            mute(content: [.en: t(58)],
+                 readyAt: [.de: t(0), .en: t(0)],
                  reconnects: [.de: spent], now: 60)
         }
         XCTAssertEqual(args(0), [.de])
@@ -97,7 +97,7 @@ final class SessionLivenessTests: XCTestCase {
     // Reaching `ready` and being recorded are separate events, and the gap
     // must not read as muteness.
     func testL1_107g_aSessionWithNoClockIsLeftAlone() {
-        XCTAssertTrue(mute(content: [.fr: t(59)], readyAt: [.fr: t(0)], now: 60).isEmpty,
+        XCTAssertTrue(mute(content: [.en: t(59)], readyAt: [.en: t(0)], now: 60).isEmpty,
                       "de has neither content nor a ready stamp — nothing to measure")
     }
 
@@ -105,8 +105,8 @@ final class SessionLivenessTests: XCTestCase {
     // session has spoken. A session alive for an hour and silent for the last
     // 20s is mute; the ready stamp must not keep excusing it.
     func testL1_107h_silenceIsMeasuredFromTheLastContent() {
-        XCTAssertEqual(mute(content: [.de: t(3540), .fr: t(3599)],
-                            readyAt: [.de: t(0), .fr: t(0)],
+        XCTAssertEqual(mute(content: [.de: t(3540), .en: t(3599)],
+                            readyAt: [.de: t(0), .en: t(0)],
                             now: 3600),
                        [.de])
     }
