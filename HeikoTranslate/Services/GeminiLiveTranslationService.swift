@@ -507,19 +507,6 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Skips the AVAudioEngine setup so `start()` runs without audio
     /// hardware; tests drive `forward(_:)` directly instead of the mic tap.
     var skipAudioIOForTesting = false
-    /// The key, read only when a REAL session will be built. The factory
-    /// seam must not depend on bundle I/O: a transient Secrets.plist read
-    /// failure under simulator load fatalErrored the test host mid-suite,
-    /// intermittently, with a message blaming a missing file that was
-    /// present (GitHub #68). Under the seam the value is never used —
-    /// makeSession's factory branch ignores it.
-    private var liveAPIKey: String {
-        #if DEBUG
-        if sessionFactoryForTesting != nil { return "unused-under-test-seam" }
-        #endif
-        return AppConfig.geminiAPIKey
-    }
-
     /// Stands in for a loud mic buffer (GitHub #39): with the tap skipped,
     /// nothing sets `speechHeardThisTurn`, and the straggler gates treat
     /// every event as post-turn noise. A test marks speech exactly where the
@@ -557,6 +544,29 @@ final class GeminiLiveTranslationService: ObservableObject {
     var replacementWindowChunksForTesting: Int { maxReplacementChunks }
     var pendingWindowChunksForTesting: Int { maxPendingChunks }
     #endif
+
+    /// The key, read only when a REAL session will be built. The factory
+    /// seam must not depend on bundle I/O: a transient Secrets.plist read
+    /// failure under simulator load fatalErrored the test host mid-suite,
+    /// intermittently, with a message blaming a missing file that was
+    /// present (GitHub #68). Under the seam the value is never used —
+    /// makeSession's factory branch ignores it.
+    ///
+    /// **Outside the test-seam block, and it has to be.** It sat inside it
+    /// from 2026-08-11 while both callers — `start()` and `reconnect()` —
+    /// are unconditional, so every Release build failed to compile with
+    /// "cannot find 'liveAPIKey' in scope" and the archive step could not
+    /// run at all. Nothing caught it: L1 builds the Debug simulator
+    /// configuration, L3 compiles its own harness, and CI runs only those.
+    /// Its own inner `#if DEBUG` is the tell — a property that guards its
+    /// body for Debug was never meant to vanish in Release. GitHub #148's
+    /// neighbour: a gate that cannot see the configuration it ships.
+    private var liveAPIKey: String {
+        #if DEBUG
+        if sessionFactoryForTesting != nil { return "unused-under-test-seam" }
+        #endif
+        return AppConfig.geminiAPIKey
+    }
 
     func requestPermissions() async -> Bool {
         await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
