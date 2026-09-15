@@ -552,9 +552,9 @@ case_end
 
 case_start "deploy: a number spent on another branch is not minted again"
   # A second branch deployed 41 and 42; this branch's project.yml still says 40.
-  git -C "$REPO_DIR" checkout -q -b other
-  git -C "$REPO_DIR" commit -q --allow-empty -m "Build 2.3.41 (device)"
-  git -C "$REPO_DIR" commit -q --allow-empty -m "Build 2.3.42 (device)"
+  git -C "$REPO_DIR" -c user.email=t@t -c user.name=t checkout -q -b other
+  git -C "$REPO_DIR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "Build 2.3.41 (device)"
+  git -C "$REPO_DIR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "Build 2.3.42 (device)"
   git -C "$REPO_DIR" checkout -q -
   check "precondition: this branch still reads" 40 "$(build_number)"
   status=$(FAIL_AT='' run deploy.sh)
@@ -566,7 +566,7 @@ case_end
 case_start "release: a number spent by a device build is not uploaded again"
   # The counter is shared, so a TestFlight cut must clear device numbers too —
   # the case that matters most, because this number reaches Apple.
-  git -C "$REPO_DIR" commit -q --allow-empty -m "Build 2.3.44 (device)"
+  git -C "$REPO_DIR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "Build 2.3.44 (device)"
   status=$(FAIL_AT='' run release.sh)
   check "exit"          0                "$status"
   check "build number"  45               "$(build_number)"
@@ -576,7 +576,7 @@ case_end
 case_start "deploy: a number spent by a TestFlight cut is not installed again"
   # And the mirror: release.sh writes "Release <v>.<n>", so a scan that knows
   # only the "Build" shape lets the two kinds collide with each other.
-  git -C "$REPO_DIR" commit -q --allow-empty -m "Release 2.3.47"
+  git -C "$REPO_DIR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "Release 2.3.47"
   status=$(FAIL_AT='' run deploy.sh)
   check "exit"          0                       "$status"
   check "build number"  48                      "$(build_number)"
@@ -586,7 +586,7 @@ case_end
 case_start "deploy: history BELOW the current value never walks the counter back"
   # The counter only ever goes up. A branch whose project.yml is ahead of every
   # committed number keeps its own value as the floor.
-  git -C "$REPO_DIR" commit -q --allow-empty -m "Build 2.3.12 (device)"
+  git -C "$REPO_DIR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "Build 2.3.12 (device)"
   status=$(FAIL_AT='' run deploy.sh)
   check "exit"          0                       "$status"
   check "build number"  41                      "$(build_number)"
