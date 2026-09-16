@@ -25,8 +25,17 @@ final answers.**
    UserDefaults, on device. The UI showing them was removed (#7); the
    counters remain local.
 5. **No accounts, no analytics SDK, no ads, no tracking identifiers, no
-   third-party SDKs beyond Apple's frameworks.** The only network peer is
-   the Gemini API endpoint.
+   third-party SDKs beyond Apple's frameworks.** The only network peer the
+   app's own traffic reaches is the Gemini API endpoint.
+6. **On-device speech recognition** (iOS 26+, #135) listens to the same
+   microphone audio during a translation, only to check which language was
+   spoken. It runs on the phone — Apple's `SpeechTranscriber` has no server
+   mode, and L1.120/120b fail the build on a server-capable recognition API.
+   Its audio never leaves the phone; what it produces is written only to the
+   on-device diagnostic log of item 2. A missing speech model may be
+   downloaded from Apple once, by the OS at the app's request, and only on a
+   network known to be unmetered (Wi-Fi, not Low Data Mode); that download
+   carries no user audio or text.
 
 ## The label answers
 
@@ -57,6 +66,15 @@ final answers.**
 - *Does the manual share count as "collection"?* No — user-initiated
   sharing via the system share sheet is the user's own transmission, not
   app collection, under Apple's definitions.
+- *Does on-device speech recognition "collect" Audio Data?* No — Apple
+  defines collection as transmitting data off the device. The recognizer's
+  audio and text stay on the phone (item 6), so the Audio Data row is
+  unchanged and still describes Gemini alone. A change that let recognition
+  leave the device would have to change the policy, this file and the label
+  together.
+- *Does the speech-model download send user data?* No — it is the OS
+  fetching Apple's model for a locale, the same assets system dictation
+  uses; it carries no audio and no transcript.
 - *Do crash logs leak transcripts?* The system crash reporter captures
   stack traces, not the app's log file contents.
 - *Is the developer's API key "user data"?* No — it identifies the

@@ -290,6 +290,44 @@ the app re-hearing its own output. `.voiceChat` mode alone does **not**
 enable AEC for an `AVAudioEngine`; the explicit call matters. Playback is
 24kHz PCM through an `AVAudioPlayerNode`.
 
+## The language referee — log only (#135)
+
+A second witness to "which language was spoken", whose errors are not
+Gemini's: `LanguageReferee.swift` runs two on-device `SpeechTranscriber`s
+(iOS 26+), one per side of the pair; `Models/RefereeEvidence.swift` is the
+pure rule that turns their two readings into a verdict. Below iOS 26, or with
+no model for a locale, `InertLanguageReferee` stands in and every turn reads
+inconclusive.
+
+```
+ tap buffer (native format) ──► referee.append        (before Int16/16kHz)
+          │
+          └─► convert ──► both Gemini sessions        (unchanged)
+
+ resetForNextUtterance ──► referee.turnEnded ──► one `referee:` diag line
+                                                   beside the app's outcome
+```
+
+- **Lifetime.** One referee per service. `start()` starts it for the pair once
+  the audio path is up; `stopSession()` stops it. `stopAudioIO()` does not, so
+  a watchdog or echo-cancellation rebuild keeps feeding the same referee — the
+  tap captures the reference on the main actor before `installTap`, and the
+  render thread reads no service state to reach it (#2).
+- **Turn rotation.** `turnEnded()` snapshots what each transcriber heard since
+  the last boundary and moves the boundary on the audio timeline, without
+  restarting the analyzers. The service records the outcome at
+  `emitUtterance` (`RIGHT/home`, `LEFT/foreign`, `REJECTED: <reason>`) and
+  writes one line per turn that had words in it.
+- **Log only.** Nothing but that line reads `RefereeEvidence`. `TurnLogic` and
+  the rest of `Models/` never name it (L1.121g); Phase 2 of #135 would be the
+  change that does.
+- **On device, and no permission.** The transcriber has no server mode and
+  asks for no speech authorization (L1.120/120b; the device check is still
+  owed). The only network use is the OS's one-time model download, which
+  carries no audio and runs only when `UnmeteredNetwork` — fed directly by the
+  service's `NWPathMonitor` on its own queue — reports a known, unmetered
+  path. Unknown counts as metered.
+
 ## Wire protocol — verified against the live API, not just docs
 
 Findings from direct protocol testing (2026-07-19, `Tools/livetest.py`) and

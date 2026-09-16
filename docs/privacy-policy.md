@@ -55,7 +55,7 @@ both human-initiated.
 
 **Datenschutzerklärung — Heiko Translate**
 
-Stand: 31. Juli 2026
+Stand: 16. September 2026
 
 Heiko Translate ist eine private, nicht-kommerzielle App. Sie wurde von Georg
 Klock für den persönlichen Gebrauch gebaut und über TestFlight verteilt.
@@ -69,6 +69,13 @@ E-Mail-Adresse, kein Standort, keine Kontakte, keine Geräte- oder Werbe-ID.
 
 Das Mikrofon ist nur aktiv, solange eine Übersetzung läuft. Wird die Taste
 nicht gedrückt, nimmt die App nichts auf.
+
+Während einer Übersetzung hört außerdem die Spracherkennung von Apple direkt
+auf dem iPhone mit, nur um zu prüfen, welche Sprache gesprochen wurde. Diese
+Aufnahme verlässt das iPhone nicht, und was die Erkennung ergibt, wird
+nirgends gespeichert außer im technischen Protokoll auf dem iPhone. Die dafür
+nötigen Sprachmodelle können einmalig von Apple heruntergeladen werden, nur
+über WLAN; dieser Download enthält keine Aufnahmen.
 
 **Wo die Daten hingehen**
 
@@ -110,7 +117,7 @@ Daten. Fragen, Auskunfts- oder Löschwünsche: hi@georgklock.com
 
 **Privacy Policy — Heiko Translate**
 
-Last updated: 31 July 2026
+Last updated: 16 September 2026
 
 Heiko Translate is a private, non-commercial app. It was built by Georg Klock
 for personal use and is distributed through TestFlight.
@@ -124,6 +131,13 @@ address, no location, no contacts, no device or advertising identifier.
 
 The microphone is active only while a translation is running. If the button is
 not pressed, the app records nothing.
+
+While a translation is running, Apple's speech recognition also listens, on
+the iPhone itself, only to check which language was spoken. That audio never
+leaves the iPhone, and nothing the recognition produces is stored anywhere
+except in the technical log on the iPhone. The speech models it needs may be
+downloaded from Apple once, on Wi-Fi only; that download contains no
+recordings.
 
 **Where the data goes**
 

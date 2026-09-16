@@ -4,9 +4,9 @@ Status (2026-09-16): **Phase 0 found a gap on the TestAudio corpus, on macOS.**
 One score — the difference between the two transcribers' confidences —
 separates German-spoken from partner-spoken readings with nothing in between.
 The corpus is text-to-speech and the models are the Mac's, so this licenses
-Phase 1 (observe-only on a phone), not any decision. The referee's building
-blocks are on `feat/language-referee-135`, not wired into the service. The
-2026-08-17 record below is kept as it was written.
+Phase 1 (observe-only on a phone), not any decision. The referee is wired into
+the service as a log-only witness on `feat/language-referee-135` (see "Wired,
+log only" below). The 2026-08-17 record below is kept as it was written.
 
 ## SpeechTranscriber, Phase 0 on the TestAudio corpus (2026-09-16)
 
@@ -149,7 +149,7 @@ German for `noise.wav` under all three pairs: the German transcriber heard
 - **The composites narrow the gap to 0.052.** A turn that is really two
   languages, which is #32's shape, dilutes the signal, as expected.
 
-### What was built for Phase 1 (not wired in)
+### What was built for Phase 1
 
 | Piece | Where |
 |---|---|
@@ -158,12 +158,35 @@ German for `noise.wav` under all three pairs: the German transcriber heard
 | L1 | `Tests/RefereeEvidenceTests.swift`: L1.116–L1.120b, including a source scan for server-capable recognition or networking APIs |
 | The probe | `Tools/lidprobe.sh`, `Tools/lidprobe/main.swift`; `REFEREE_SOURCES` in `Tools/session_sources.sh`, checked by both harness gates |
 
-The service is meant to call `start(home:partner:)` where the tap starts and
-wherever the pair changes, `append(_:)` in the tap block before the Int16
-conversion, `turnEnded()` at the turn boundary for one `referee:` log line,
-and `stop()` in the shared audio teardown. Missing models install silently in
-the background, and the referee stays inert until they have. Nothing may read
-the verdict except the logger.
+### Wired, log only
+
+`GeminiLiveTranslationService` holds one referee for its life and makes four
+calls:
+
+- `start(home:partner:)` in `start()`, once the audio path is up and the pair
+  is known;
+- `append(_:)` first thing in the tap block, with the raw buffer, before the
+  Int16/16 kHz conversion. The reference is captured before `installTap`, so
+  the render thread reads no service state, and a watchdog rebuild's new tap
+  feeds the same referee;
+- `turnEnded()` in `resetForNextUtterance()`. A turn with words in it, from
+  either Gemini session or either transcriber, writes one
+  `referee: <verdict> … | app: <outcome> | referee[home] … referee[partner] …`
+  line, where the outcome is what `emitUtterance` last did for the turn
+  (`RIGHT/home`, `LEFT/foreign` or `REJECTED: <reason>`);
+- `stop()` in `stopSession()`, the run's teardown, and not in `stopAudioIO()`,
+  which rebuilds also run.
+
+Nothing else reads the evidence. L1.121g holds `TurnLogic.swift` and every
+other file under `Models/` to never naming the referee, and L1.121c/d run the
+same committed and rejected turns with the inert referee and compare what the
+user sees.
+
+A missing model is downloaded in the background only when the network is known
+to be unmetered: online, not expensive and not constrained, read from the
+service's `NWPathMonitor` at the moment of install. An unknown path counts as
+metered. Otherwise the side stays `model-not-installed`, the log says the
+download was deferred, and the next `start` asks again.
 
 ### Full table
 

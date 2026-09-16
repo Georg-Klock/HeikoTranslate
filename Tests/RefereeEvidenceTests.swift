@@ -190,7 +190,7 @@ final class RefereeEvidenceTests: XCTestCase {
     /// it ever started: the service owns one from init, and its shared
     /// teardown runs on paths where audio never began.
     func testL1_119b_theFactoryRefereeIsSafeBeforeStart() {
-        let referee = LanguageRefereeFactory.make()
+        let referee = LanguageRefereeFactory.make(downloadsAllowed: { false })
         XCTAssertNil(referee.turnEnded())
         referee.stop()
         XCTAssertNil(referee.turnEnded())

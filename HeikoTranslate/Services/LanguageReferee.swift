@@ -3,7 +3,7 @@ import AVFoundation
 import CoreMedia
 import Speech
 
-/// The on-device language witness the translation service will hold (#135).
+/// The on-device language witness the translation service holds (#135).
 ///
 /// Two transcribers, one per side of the pair, read the same raw microphone
 /// buffers the Gemini sessions get. At every turn boundary the service asks for
@@ -20,7 +20,8 @@ import Speech
 ///
 /// **On device only (#135 §6).** The transcriber has no network recognition
 /// mode: nothing here sends audio anywhere. What does use the network is the
-/// one-time model download through `AssetInventory`, which carries no audio.
+/// one-time model download through `AssetInventory`, which carries no audio —
+/// and only on an unmetered network: see `downloadsAllowed`.
 /// `RefereeEvidenceTests` scans this file so a network-capable recognition API
 /// cannot be added to it quietly.
 ///
@@ -48,16 +49,24 @@ protocol LanguageRefereeing: AnyObject {
     /// lag, so the snapshot normally holds the whole utterance.
     func turnEnded() -> RefereeEvidence?
 
-    /// Tear down both transcribers. Belongs in the service's one shared audio
-    /// teardown, so a mute or a rebuild cannot leave them listening (#15, #127).
+    /// Tear down both transcribers. Belongs in the service's teardown of the
+    /// RUN (`stopSession`), so a mute cannot leave them listening (#15, #127) —
+    /// and not in the audio path's, which a watchdog rebuild also runs: a
+    /// rebuilt tap keeps feeding the same referee.
     func stop()
 }
 
 enum LanguageRefereeFactory {
     /// The transcriber referee where the OS has one, the inert one elsewhere.
-    static func make() -> LanguageRefereeing {
+    ///
+    /// `downloadsAllowed` is asked at the moment a missing speech model would
+    /// be fetched, and must answer `false` unless the network is known to be
+    /// unmetered. On cellular or roaming data a silent model download is a
+    /// bill nobody agreed to; an unknown network counts as metered. No
+    /// default, so no caller can forget to ask.
+    static func make(downloadsAllowed: @escaping @Sendable () -> Bool) -> LanguageRefereeing {
         if #available(iOS 26.0, *) {
-            return TranscriberReferee()
+            return TranscriberReferee(downloadsAllowed: downloadsAllowed)
         }
         return InertLanguageReferee(reason: .unsupportedOS)
     }
@@ -135,6 +144,13 @@ final class TranscriberReferee: LanguageRefereeing, @unchecked Sendable {
 
     private let lock = NSLock()
     private var sides: [Side] = []
+    /// Asked right before a model download, never cached: the network a
+    /// `start` finds is the one that decides. See `LanguageRefereeFactory`.
+    private let downloadsAllowed: @Sendable () -> Bool
+
+    init(downloadsAllowed: @escaping @Sendable () -> Bool) {
+        self.downloadsAllowed = downloadsAllowed
+    }
     /// Bumped by every start and stop, so work begun for an old pair cannot
     /// attach itself to a new one.
     private var generation = 0
@@ -210,6 +226,13 @@ final class TranscriberReferee: LanguageRefereeing, @unchecked Sendable {
         let module = Self.module(for: locale)
         if await AssetInventory.status(forModules: [module]) != .installed {
             set(.assetsNotInstalled, on: side, generation: generation)
+            // Checked here, at install time, not when the referee was built:
+            // the phone may have left Wi-Fi since. Deferred stays inert for
+            // this pair; the next `start` asks again.
+            guard downloadsAllowed() else {
+                DiagnosticLog.shared.log("referee", "[\(side.lang.rawValue)] model not installed — download deferred, network is metered or unknown")
+                return
+            }
             guard await Self.install(module, locale: locale), isCurrent(generation) else { return }
         }
         await listen(side, module: module, locale: locale, generation: generation)
