@@ -1,6 +1,6 @@
 # Heiko Translate — Architecture (current)
 
-Technical truth as of 2026-07-25. The product behavior this implements is
+Technical truth as of 2026-09-16. The product behavior this implements is
 `SPEC.md`; how it's tested is `TESTING.md`. The original design writeup with
 the full decision history is `docs/history.md` (historical — this file wins
 where they disagree).
@@ -10,12 +10,12 @@ where they disagree).
 ```
  mic audio (16-bit PCM, 16kHz, mono) — full-duplex, AEC keeps our own
     │                                  speaker output out of the mic
-    ├──────────────┬──────────────┐
-    ▼              ▼              ▼
-[session de]  [session en]  [session es]      GeminiLiveSession.swift ×3
- target: de    target: en    target: es       (one WebSocket each)
-    │              │              │
-    └──────────────┴──────────────┘
+    ├──────────────────────────┐
+    ▼                          ▼
+[home session]         [partner session]      GeminiLiveSession.swift ×2
+ target: home           target: partner       (one WebSocket each; the
+    │                          │              pair chosen in Settings)
+    └──────────────┬───────────┘
                    ▼
         TurnLogic (pure, tested at L1)        Models/TurnLogic.swift
         which language was spoken? → which session's output is the
@@ -35,10 +35,11 @@ German) and partner (left, default English/🇺🇸) from de/en/es/ko, every
 code verified against the live model (`Tools/targetprobe.sh`). Both wheels
 offer the same four; either language can take either side.
 
-**Exactly two sessions run, and only the pair's two.** `beginListening`
-connects one `GeminiLiveSession` per side and records the pair in
-`activePair` (`GeminiLiveTranslationService.swift`, the `for lang in [home,
-partner]` loop); every 64ms mic chunk is forwarded to both. `Lang.allCases`
+**Exactly two sessions run, and only the pair's two.**
+`GeminiLiveTranslationService.start` (reached from
+`ConversationViewModel.beginListening`) connects one `GeminiLiveSession` per
+side and records the pair in `activePair` (the `for lang in [home, partner]`
+loop); every mic chunk is forwarded to both. `Lang.allCases`
 is the settings menu, never the session set. Conflating the two is a bug
 that has actually shipped: the startup watchdog treated `allCases` as the
 thing to keep alive and spun up all six languages of the time, which the
@@ -100,8 +101,13 @@ translator session's audio is played.
    logs of 2026-08-18 count ~11 a second, and since #131 the first buffer's
    frames and rate are logged once per run and both audio windows are sized
    in seconds from them) stream to both sessions of the pair. Audio captured
-   before the sockets finish connecting is buffered and flushed on connect
-   (SPEC R4) — the mic "opens" only when **all** sessions are ready.
+   before the sockets finish connecting is buffered (up to 16s,
+   `pendingAudioWindow`) and flushed on connect (SPEC R4). The mic "opens"
+   when every session that is still alive has finished its handshake
+   (`openMicIfReady`; a session that errored out does not count against
+   it). If one is still missing at the 3s startup watchdog, the laggard is
+   reconnected and the mic opens with **partial** readiness rather than
+   holding the app in "Verbinde…".
 2. Sessions stream back `inputTranscription` (detected language code +
    text — drives the live provisional line and the button glow) and
    `outputTranscription` + audio chunks (the translation).
@@ -111,10 +117,10 @@ translator session's audio is played.
    then the plurality wins. Live replays showed a turn's opening burst can be
    unanimously wrong (German after Spanish reads as "es" for ~1s before
    every session corrects itself), stragglers keep re-announcing a finished
-   turn's language for ~2s after it finalizes (a grace window drops exactly
-   those — a different language right after a turn is a fast reply and
-   counts), a stale vote tally expires after 4s so a stray code can't
-   pre-expire the settle window, and the session whose target equals the
+   turn's language for ~2s after it finalizes (a 2.5s grace window,
+   `staleCodeGrace`, drops exactly those — a different language right after
+   a turn is a fast reply and counts), a stale vote tally expires after 4s
+   so a stray code can't pre-expire the settle window, and the session whose target equals the
    spoken language can emit pure garbage ("ja" + a katakana transcript for
    plain English — those codes cast no global vote).
 4. **Which session reported a code is itself evidence** (#83/#84,
@@ -136,6 +142,23 @@ translator session's audio is played.
    two strays were reproduced committing an English echo as Heiko's own
    bubble. Per-session evidence expires with the global tally, settled or
    not; a dead context must not lift a live veto.
+
+   Echo share is not the only overlap signal. **#32's function-word
+   discriminator** (`TurnLogic.sharesHomeFunctionWords`, 2026-08-14) asks
+   *which* tokens the home output shares with what was heard, not how many.
+   A German sentence carrying an English song title comes back
+   half-translated — the title rendered into German, the German left alone —
+   and scores 0.429 echo share, exactly what a genuine translation full of
+   surviving names ("Apple and Google are both in California.") scores. No
+   cut-off separates the two; a 0.3 threshold was tried and reverted the
+   same hour. What does separate them: the half-translation reuses at least
+   two unambiguous home-language function words (*ist*, *mein*), a genuine
+   translation of foreign speech reuses none (0 against 2 over the labelled
+   corpus). Like the echo test, it counts only when the partner session
+   heard home (`partnerHomeEvidence`), and it makes `homeIsRealTranslation`
+   return false — not evidence that the speech was foreign. The word list is
+   German only; for other home languages the set is empty and the rule is
+   inert. `echoShareThreshold` stays 0.6.
 
    The same corroboration runs in the other direction: when the codes settle
    on **home** and the FULL crossed shape is present — each session reporting
@@ -217,7 +240,10 @@ translator session's audio is played.
    not the end of the turn (truncating there was the long-sentence R5
    failure) — or, if no translation audio ever arrived, when input
    transcription has been idle for 1.6s (`inputIdleTimeout`), a watchdog
-   that stops a stale translator swallowing the next utterance. The
+   that stops a stale translator swallowing the next utterance. Either timer
+   only asks: `TurnCoordinator.finalization` grants the request once the
+   mic has confirmed the endpoint, input has been quiet for 0.45s and output
+   for 0.65s (`outputQuietPause`); otherwise the timer re-arms. The
    server's `turnComplete` is parsed but ignored: this preview model
    doesn't send it reliably (see wire findings below), so the idle timers are
    the only *proposals* to finalize. `TurnCoordinator` still rejects them if
@@ -227,16 +253,32 @@ translator session's audio is played.
    in L1) — so the pure rules above receive the same `now:` the timers were
    armed against, and a test advances a virtual clock past the real timer
    chain instead of sleeping on the wall clock and racing it (#153).
-8. `TurnLogic.commit` enforces SPEC §5.1's gates (language known — with a
-   plurality fallback for short turns that never settled, something said,
-   translation present, not already committed) and produces exactly one
-   bubble per utterance. The committed original prefers the **translator
-   session's transcript** (its target never equals the spoken language, so
-   it avoids the garbage-transcript quirk). The commit also logs what *both*
-   sessions heard, escaped onto one line — diagnostic only, and deliberately
-   not the transcript-selection input, so a log can distinguish a selection
-   failure from a shared mis-transcription. Then per-turn state resets;
-   `activePartner` (the direction memory) survives.
+8. `TurnLogic.commit` enforces SPEC §5.1's gates and produces exactly one
+   bubble per utterance. In order: not already committed (R1); an
+   **abstention** when both sessions transcribed the turn and the full
+   crossed shape stands on a partner settle, unless the #75 round-trip rescue
+   applies (#125/#152 — the evidence contradicts itself, so no side is
+   picked); the foreign branch when the home session really translated (step
+   4's rules, shared with `noteOutputs`); the **codes-veto** when the settle
+   is on a non-home language and neither the crossed-evidence rescue nor the
+   third-language overrule applies; a partner translation present and not an
+   echo of foreign speech (#137); and a non-empty original and translation on
+   whichever side commits. There is **no plurality fallback**: `commit` reads
+   only the settled `spokenLang`, so a short turn whose codes never settled
+   has no veto and is judged on the sessions' outputs alone.
+   `pluralityVote()` settles votes inside `noteInputLanguage` and, at
+   `endTurn`, names the finished turn's language for the straggler grace. The
+   committed original prefers the **translator session's transcript** (its
+   target never equals the spoken language, so it avoids the
+   garbage-transcript quirk). The commit also logs what *both* sessions
+   heard, escaped onto one line — diagnostic only, and deliberately not the
+   transcript-selection input, so a log can distinguish a selection failure
+   from a shared mis-transcription. Then `endTurn` resets every piece of
+   per-turn state — direction, settle, both vote tallies, the commit latch.
+   What survives is the pair itself (`home`, `partner`) and the straggler
+   memory: `lastTurnEnd` and `previousSpokenLang`, which arm the grace window
+   of step 3. There is no direction memory; with an explicit pair there is
+   nothing to remember.
 
 ## Audio: full-duplex with real echo cancellation
 
@@ -258,7 +300,7 @@ the real session and turn logic), all reflected in the code:
   second, keeps doing so for ~2s **after** an utterance completes, and the
   first ~1s of a new utterance can misdetect — even unanimously across both
   sessions. Hence the settle window, straggler grace, and plurality
-  rules in `TurnLogic` (tested at L1.15–L1.18).
+  rules in `TurnLogic` (tested at L1.15, L1.17 and L1.19).
 - A *short* German sentence immediately after Spanish context can stay
   misdetected as Spanish for its whole duration, transcripts included. No
   client logic can recover that (SPEC §6 accepts it); longer German speech
@@ -369,7 +411,24 @@ continuously while the mic is open and has **no offline mode**.
 - **Session errors retry with backoff** (2s/5s/10s, attempts reset on a
   successful setup). Only a persistently failing session stays dead, with
   its error on screen. The mic-open gate counts only live sessions, so one
-  failed handshake can't hold the app in "Verbinde…" forever.
+  failed handshake can't hold the app in "Verbinde…" forever; when both
+  sessions of the pair are dead with retries exhausted, the run stops and
+  says so instead of spinning (R8, GitHub #4).
+- **An abrupt drop after a completed handshake reconnects without a cap**
+  (1s/2s/5s, then every 10s). A socket that connected and then dropped
+  means an intermittent network, not a bad key, so it keeps trying. Every
+  reconnect timer carries a `SessionRegistry` token, so one armed before a
+  mute cannot replace the session that succeeded it (GitHub #3, #20).
+- **A session that goes mute is reconnected.** Measured on device
+  2026-08-17: the home session completed its handshake and then produced
+  nothing for the whole run while its partner kept talking, and 20 of 21
+  turns were vetoed. The startup watchdog only checks readiness and the
+  server-silence check watches any session, so nothing noticed.
+  `SessionLiveness.muteSessions`, checked once a second on the mic
+  heartbeat, names a ready session that has produced nothing for 15s while
+  another session produced content within the last 10s; the service
+  reconnects it, at most twice per language (the count is kept for the
+  service's lifetime, not reset per run).
 - **Session expiry** (`goAway`, observed ~9 min) surfaces as `.closed` and
   reconnects silently (SPEC R7) — verified live by `Tools/l2expiry.sh`.
 - **A replacement session hears nothing until its own `setupComplete`.**
@@ -405,4 +464,6 @@ continuously while the mic is open and has **no offline mode**.
 - Language detection is the model's; short/noisy speech can misdetect, and
   the app does not try to out-guess it (SPEC §6).
 - Preview API — shapes can change under us; the `.raw` logging and
-  `Tools/livetest.py` exist to catch that quickly.
+  `Tools/l2probe.sh` exist to catch that quickly. (`Tools/livetest.py`, the
+  Python twin, has been silent server-side since 2026-08-11 — #76, TESTING.md
+  §L2 — so its failure is not evidence of an API change.)
