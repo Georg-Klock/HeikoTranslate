@@ -50,16 +50,49 @@ final class MicLivenessTests: XCTestCase {
         XCTAssertEqual(l.check(at: t(6.0)), .giveUp, "both rebuilds spent, still nothing")
     }
 
-    /// L1.108d — a buffer after a rebuild ends the episode: the next stall
-    /// starts from attempt 1 with the full budget again, and the recovery is
-    /// reported so the log can say it.
-    func testL1_108d_aBufferAfterARebuildEndsTheEpisode() {
+    /// L1.108d — sustained health after a rebuild ends the episode: the
+    /// recovery is reported once, and the next stall starts a fresh ladder.
+    func testL1_108d_sustainedHealthAfterARebuildEndsTheEpisode() {
         var l = MicLiveness()
         l.noteBuffer(at: t(0))
         XCTAssertEqual(l.check(at: t(2.0)), .rebuild(attempt: 1))
-        XCTAssertTrue(l.noteBuffer(at: t(2.3)), "this buffer is a recovery")
-        XCTAssertFalse(l.noteBuffer(at: t(2.4)), "later buffers are ordinary")
-        XCTAssertEqual(l.check(at: t(4.4)), .rebuild(attempt: 1), "a new stall starts a new ladder")
+        var now = 2.1
+        var actions: [MicLiveness.Action] = []
+        while now < 2.0 + MicLiveness.recoveryWindow + 1.5 {
+            l.noteBuffer(at: t(now))
+            if (now * 10).rounded().truncatingRemainder(dividingBy: 10) == 0 {
+                actions.append(l.check(at: t(now)))
+            }
+            now += 0.1
+        }
+        XCTAssertEqual(actions.filter { $0 == .recovered }.count, 1, "recovery reported exactly once — got \(actions)")
+        XCTAssertEqual(l.rebuilds, 0, "the budget is back")
+        let lastBuffer = l.lastBufferAt!.timeIntervalSinceReferenceDate
+        XCTAssertEqual(l.check(at: Date(timeIntervalSinceReferenceDate: lastBuffer + 2.05)), .rebuild(attempt: 1),
+                       "a later stall starts a new ladder")
+    }
+
+    /// L1.108d2 — the verifier's case: a route that drips out one buffer every
+    /// couple of seconds. Each drip is not a recovery, so the ladder climbs
+    /// and gives up instead of rebuilding forever.
+    ///
+    /// Fail-first: under the first version of this rule, where one buffer
+    /// reset the ladder, every stall was `attempt: 1` and this never gave up.
+    func testL1_108d2_aTrickleOfBuffersIsNotARecovery() {
+        var l = MicLiveness()
+        l.noteBuffer(at: t(0))
+        var now = 0.0
+        var outcomes: [MicLiveness.Action] = []
+        for _ in 0..<12 {
+            now += 2.05                                        // overshoot the boundary, never sit on it
+            let action = l.check(at: t(now))
+            outcomes.append(action)
+            if action == .giveUp { break }
+            l.noteBuffer(at: t(now + 0.1))                     // one drip after each rebuild
+            now += 0.1
+        }
+        XCTAssertEqual(outcomes.last, .giveUp, "a drip is not a working microphone — got \(outcomes)")
+        XCTAssertFalse(outcomes.contains(.recovered))
     }
 
     // MARK: - The real service

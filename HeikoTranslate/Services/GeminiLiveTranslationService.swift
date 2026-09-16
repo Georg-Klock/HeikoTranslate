@@ -927,9 +927,7 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// from this one place, so the tap and the test seam cannot diverge.
     private func noteMicBuffer() {
         micBufferCount += 1
-        if micLiveness.noteBuffer(at: clock.now) {
-            diag("watchdog", "mic recovered after a mid-run rebuild (#129)")
-        }
+        micLiveness.noteBuffer(at: clock.now)
     }
 
     /// GitHub #129: the startup watchdog's first buffer ends its chain, so a
@@ -942,6 +940,8 @@ final class GeminiLiveTranslationService: ObservableObject {
         switch micLiveness.check(at: clock.now) {
         case .healthy, .notArmed:
             return
+        case .recovered:
+            diag("watchdog", "mic recovered — healthy for \(Int(MicLiveness.recoveryWindow))s after a mid-run rebuild (#129)")
         case .rebuild(let attempt):
             diag("watchdog", "mic STALLED mid-run — no buffers for \(String(format: "%.1f", stalledFor))s — rebuilding audio I/O (attempt \(attempt)/\(MicLiveness.maxRebuilds), #129)")
             rebuildAudioIO()

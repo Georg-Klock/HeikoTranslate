@@ -460,7 +460,10 @@ reconfiguration — left the button reading as listening while speaking did
 nothing. `MicLiveness` reads the buffer count once a second for the rest of the
 run: two seconds without a buffer on a path that has delivered before is a
 stall, rebuilt through the shared teardown, and two rebuilds that bring nothing
-back give up through #87's existing path. Buffers, never loudness, so a quiet
+back give up through #87's existing path. An episode ends only after five
+seconds of sustained health, never on a single buffer: a route that drips out an
+occasional buffer, or a stray one from the torn-down tap, cannot reset the
+ladder into rebuilding forever. Buffers, never loudness, so a quiet
 room stays healthy.
 
 | ID | Given | Expect | Rule |
@@ -468,7 +471,8 @@ room stays healthy.
 | L1.108 | No buffer has arrived on this run | Not armed — the startup watchdog owns a cold start | **#87/#129** |
 | L1.108b | Buffers arriving every ~0.1s | Healthy, with no level involved at all | **#129** |
 | L1.108c | Buffers stop | Rebuild at 2s, the rebuilt tap gets its own 2s, a second rebuild, then give up | **R8/#129** |
-| L1.108d | A buffer after a rebuild | Ends the episode; the next stall starts a fresh ladder | **#129** |
+| L1.108d | Buffers flowing for 5s after a rebuild | Recovery reported once; the budget is back; a later stall starts a fresh ladder | **#129** |
+| L1.108d2 | One buffer dripping in after each rebuild | Not a recovery — the ladder climbs and gives up rather than rebuilding forever | **R8/#129** |
 | L1.108e | The real service with a live mic for 10s | Never rebuilt, through the startup checks too | **#129** |
 | L1.108f | The real service, buffers stop mid-run, then return | One rebuild through the shared teardown, the player wired once, the run keeps going | **R8/#16/#129** |
 | L1.108g | The real service, buffers never return | Stopped, `onMicUnrecoverable` exactly once, exactly two rebuilds, nothing left armed | **R8/#87/#129** |
