@@ -274,6 +274,10 @@ final class GeminiLiveTranslationService: ObservableObject {
     private var audioRebuilds = 0
     private var startupWatchdog: (any ScheduledTimer)?
     private var micWatchdog: (any ScheduledTimer)?
+    /// The mid-run half of the mic watchdog (#129): once buffers have flowed,
+    /// a stall is rebuilt and then given up on, like the startup case.
+    private var micLiveness = MicLiveness()
+    private var micLivenessTimer: (any ScheduledTimer)?
     private var lastMicHeartbeat = Date.distantPast
     private var secondPeakRMS: Double = 0
 
@@ -534,7 +538,7 @@ final class GeminiLiveTranslationService: ObservableObject {
     func fireMicWatchdogForTesting() { checkMicAlive() }
     /// One mic buffer, delivered without an audio graph — the counter the
     /// watchdog reads is the real one the tap increments. GitHub #87.
-    func noteMicBufferForTesting() { micBufferCount += 1 }
+    func noteMicBufferForTesting() { noteMicBuffer() }
     /// The tap's chunk shape, reported without an audio graph — the same
     /// method the tap calls, so the windows it sizes are the real ones.
     /// GitHub #131.
@@ -616,6 +620,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         setActivity(.connecting)
         turn = TurnLogic(home: home, partner: partner)
         resetForNextUtterance()
+        micLiveness.reset()
         dead = []
         retryAttempts = [:]
         dropBackoff = [:]
@@ -734,6 +739,9 @@ final class GeminiLiveTranslationService: ObservableObject {
         startupWatchdog = nil
         micWatchdog?.invalidate()
         micWatchdog = nil
+        micLivenessTimer?.invalidate()
+        micLivenessTimer = nil
+        micLiveness.reset()
         speechEndTimer?.invalidate()
         speechEndTimer = nil
         turnCoordinator.reset()
@@ -840,7 +848,7 @@ final class GeminiLiveTranslationService: ObservableObject {
                     diag("audio", "format changed to \(rebuiltFormat) — converter rebuilt")
                     self.measuredChunkDuration = nil   // a new route may deliver a new chunk
                 }
-                self.micBufferCount += 1
+                self.noteMicBuffer()
                 self.noteMicChunkShape(frames: chunkFrames, sampleRate: chunkRate)
                 self.peakMicRMS = max(self.peakMicRMS, rms)
                 self.secondPeakRMS = max(self.secondPeakRMS, rms)
@@ -879,15 +887,16 @@ final class GeminiLiveTranslationService: ObservableObject {
         succeeded = true
     }
 
-    // MARK: - Startup watchdogs
+    // MARK: - Watchdogs
     //
     // Two independent things have to come up for the app to hear anything:
-    // the audio engine must deliver microphone buffers, and all three
-    // sessions must finish their handshake. On device, one of them
+    // the audio engine must deliver microphone buffers, and both sessions of
+    // the pair must finish their handshake. On device, one of them
     // intermittently doesn't — and the app just sat there looking alive,
     // which is why a manual mute/unmute became the ritual. Each has a
     // watchdog that logs precisely what stalled and then performs the same
-    // recovery by itself, once.
+    // recovery by itself. The microphone is also watched for the rest of the
+    // run, not only at startup (#129).
 
     private func startWatchdogs() {
         #if DEBUG
@@ -907,10 +916,56 @@ final class GeminiLiveTranslationService: ObservableObject {
         micWatchdog?.invalidate()
         micWatchdog = clock.schedule(after: 0.5) { [weak self] in self?.checkMicAlive() }
         startupWatchdog = clock.schedule(after: 3.0) { [weak self] in self?.checkStartupHealth() }
+        micLivenessTimer?.invalidate()
+        micLivenessTimer = clock.schedule(after: MicLiveness.checkInterval, repeats: true) { [weak self] in
+            self?.checkMicLiveness()
+        }
+    }
+
+    /// One buffer from the tap, on the main actor. The count the startup
+    /// watchdog reads and the liveness clock the mid-run check reads are fed
+    /// from this one place, so the tap and the test seam cannot diverge.
+    private func noteMicBuffer() {
+        micBufferCount += 1
+        if micLiveness.noteBuffer(at: clock.now) {
+            diag("watchdog", "mic recovered after a mid-run rebuild (#129)")
+        }
+    }
+
+    /// GitHub #129: the startup watchdog's first buffer ends its chain, so a
+    /// tap that dies later was never noticed. Rebuild through the same shared
+    /// teardown, and give up loudly through the same path (#87) when the
+    /// rebuilds do not bring buffers back — no new user-facing copy.
+    private func checkMicLiveness() {
+        guard isRunning else { return }
+        let stalledFor = micLiveness.lastBufferAt.map { clock.now.timeIntervalSince($0) } ?? 0
+        switch micLiveness.check(at: clock.now) {
+        case .healthy, .notArmed:
+            return
+        case .rebuild(let attempt):
+            diag("watchdog", "mic STALLED mid-run — no buffers for \(String(format: "%.1f", stalledFor))s — rebuilding audio I/O (attempt \(attempt)/\(MicLiveness.maxRebuilds), #129)")
+            rebuildAudioIO()
+        case .giveUp:
+            diag("watchdog", "mic still stalled after \(MicLiveness.maxRebuilds) mid-run rebuilds — giving up and stopping (R8, #129)")
+            let notify = onMicUnrecoverable
+            stopSession()
+            notify?()
+        }
+    }
+
+    /// Tear the audio path down through the shared teardown and bring it back
+    /// up. Shared by the startup and mid-run watchdogs, so the two rebuild the
+    /// same way (#16's once-only wiring included).
+    private func rebuildAudioIO() {
+        stopAudioIO()
+        do { try startAudioIO() } catch {
+            diag("watchdog", "audio rebuild FAILED: \(error.localizedDescription)")
+            onError?("audio restart failed: \(error.localizedDescription)")
+        }
     }
 
     /// Device evidence (2026-07-27): on the first start of a process the
-    /// input tap can deliver *zero* buffers while all three sessions connect
+    /// input tap can deliver *zero* buffers while both sessions connect
     /// perfectly — enabling voice processing reconfigures the input hardware
     /// out from under the freshly installed tap. Rebuilding the audio path
     /// fixes it instantly, which is exactly what the manual mute/unmute was
@@ -933,11 +988,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         }
         audioRebuilds += 1
         diag("watchdog", "@0.5s NO mic buffers — rebuilding audio I/O (attempt \(audioRebuilds))")
-        stopAudioIO()
-        do { try startAudioIO() } catch {
-            diag("watchdog", "audio rebuild FAILED: \(error.localizedDescription)")
-            onError?("audio restart failed: \(error.localizedDescription)")
-        }
+        rebuildAudioIO()
         micWatchdog?.invalidate()
         micWatchdog = clock.schedule(after: 0.5) { [weak self] in self?.checkMicAlive() }
     }
@@ -1168,9 +1219,9 @@ final class GeminiLiveTranslationService: ObservableObject {
     }
 
     /// Open the mic once every session that is still alive has completed
-    /// setup. Dead sessions don't count toward the requirement — a single
-    /// failed handshake out of three must not leave the app connecting
-    /// forever while speech silently overflows the pending buffer.
+    /// setup. Dead sessions don't count toward the requirement — one failed
+    /// handshake in the pair must not leave the app connecting forever while
+    /// speech silently overflows the pending buffer.
     private func openMicIfReady() {
         let required = sessions.count - dead.count
         guard !anySessionReady, required > 0,
