@@ -40,3 +40,10 @@ TURN_SOURCES=(
   HeikoTranslate/Models/FinalizePolicy.swift
   HeikoTranslate/Models/SpeechEndPolicy.swift
 )
+
+# The language referee's pure decision type (#135). Only lidprobe.sh needs it:
+# the probe judges its two transcribers' readings with the app's own rule, so
+# the Phase 0 table measures the code the app would run.
+REFEREE_SOURCES=(
+  HeikoTranslate/Models/RefereeEvidence.swift
+)

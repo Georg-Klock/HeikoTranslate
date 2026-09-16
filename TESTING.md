@@ -520,6 +520,28 @@ session one second into a new run look a minute silent. Both are reset on every
 | L1.115 | A pause between runs, then the partner's first transcript | The home session is not reconnected — it is one second into its run, not a minute silent | **R7/#139** |
 | L1.115b | Run 1 spends both mute reconnects; run 2's home session goes mute | Run 2 reconnects it — the budget is per run | **R7/#139** |
 
+The language referee (#135), observe-only and not yet held by the service.
+`RefereeEvidence` is the rule `Tools/lidprobe.sh` measured on 2026-09-16
+(docs/experiments/lid-referee.md); `LanguageReferee.swift` is the I/O half,
+reached here only where no speech model has to load.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.116 | de_short.wav's measured readings: German transcriber 0.957, Spanish 0.586 | `.home` | **#135** |
+| L1.116b | es_short.wav's: German 0.734, Spanish 0.849 | `.partner` — the rule does not privilege home | **#135** |
+| L1.116c | en_entities.wav's: German 0.880 on English brand names, English 0.845 | `.inconclusive` — within the 0.10 margin, where "more confident" names the wrong side | **#135** |
+| L1.116d | One side heard words, the other produced nothing (noise.wav's shape) | `.inconclusive` — silence is not evidence for the other side | **#135** |
+| L1.116e | Neither side produced letters or digits | `.inconclusive` | **#135** |
+| L1.116f | Either side unavailable, for every availability, with text and confidence attached | `.inconclusive` | **R8** |
+| L1.116g | The more confident side returned only "." | `.inconclusive` — confidence without words does not win | **#135** |
+| L1.116h | `Thresholds.confidenceMargin` | Strictly inside the measured gap (+0.035, +0.201) | **#135** |
+| L1.117–117d | The reported scores | Signed toward home, negated by swapping sides, absent (not zero) without confidence; only letters and digits count | **#135** |
+| L1.118 | Every `TurnLogic.Lang` | Its product locale: de-DE, en-US, es-MX, ko-KR | **#135** |
+| L1.119 | The inert referee | `nil` before start and after stop; every turn in between inconclusive, reason on both readings of the started pair | **R8** |
+| L1.119b | The factory's referee, never started | `nil` evidence, safe `stop`; the transcriber referee on iOS 26, the inert one before | **R8** |
+| L1.120 | `LanguageReferee.swift`, comments stripped | No server-capable recognition API and no networking API | **#135 §6** |
+| L1.120b | Every Swift file in the app | No server-capable recognizer, and the on-device flag never switched off | **#135 §6** |
+
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1
 219/219 and L3 89/89, and both `de_song_lead` fixtures committed

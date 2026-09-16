@@ -1,7 +1,230 @@
 # Experiment — an independent language witness (#135)
 
-Branch: `experiment/lid-referee`. Status: **the coverage blocker is GONE; the
-accuracy question is open.** Measured on device 2026-08-17. Nothing ships yet.
+Status (2026-09-16): **Phase 0 found a gap on the TestAudio corpus, on macOS.**
+One score — the difference between the two transcribers' confidences —
+separates German-spoken from partner-spoken readings with nothing in between.
+The corpus is text-to-speech and the models are the Mac's, so this licenses
+Phase 1 (observe-only on a phone), not any decision. The referee's building
+blocks are on `feat/language-referee-135`, not wired into the service. The
+2026-08-17 record below is kept as it was written.
+
+## SpeechTranscriber, Phase 0 on the TestAudio corpus (2026-09-16)
+
+### Does it cost a permission dialog? No — on the evidence available offline
+
+#135 §5 assumed a second system dialog, because `SFSpeechRecognizer` needs
+`NSSpeechRecognitionUsageDescription` and `requestAuthorization`. The iOS 26
+transcriber does not appear to. What was checked, and how:
+
+1. **The SDK.** In the iOS 26.5 SDK's `Speech.swiftinterface`,
+   `SpeechAnalyzer`, `SpeechTranscriber` and `AssetInventory` declare no
+   authorization API, and their documentation in the module's `.swiftdoc`
+   mentions neither authorization nor a usage description. The
+   `SFSpeechRecognizer.h` header, by contrast, states that the app crashes if
+   the key is missing when authorization is requested. The transcriber also
+   has no network mode to switch off: nothing like
+   `requiresOnDeviceRecognition` exists on it. Its documentation says it uses
+   the models system dictation uses on device.
+2. **A run without the key.** `Tools/lidprobe` is a plain `swiftc` binary
+   with no Info.plist and no usage description. On macOS 26.5.2 it installed
+   the de-DE, es-MX and ko-KR models, reserved four locales, and transcribed
+   the whole corpus through four transcribers. No prompt appeared, nothing
+   was terminated, and `SFSpeechRecognizer.authorizationStatus()` read
+   `notDetermined` before and after.
+3. **The control, in the same binary on the same day.**
+   `Tools/lidprobe.sh --request-sf-authorization` calls
+   `SFSpeechRecognizer.requestAuthorization`. It was killed at once with
+   SIGABRT, and the crash report's termination namespace is `TCC`, stating
+   that the Info.plist must contain `NSSpeechRecognitionUsageDescription`. So
+   TCC is enforcing speech authorization for this binary, and the transcriber
+   run did not trigger it.
+
+**What is not verified: iOS itself.** The iOS 26.5 simulator reports
+`SpeechTranscriber.isAvailable == false` with zero supported locales, so it
+cannot run the transcriber. The 2026-08-17 on-device install was made by a
+build that already carried the usage description, so it cannot answer the
+question either. Before anything ships, one device run of a build **without**
+the key has to show the referee reaching `listening` with no dialog. Until
+then, `project.yml` gains no usage description.
+
+### Assets
+
+The Mac had only the English models installed. Requested through
+`AssetInventory` from the harness, with no interaction:
+
+| Locale | Before | Install time |
+|---|---|---|
+| de-DE → de_DE | supported | 24.9 s |
+| en-US → en_US | supported (model present, not reserved) | 0.2 s |
+| es-MX → es_MX | supported | 9.3 s |
+| ko-KR → ko_KR | supported | 8.9 s |
+
+30 locales supported, `maximumReservedLocales` 5. Installing one locale
+brought its regional siblings with it (es_CL, es_ES and es_US arrived with
+es_MX). After that the whole corpus run takes about 23 seconds.
+
+### The corpus and the method
+
+`Tools/lidprobe.sh` feeds every `TestAudio/*.wav` to de-DE and to each partner
+locale. The file name gives the spoken language. A German file is read under
+all three pairs and a partner file only under its own. `silence.wav` and
+`noise.wav` are the false-positive check. The corpus has no fr or zh files to
+skip, and **no Korean file at all**, so de↔ko has no partner population.
+`de_after_en` and `de_after_es` are composites: two utterances in two
+languages, which the app would treat as two turns. That was declared before
+the run, and they are reported both with and without the composites. Readings
+came back byte-identical on a second run.
+
+Readings carry the transcript, each transcriber's confidence (the
+`transcriptionConfidence` attribute, weighted by character across the
+transcript) and up to three alternatives. Scores are signed so that positive
+favours home: `confΔ` is home minus partner confidence, the length balance is
+(home − partner) ÷ (home + partner) letters and digits, and the weighted
+balance weights each side's length by its confidence. #135 §3's fourth
+candidate, agreement with Gemini's transcript, needs the live API and is not
+measured here.
+
+### Result
+
+| Candidate | Single utterances, all pairs (27 German / 8 partner) | Composites included (33 / 8) |
+|---|---|---|
+| home confidence | German 0.841…0.977, partner 0.654…0.880: **no gap** (overlap 0.039) | no gap |
+| −partner confidence | −0.734…−0.187 against −0.965…−0.773: gap 0.039 | no gap (touching at −0.773) |
+| **confidence delta** | **+0.201…+0.764 against −0.177…+0.035: gap 0.166** | gap 0.052 |
+| length balance | −0.259…+1.000 against −0.031…+0.015: **no gap** | no gap |
+| weighted balance | −0.045…+1.000 against −0.092…+0.020: **no gap** | no gap |
+
+Per pair, the confidence-delta gap is 0.303 on de↔en (9 German, 7 English)
+and 0.316 on de↔es — but that pair has one Spanish file, so its number
+describes a single file. Length alone does not separate anything: a German
+transcriber reading English writes out roughly as many characters as an
+English one does.
+
+**Verdict: gap.** `confidenceDelta` separates the two populations with 0.166
+of empty space over single utterances, and with 0.052 when the two
+two-language composites are counted as German.
+
+`RefereeEvidence` now decides on it, and on nothing else. It names a side
+only when that side's transcriber was at least `confidenceMargin` (0.10) more
+confident **and** heard letters or digits. It says `inconclusive` when either
+side produced no transcript, because a silent transcriber is not a witness
+for the other language (the 2026-08-17 device lesson). On this corpus:
+
+| Spoken | Readings | Right | Wrong | Inconclusive |
+|---|---|---|---|---|
+| German | 27 | 26 | 0 | 1 (ko transcriber silent) |
+| English | 7 | 4 | 0 | 3 (within margin) |
+| Spanish | 1 | 1 | 0 | 0 |
+| no speech | 6 | — | 0 named a language | 6 |
+
+The old structural rule ("exactly one side heard words") would have named
+German for `noise.wav` under all three pairs: the German transcriber heard
+"you".
+
+### Why this is weaker than it looks
+
+- **The margin was chosen after reading the table.** 0.10 is a round number
+  inside the gap and symmetric about zero, but this corpus cannot also
+  validate it. The partner population's top value is **+0.035**
+  (`en_entities.wav`, a list of brand names). That is on the home side of
+  zero, so "whichever transcriber is more confident" is already wrong on one
+  measured file.
+- **The gap is asymmetric, and home was always German.** German speech drives
+  the delta far positive (the English transcriber manages 0.19–0.61 on it).
+  English speech only drives it slightly negative, because the German
+  transcriber is comfortable with English names and loanwords (0.65–0.88).
+  Two English readings, −0.108 and −0.119, clear the margin by less than 0.02.
+  "German against not-German" and "home against partner" are the same thing
+  here only because every pair has German at home. A pair without German, and
+  Korean speech at all, are unmeasured.
+- **Eight partner readings, seven of them one English voice.** Every fixture
+  is `say` output from an Apple voice, read by an Apple recognizer, with no
+  room, no microphone and no accent. That is the most favourable case the
+  experiment can have. #32 already showed a TTS fixture failing to reproduce a
+  human-voice failure.
+- **Mac models, not the phone's.** The framework is the same, but the assets
+  are per platform, and the field device (iPhone SE, 2nd generation) may
+  report `SpeechTranscriber.isAvailable == false`. The simulator does. If it
+  does, the referee is inert on the phone this app exists for.
+- **The composites narrow the gap to 0.052.** A turn that is really two
+  languages, which is #32's shape, dilutes the signal, as expected.
+
+### What was built for Phase 1 (not wired in)
+
+| Piece | Where |
+|---|---|
+| The rule | `HeikoTranslate/Models/RefereeEvidence.swift`: readings, scores, verdict, `Thresholds.confidenceMargin` beside this measurement |
+| The seam and the transcriber | `HeikoTranslate/Services/LanguageReferee.swift`: `LanguageRefereeing`, `TranscriberReferee` (iOS 26), `InertLanguageReferee` |
+| L1 | `Tests/RefereeEvidenceTests.swift`: L1.116–L1.120b, including a source scan for server-capable recognition or networking APIs |
+| The probe | `Tools/lidprobe.sh`, `Tools/lidprobe/main.swift`; `REFEREE_SOURCES` in `Tools/session_sources.sh`, checked by both harness gates |
+
+The service is meant to call `start(home:partner:)` where the tap starts and
+wherever the pair changes, `append(_:)` in the tap block before the Int16
+conversion, `turnEnded()` at the turn boundary for one `referee:` log line,
+and `stop()` in the shared audio teardown. Missing models install silently in
+the background, and the referee stays inert until they have. Nothing may read
+the verdict except the logger.
+
+### Full table
+
+Confidence `n/a` means the transcriber returned no transcript.
+
+| Fixture | Spoken | Pair | de conf | partner conf | confΔ | length bal. | weighted bal. | Verdict |
+|---|---|---|---|---|---|---|---|---|
+| `de_after_en.wav` (composite) | de | de↔en | 0.818 | 0.552 | +0.266 | +0.000 | +0.194 | home, right |
+| `de_after_en.wav` (composite) | de | de↔es | 0.818 | 0.732 | +0.086 | +0.043 | +0.099 | inconclusive (within margin) |
+| `de_after_en.wav` (composite) | de | de↔ko | 0.818 | 0.727 | +0.092 | +0.108 | +0.166 | inconclusive (within margin) |
+| `de_after_es.wav` (composite) | de | de↔en | 0.875 | 0.479 | +0.396 | +0.018 | +0.309 | home, right |
+| `de_after_es.wav` (composite) | de | de↔es | 0.875 | 0.773 | +0.102 | +0.027 | +0.089 | home, right |
+| `de_after_es.wav` (composite) | de | de↔ko | 0.875 | 0.488 | +0.387 | +0.198 | +0.456 | home, right |
+| `de_loanwords.wav` | de | de↔en | 0.841 | 0.335 | +0.506 | -0.049 | +0.389 | home, right |
+| `de_loanwords.wav` | de | de↔es | 0.841 | 0.640 | +0.201 | +0.054 | +0.188 | home, right |
+| `de_loanwords.wav` | de | de↔ko | 0.841 | 0.488 | +0.353 | +1.000 | +1.000 | home, right |
+| `de_pause.wav` | de | de↔en | 0.954 | 0.426 | +0.528 | -0.027 | +0.360 | home, right |
+| `de_pause.wav` | de | de↔es | 0.954 | 0.648 | +0.307 | +0.021 | +0.212 | home, right |
+| `de_pause.wav` | de | de↔ko | 0.954 | 0.419 | +0.535 | +0.327 | +0.636 | home, right |
+| `de_pause_a.wav` | de | de↔en | 0.926 | 0.410 | +0.516 | -0.014 | +0.375 | home, right |
+| `de_pause_a.wav` | de | de↔es | 0.926 | 0.549 | +0.377 | +0.091 | +0.339 | home, right |
+| `de_pause_a.wav` | de | de↔ko | 0.926 | 0.467 | +0.459 | +0.895 | +0.946 | home, right |
+| `de_pause_b.wav` | de | de↔en | 0.970 | 0.329 | +0.642 | -0.026 | +0.474 | home, right |
+| `de_pause_b.wav` | de | de↔es | 0.970 | 0.734 | +0.236 | +0.028 | +0.166 | home, right |
+| `de_pause_b.wav` | de | de↔ko | 0.970 | 0.340 | +0.630 | +0.233 | +0.642 | home, right |
+| `de_price_short.wav` | de | de↔en | 0.951 | 0.187 | +0.764 | -0.211 | +0.536 | home, right |
+| `de_price_short.wav` | de | de↔es | 0.951 | 0.529 | +0.422 | -0.062 | +0.227 | home, right |
+| `de_price_short.wav` | de | de↔ko | 0.951 | 0.553 | +0.398 | +0.000 | +0.265 | home, right |
+| `de_reply_long.wav` | de | de↔en | 0.977 | 0.421 | +0.555 | +0.037 | +0.428 | home, right |
+| `de_reply_long.wav` | de | de↔es | 0.977 | 0.710 | +0.266 | +0.049 | +0.206 | home, right |
+| `de_reply_long.wav` | de | de↔ko | 0.977 | 0.383 | +0.594 | +0.360 | +0.689 | home, right |
+| `de_short.wav` | de | de↔en | 0.957 | 0.415 | +0.542 | +0.000 | +0.395 | home, right |
+| `de_short.wav` | de | de↔es | 0.957 | 0.586 | +0.371 | +0.030 | +0.269 | home, right |
+| `de_short.wav` | de | de↔ko | 0.957 | n/a | n/a | +1.000 | n/a | inconclusive (one side silent) |
+| `de_song_lead.wav` | de | de↔en | 0.950 | 0.612 | +0.338 | -0.259 | -0.045 | home, right |
+| `de_song_lead.wav` | de | de↔es | 0.950 | 0.682 | +0.267 | -0.184 | -0.021 | home, right |
+| `de_song_lead.wav` | de | de↔ko | 0.950 | 0.616 | +0.333 | +0.026 | +0.237 | home, right |
+| `de_song_lead_long.wav` | de | de↔en | 0.960 | 0.469 | +0.490 | -0.149 | +0.204 | home, right |
+| `de_song_lead_long.wav` | de | de↔es | 0.960 | 0.722 | +0.238 | -0.119 | +0.023 | home, right |
+| `de_song_lead_long.wav` | de | de↔ko | 0.960 | 0.481 | +0.479 | +0.682 | +0.827 | home, right |
+| `en_apple_google.wav` | en | de↔en | 0.854 | 0.947 | -0.092 | -0.031 | -0.082 | inconclusive (within margin) |
+| `en_band_queen.wav` | en | de↔en | 0.861 | 0.944 | -0.083 | +0.000 | -0.046 | inconclusive (within margin) |
+| `en_entities.wav` | en | de↔en | 0.880 | 0.845 | +0.035 | +0.000 | +0.020 | inconclusive (within margin) |
+| `en_long.wav` | en | de↔en | 0.857 | 0.965 | -0.108 | -0.015 | -0.074 | partner, right |
+| `en_series_ny.wav` | en | de↔en | 0.801 | 0.946 | -0.145 | +0.013 | -0.070 | partner, right |
+| `en_short.wav` | en | de↔en | 0.654 | 0.773 | -0.119 | +0.000 | -0.084 | partner, right |
+| `en_song_cash.wav` | en | de↔en | 0.761 | 0.937 | -0.177 | +0.013 | -0.092 | partner, right |
+| `es_short.wav` | es | de↔es | 0.734 | 0.849 | -0.115 | +0.015 | -0.058 | partner, right |
+| `noise.wav` | none | de↔en | 0.744 | n/a | n/a | +1.000 | n/a | inconclusive (one side silent) |
+| `noise.wav` | none | de↔es | 0.744 | n/a | n/a | +1.000 | n/a | inconclusive (one side silent) |
+| `noise.wav` | none | de↔ko | 0.744 | n/a | n/a | +1.000 | n/a | inconclusive (one side silent) |
+| `silence.wav` | none | de↔en | n/a | n/a | n/a | +0.000 | n/a | inconclusive (neither side heard words) |
+| `silence.wav` | none | de↔es | n/a | n/a | n/a | +0.000 | n/a | inconclusive (neither side heard words) |
+| `silence.wav` | none | de↔ko | n/a | n/a | n/a | +0.000 | n/a | inconclusive (neither side heard words) |
+
+---
+
+The record from 2026-08-17 follows, unchanged.
+
+Branch: `experiment/lid-referee`. Status then: **the coverage blocker is GONE;
+the accuracy question is open.** Measured on device 2026-08-17.
 
 ## The refutation was wrong, and this is what replaced it
 
