@@ -508,6 +508,18 @@ candidate awaiting review.
 | L1.109k | A start that fails after echo cancellation failed | No warning reported, nothing retried | **R8/#130** |
 | L1.109l | A retry enables echo cancellation but the engine then fails | Not reported recovered; the chain survives the throw and recovers when the whole path comes up | **#130** |
 
+The mute-session watch is per run (2026-09-16). The reconnect from #139/#140 kept
+its budget and its per-session content and ready clocks for the life of the
+process: two mute episodes switched the watch off for that language until the
+app was relaunched, and after a pause the previous run's last activity made a
+session one second into a new run look a minute silent. Both are reset on every
+`start()`, like the other watchdogs.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.115 | A pause between runs, then the partner's first transcript | The home session is not reconnected — it is one second into its run, not a minute silent | **R7/#139** |
+| L1.115b | Run 1 spends both mute reconnects; run 2's home session goes mute | Run 2 reconnects it — the budget is per run | **R7/#139** |
+
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1
 219/219 and L3 89/89, and both `de_song_lead` fixtures committed
