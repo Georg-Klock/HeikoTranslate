@@ -349,6 +349,35 @@ final class GeminiLiveTranslationService: ObservableObject {
     private let pathMonitor = NWPathMonitor()
     private var pathIsOnline = true
     private var lastReportedDirection: Bool??
+    /// Whether the network is known to be unmetered, readable from any
+    /// thread. The language referee asks it before downloading a speech
+    /// model (#135): roaming data is metered, and an unknown path counts as
+    /// metered too.
+    private let unmeteredNetwork = UnmeteredNetwork()
+
+    /// The on-device language referee (#135 Phase 1). **Log only**: it hears
+    /// the raw microphone, and at every turn boundary its evidence becomes
+    /// one diagnostic line beside the app's own outcome. Nothing else here
+    /// reads it, and no routing, commit, direction or audio decision may —
+    /// `RefereeWiringTests` holds `TurnLogic` and `Models/` to that.
+    ///
+    /// One per service, for the life of the service: `start()` starts it for
+    /// the run's pair, `stopSession()` stops it, and an audio rebuild keeps
+    /// feeding the same instance. Lazy only so a test can install its seam
+    /// after `init`. Declared outside the test-seam block, like `liveAPIKey`,
+    /// because its callers are unconditional.
+    private lazy var referee: LanguageRefereeing = makeReferee()
+    /// What the app did with the turn the referee is listening to, recorded
+    /// at `emitUtterance` and consumed by the referee line at the boundary.
+    private var refereeAppOutcome: String?
+
+    private func makeReferee() -> LanguageRefereeing {
+        #if DEBUG
+        if let factory = refereeFactoryForTesting { return factory() }
+        #endif
+        let network = unmeteredNetwork
+        return LanguageRefereeFactory.make(downloadsAllowed: { network.allowsDownloads() })
+    }
 
     /// Per-utterance state. The decisions themselves (which language was
     /// spoken, which session translates, whose transcript to trust, when a
@@ -561,6 +590,11 @@ final class GeminiLiveTranslationService: ObservableObject {
     }
     var replacementWindowChunksForTesting: Int { maxReplacementChunks }
     var pendingWindowChunksForTesting: Int { maxPendingChunks }
+    /// Stands in for the language referee (#135), so L1 can watch the calls
+    /// the service makes and prove routing does not change with it. `nil`
+    /// (the shipping state) means `LanguageRefereeFactory`. Set before the
+    /// first `start()`: the service builds its referee once.
+    var refereeFactoryForTesting: (() -> LanguageRefereeing)?
     #endif
 
     /// The key, read only when a REAL session will be built. The factory
@@ -675,6 +709,10 @@ final class GeminiLiveTranslationService: ObservableObject {
         // One session per side of the selected pair, both fed the same mic
         // audio. The pair is explicit (settings), so exactly two sessions.
         activePair = [home, partner]
+        // The referee listens for the same pair. Returns at once; models load
+        // in the background, and until they do every turn logs inconclusive.
+        // Log only (#135).
+        referee.start(home: home, partner: partner)
         let apiKey = liveAPIKey
         for lang in [home, partner] {
             let session = makeSession(lang, apiKey: apiKey)
@@ -733,6 +771,7 @@ final class GeminiLiveTranslationService: ObservableObject {
     }
 
     private func resetForNextUtterance() {
+        logRefereeTurn()
         turn.endTurn(at: clock.now)
         turnCoordinator.reset()
         inputs = [:]
@@ -742,6 +781,59 @@ final class GeminiLiveTranslationService: ObservableObject {
         stopDirectionRecheck()
         speechEndTimer?.invalidate()
         speechEndTimer = nil
+    }
+
+    /// The referee's turn boundary (#135). Rotates the referee on every turn
+    /// end, and writes ONE line when the turn had anything in it — so a
+    /// device log answers "would the referee have been right?" beside what
+    /// the app actually did. Read before this turn's inputs are cleared.
+    /// Log only: nothing but this line sees the evidence.
+    private func logRefereeTurn() {
+        let outcome = refereeAppOutcome
+        refereeAppOutcome = nil
+        guard let evidence = referee.turnEnded(),
+              Self.refereeTurnHadContent(evidence, heardSpeech: Self.turnHeardSpeech(inputs))
+        else { return }
+        diag("turn", Self.refereeDiagnosticLine(evidence, appOutcome: outcome))
+    }
+
+    /// Whether a turn earns a referee line: a Gemini session or a transcriber
+    /// heard words. A quiet boundary writes nothing — on a phone before
+    /// iOS 26, where the referee is inert, that keeps the log as it was.
+    static func refereeTurnHadContent(_ evidence: RefereeEvidence, heardSpeech: Bool) -> Bool {
+        heardSpeech || evidence.home.isSubstantive || evidence.partner.isSubstantive
+    }
+
+    /// The referee's line: verdict and reason, every reported score, the
+    /// app's outcome, then each transcriber's availability, text and
+    /// confidence. One line, escaped like `heard[]`, so a transcript cannot
+    /// break the log. Internal so L1 pins the format the service writes.
+    static func refereeDiagnosticLine(_ evidence: RefereeEvidence, appOutcome: String?) -> String {
+        func signed(_ value: Double?) -> String {
+            value.map { String(format: "%+.3f", $0) } ?? "n/a"
+        }
+        func reading(_ r: RefereeEvidence.Reading) -> String {
+            "referee[\(r.lang.rawValue)] \(availabilityLabel(r.availability)) "
+                + "\"\(escapedDiagnosticTranscript(r.text))\" "
+                + "conf=\(r.confidence.map { String(format: "%.3f", $0) } ?? "n/a")"
+        }
+        let s = evidence.score
+        return "  referee: \(evidence.verdict) (\(evidence.reason))"
+            + " score=delta:\(signed(s.confidenceDelta)) len:\(signed(s.lengthBalance))"
+            + " weighted:\(signed(s.weightedBalance)) chars:\(s.homeCharacters)/\(s.partnerCharacters)"
+            + " | app: \(escapedDiagnosticTranscript(appOutcome ?? "no commit attempted"))"
+            + " | \(reading(evidence.home))   \(reading(evidence.partner))"
+    }
+
+    private static func availabilityLabel(_ availability: RefereeEvidence.Availability) -> String {
+        switch availability {
+        case .ready: return "ready"
+        case .unsupportedOS: return "unsupported-os"
+        case .unavailableOnDevice: return "unavailable-on-device"
+        case .unsupportedLocale: return "unsupported-locale"
+        case .assetsNotInstalled: return "model-not-installed"
+        case .failed(let why): return "failed(\(escapedDiagnosticTranscript(why)))"
+        }
     }
 
     private func setActivity(_ a: Activity) {
@@ -782,6 +874,10 @@ final class GeminiLiveTranslationService: ObservableObject {
         outputActivityTimer?.invalidate()
         outputActivityTimer = nil
         stopAudioIO()
+        // The run's teardown, not `stopAudioIO`'s: a watchdog rebuild goes
+        // through that one and must keep the referee listening (#135).
+        referee.stop()
+        refereeAppOutcome = nil
         for s in sessions.values { s.close() }
         sessions = [:]
         // Clearing the tokens is what actually seals this run: every session
@@ -859,7 +955,15 @@ final class GeminiLiveTranslationService: ObservableObject {
         // then fails conversion, which is exactly the "spoke at launch, nothing
         // happened until I muted and unmuted" bug (R4). The converter is
         // rebuilt below whenever a buffer's real format doesn't match it.
+        // Captured here, on the main actor, so the render thread never reads
+        // this type's state to find it. The same instance across a rebuild:
+        // the referee is the run's, not the tap's. #135.
+        let referee = self.referee
         audioGraph.installTap { [weak self] buffer, _ in
+            // The raw buffer, in the input's native format, before the
+            // Int16/16 kHz conversion below. Thread-safe by the protocol's
+            // contract; log only.
+            referee.append(buffer)
             guard let self else { return }
             // This block runs on the real-time audio render thread, NOT the
             // main actor — `installTap` stores it and AVAudioEngine calls it
@@ -1520,7 +1624,14 @@ final class GeminiLiveTranslationService: ObservableObject {
     private func startPathMonitorIfNeeded() {
         guard !pathMonitorStarted else { return }
         pathMonitorStarted = true
+        let network = unmeteredNetwork
         pathMonitor.pathUpdateHandler = { [weak self] path in
+            // On the monitor's queue, before the hop: the referee may ask from
+            // a background task at any moment, and must not wait on the main
+            // actor for an answer. #135.
+            network.update(satisfied: path.status == .satisfied,
+                           expensive: path.isExpensive,
+                           constrained: path.isConstrained)
             Task { @MainActor in
                 guard let self else { return }
                 self.pathIsOnline = path.status == .satisfied
@@ -1914,12 +2025,14 @@ final class GeminiLiveTranslationService: ObservableObject {
             return "  \(parts)"
         }
         guard let bubble = turn.commit(inputs: inputs, outputs: outputs) else {
+            refereeAppOutcome = "REJECTED: \(turn.lastRejectReason ?? "?")"
             diag("turn", "commit REJECTED: \(turn.lastRejectReason ?? "?") (outputs \(outputSummary), direction \(String(describing: turn.direction)))")
             diag("turn", Self.inputTranscriptDiagnosticLine(inputs: inputs, sessions: activePair))
             diag("turn", said())
             diag("turn", why())
             return
         }
+        refereeAppOutcome = bubble.isHome ? "RIGHT/home" : "LEFT/foreign"
         diag("turn", "commit \(bubble.isHome ? "RIGHT/home" : "LEFT/foreign") via \(turn.translator?.rawValue ?? "?") | \(bubble.original.prefix(60)) → \(bubble.translation.prefix(60))")
         diag("turn", Self.inputTranscriptDiagnosticLine(inputs: inputs, sessions: activePair))
         diag("turn", said())
@@ -1942,6 +2055,35 @@ final class GeminiLiveTranslationService: ObservableObject {
             }
         }
         playerNode.scheduleBuffer(buffer)
+    }
+}
+
+/// Whether the current network path is known to be unmetered, for the one
+/// caller that must not spend the user's data: the language referee's speech
+/// model download (#135), which on cellular or roaming data would be a bill
+/// nobody agreed to.
+///
+/// Written on `NWPathMonitor`'s queue, read from the referee's background
+/// tasks — hence the lock, and no actor. Starts UNKNOWN, and unknown answers
+/// "no": until the monitor has reported a path, nothing downloads.
+final class UnmeteredNetwork: @unchecked Sendable {
+    private let lock = NSLock()
+    private var known = false
+    private var unmetered = false
+
+    /// One path report. Unmetered means online, not flagged expensive
+    /// (cellular, or a hotspot) and not in Low Data Mode.
+    func update(satisfied: Bool, expensive: Bool, constrained: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        known = true
+        unmetered = satisfied && !expensive && !constrained
+    }
+
+    func allowsDownloads() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return known && unmetered
     }
 }
 

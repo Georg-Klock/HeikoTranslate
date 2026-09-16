@@ -49,9 +49,19 @@ check floorprobe session Tools/floorprobe/main.swift
 check l2expiry   session Tools/l2expiry/main.swift
 check targetprobe session Tools/targetprobe/main.swift
 
+# lidprobe (#135) links the turn sources and the referee's rule, not the
+# session, and has no use for the L3 common file — so it is checked on its own.
+if out=$(swiftc -typecheck "${TURN_SOURCES[@]}" "${REFEREE_SOURCES[@]}" Tools/lidprobe/main.swift 2>&1); then
+  echo "PASS  lidprobe type-checks"
+else
+  echo "FAIL  lidprobe does not type-check:"
+  echo "$out" | grep -E "error:" | head -5 | sed 's/^/        /'
+  FAILURES=$((FAILURES + 1))
+fi
+
 echo
 if [ "$FAILURES" -gt 0 ]; then
   echo "==> harness-compile: $FAILURES harness(es) broken — a source is missing from Tools/session_sources.sh"
   exit 1
 fi
-echo "==> harness-compile: all 4 harnesses type-check"
+echo "==> harness-compile: all 5 harnesses type-check"

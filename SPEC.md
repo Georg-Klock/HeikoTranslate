@@ -326,7 +326,12 @@ Failure modes this prevents (all observed):
 - **Translation sessions expire** after a few minutes; the app must
   reconnect silently (R7).
 - **Language detection is the model's**, and it can be wrong on short or
-  noisy speech. We do not try to out-guess it.
+  noisy speech. We do not try to out-guess it. An observe-only language
+  referee (#135) — Apple's on-device speech recognition, one transcriber per
+  side of the pair, on iOS 26 and later — logs a second opinion for every
+  turn beside the app's own outcome. It does not affect routing, commits or
+  audio in any way, needs no permission, never sends audio off the phone,
+  and downloads a missing speech model only on an unmetered network.
 - **The de↔es pair inherits the German-after-Spanish mishearing more
   strongly than the old three-session design did**: without an English
   session as a third opinion, a short German sentence right after Spanish
