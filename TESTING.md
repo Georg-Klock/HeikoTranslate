@@ -1127,6 +1127,32 @@ live-API gate: model detection and timing vary run to run. One failed
 assertion in an otherwise-green run means *rerun that case* before
 treating it as a regression; the same case failing twice in a row is real.
 
+**Re-measured 2026-09-16, and the rerun rule is not enough on its own.** The
+release gate for 2.4.83 failed twice in a row on `main` (53/6, then 70/4), with
+the failing set moving between runs: `es_short`, `en_entities`, `de_after_en`,
+`de_after_es`, `de_pause`, `de_price_short`. Every failure was the same shape —
+a session returning no translation, or a truncated one. By the rule above that
+is a regression. It was not, and the way to tell was to run **the last commit
+that passed** (f800645, 89/89 on 2026-09-14) against the same live API, in
+alternating rounds, one run at a time so neither competes for quota:
+
+| Case | `main` (dc89f1c), rounds failing | f800645, rounds failing |
+|---|---|---|
+| `de_after_es` | 1 of 3 | 1 of 3 |
+| `de_pause` | 2 of 3 | 0 of 3 |
+| `es_short` | 1 of 3 | 1 of 3 |
+
+The known-good commit failed the same cases the same day, and every case that
+failed on `main` also passed on `main` in other runs (`de_price_short` 3 of 3
+in isolation, `de_after_en` 6 of 6). No code regression; the release went out
+with `--no-l3` on that evidence. Three rounds cannot separate `de_pause`, so
+it is the case to watch.
+
+**So when L3 fails twice, compare against the last passing commit before
+calling it a regression** — and run the cases as separate arguments: a
+case list held in one unquoted variable reaches the runner as a single
+argument under zsh, and only the last case runs.
+
 **The de↔es mishearing** (2026-07-28; mechanism instrumented 2026-08-07,
 GitHub #75): German after Spanish can be misheard by the de session as
 Spanish, round-tripped back into German at full length, and read as a
@@ -1411,7 +1437,7 @@ without guessing.
 |---|---|
 | L1 | ✅ Built and passing — 276 XCTest cases (`Tools/l1.sh`, 2026-09-16, on the #134 branch at `main`'s code) bound to the real `TurnLogic`, `TurnCoordinator`, `SpeechEndPolicy`, `FinalizePolicy`, `SessionLiveness`, `SessionRegistry`, `AudioWindow`, `AppVersion`, `UIStrings`, `GeminiLiveTranslationService` and `ConversationViewModel`, with the service's timers driven through `ManualClock` (#153) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
-| L3 | ✅ Built and passing — 71 assertions across 10 replays (2026-08-10, on the merged #41+#44 result; 63 across 9 on #41 alone). Earlier: 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
+| L3 | ⚠️ Passing, flaky per case — 89/89 on f800645 (2026-09-14); on 2026-09-16 both that commit and `main` failed one or two cases in about half of the runs, always as a missing or truncated translation, with no code regression behind it (see **Flakiness**). Earlier: 71 assertions across 10 replays (2026-08-10); 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Turn-arbiter branch measured on device 2026-08-18 (build 2.4.75 EC, ~13 min, two sessions): **direction correct on 17 of 17 bubbles** across three pairs — de↔en (3), de↔fr (8) and fr↔en (6). The fr↔en run is the load-bearing one: home was French, and one badly garbled utterance whose partner session reported German (`votes=de×2,fr×3`) still settled home correctly. Speech end held: 19 stops, no commit landed mid-utterance, and the single deferral behaved as designed — a loud mic buffer vetoed the stop, and it sealed 0.25 s later once the mic went quiet. No session errors, no reconnects. **One turn was lost**: a short fragment reached one session, neither session produced a translation, the finalize deferred three times and the turn was then cleared with no bubble and no indication. That is the repair-state gap `docs/TURN_ARBITER_EXPERIMENT.md` names in its own future work, not a coordinator regression — the rejection is the commit gate and the retry ladder is #21's. **Unproven on device:** the #83 resume path (`speaker resumed during the commit window`) did not occur once, so the reconciliation this branch made between #83 and the turn-ID threading rests on L1 alone. Also found, unrelated to this branch: scrolling the language wheel restarted the sessions five times and stopped the microphone five times for one language change (#146). |
 | L4 | ⚠️ Partially re-verified on device (2026-08-12): revoked-key recovery passed after four on-device iterations (#9, PR #82); late-fragment filtering (#39), loanword direction (#40) and mic-aware speech end (#36) passed and closed; number transcription measured — shared model-level mis-hearing of German compound numerals, now a decision (#33); code-switching evidence refreshed (#32). Found live: #83, speech resuming in the stopped→commit window is dropped and talked over — the open half of #31. Still owed: the deliberate self-hearing geometry run (#35, case 7), which has fresh incidental evidence (a post-playback fragment recommitted as a small bubble). The ordered plan with per-case log criteria stays on GitHub #71. |
 
