@@ -1309,6 +1309,9 @@ final class ConversationViewModel: ObservableObject {
         } catch {
             diag("app", "start FAILED: \(error.localizedDescription)")
             errorMessage = strings.micFailed
+            // Nothing is running, so nothing is degraded: no echo pill over a
+            // start that failed (#130).
+            echoWarning = nil
         }
     }
 

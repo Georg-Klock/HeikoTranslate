@@ -15,10 +15,12 @@ final class EchoCancellationTests: XCTestCase {
     /// turns (R4): never while someone speaks or a translation plays.
     func testL1_109_aRetryOnlyRunsBetweenTurns() {
         typealias R = EchoCancellationRecovery
-        XCTAssertEqual(R.decide(turnInProgress: false, playingOutput: false), .retryNow)
-        XCTAssertEqual(R.decide(turnInProgress: true, playingOutput: false), .waitForIdle)
-        XCTAssertEqual(R.decide(turnInProgress: false, playingOutput: true), .waitForIdle)
-        XCTAssertEqual(R.decide(turnInProgress: true, playingOutput: true), .waitForIdle)
+        XCTAssertEqual(R.decide(turnInProgress: false, playingOutput: false, recentSpeech: false), .retryNow)
+        for (turn, playing, speech) in [(true, false, false), (false, true, false), (false, false, true),
+                                        (true, true, true)] {
+            XCTAssertEqual(R.decide(turnInProgress: turn, playingOutput: playing, recentSpeech: speech), .waitForIdle,
+                           "turn \(turn) playing \(playing) speech \(speech)")
+        }
     }
 
     /// L1.109b — the schedule escalates and then holds: never gives up, never
@@ -39,10 +41,11 @@ final class EchoCancellationTests: XCTestCase {
     private final class FakeAudioGraph: AudioGraphControlling {
         var events: [String] = []
         var aecError: Error?
+        var engineError: Error?
         func activateSession() throws { events.append("activate") }
         func enableVoiceProcessing() throws { events.append("aec"); if let e = aecError { throw e } }
         func wirePlayer() { events.append("wire") }
-        func startEngine() throws { events.append("engine") }
+        func startEngine() throws { events.append("engine"); if let e = engineError { throw e } }
         func inputFormat() -> AVAudioFormat {
             AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 1, interleaved: false)!
         }
@@ -159,6 +162,65 @@ final class EchoCancellationTests: XCTestCase {
         let (service, _, clock, reports) = try startedService(aecFails: false)
         run(service, clock, for: 30)
         XCTAssertEqual(reports.values, [])
+        service.stopSession()
+    }
+
+    /// L1.109j — a retry waits for someone who has just started speaking,
+    /// before their first transcript has opened a turn, and runs once the
+    /// room has been quiet for the window.
+    ///
+    /// Fail-first: gated on an open turn alone, the retry dropped the mic in
+    /// that gap.
+    func testL1_109j_aRetryWaitsForSpeechThatHasNotBecomeATurnYet() throws {
+        let (service, graph, clock, _) = try startedService(aecFails: true)
+        var elapsed = 0.0
+        while elapsed < 6 {                                    // talking, no transcript back yet
+            service.noteMicBufferForTesting()
+            service.noteLoudMicSampleForTesting()
+            clock.advance(by: 0.1)
+            elapsed += 0.1
+        }
+        XCTAssertEqual(graph.aecAttempts, 1, "never under someone who has started speaking")
+        run(service, clock, for: EchoCancellationRecovery.speechQuietWindow + 1.2)
+        XCTAssertEqual(graph.aecAttempts, 2, "runs once the room has been quiet for the window")
+        service.stopSession()
+    }
+
+    /// L1.109k — a start that fails after echo cancellation failed reports
+    /// nothing and leaves nothing armed: no warning over a run that never ran.
+    func testL1_109k_aFailedStartPutsNoWarningUp() {
+        let graph = FakeAudioGraph()
+        graph.aecError = Boom()
+        graph.engineError = Boom()
+        let clock = ManualClock()
+        let reports = Reports()
+        let service = GeminiLiveTranslationService(clock: clock)
+        service.audioGraphForTesting = graph
+        service.sessionFactoryForTesting = { _, _ in FakeSocket() }
+        XCTAssertThrowsError(try service.start(
+            home: .de, partner: .en,
+            onPartialInput: { _ in }, onUtterance: { _, _, _ in },
+            onActivity: { _ in }, onError: { _ in },
+            onEchoCancellation: { reports.values.append($0) }))
+        XCTAssertEqual(reports.values, [], "a start that never ran is not degraded")
+        clock.advance(by: 120)
+        XCTAssertEqual(graph.aecAttempts, 1, "and nothing retries for it")
+    }
+
+    /// L1.109l — a retry that enables echo cancellation but then fails to
+    /// bring the audio path up is not a recovery: the warning stays, and the
+    /// chain keeps going until a retry brings the whole path back.
+    func testL1_109l_aRetryThatBreaksTheEngineIsNotARecovery() throws {
+        let (service, graph, clock, reports) = try startedService(aecFails: true)
+        graph.aecError = nil
+        graph.engineError = Boom()                             // echo cancellation fine, engine not
+        run(service, clock, for: 3.2)
+        XCTAssertEqual(graph.aecAttempts, 2, "the first retry ran")
+        XCTAssertEqual(reports.values, [false], "not reported recovered over a dead audio path")
+        graph.engineError = nil
+        run(service, clock, for: 10.2)
+        XCTAssertEqual(graph.aecAttempts, 3, "the chain survived the throw and tried again")
+        XCTAssertEqual(reports.values, [false, true], "recovered once the whole path came up")
         service.stopSession()
     }
 

@@ -801,12 +801,17 @@ final class GeminiLiveTranslationService: ObservableObject {
         // Still not fatal (L1.68d): full-duplex without cancellation beats not
         // running. But no longer invisible either — the warning goes up and a
         // background retry keeps trying until it works. GitHub #130.
+        //
+        // The outcome is reported only once the whole path is up (below): a
+        // start or rebuild that enables echo cancellation and then fails a
+        // later step must not report it recovered over a dead audio path, and
+        // a start that never ran must not put a warning up at all.
+        var echoCancellationUp = false
         do {
             try audioGraph.enableVoiceProcessing()
-            noteEchoCancellation(active: true)
+            echoCancellationUp = true
         } catch {
             diag("audio", "AEC could NOT be enabled: \(error)")
-            noteEchoCancellation(active: false)
         }
 
         // Attach and connect exactly once for the engine's lifetime. Every
@@ -906,6 +911,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         audioGraph.startPlayback()
         diag("audio", "engine started, input format \(inputFormat)")
         succeeded = true
+        noteEchoCancellation(active: echoCancellationUp)
     }
 
     // MARK: - Watchdogs
@@ -1013,14 +1019,24 @@ final class GeminiLiveTranslationService: ObservableObject {
     private func retryEchoCancellation() {
         echoRecoveryTimer = nil
         guard isRunning, !echoCancellationActive else { return }
+        let recentSpeech = lastLoudMicAt.map {
+            clock.now.timeIntervalSince($0) < EchoCancellationRecovery.speechQuietWindow
+        } ?? false
         switch EchoCancellationRecovery.decide(turnInProgress: turnCoordinator.currentID != nil,
-                                               playingOutput: isPlayingOutput) {
+                                               playingOutput: isPlayingOutput,
+                                               recentSpeech: recentSpeech) {
         case .waitForIdle:
             scheduleEchoRecovery(after: EchoCancellationRecovery.busyRecheck)
         case .retryNow:
             echoRecovery.noteAttempt()
             diag("audio", "retrying echo cancellation between turns (attempt \(echoRecovery.attempts), #130)")
             rebuildAudioIO()
+            // A rebuild that threw reported nothing, so nothing armed the next
+            // attempt: arm it here, or the retry chain ends while the warning
+            // stays up.
+            if !echoCancellationActive {
+                scheduleEchoRecovery(after: echoRecovery.nextDelay)
+            }
         }
     }
 
