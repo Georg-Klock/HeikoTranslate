@@ -550,6 +550,9 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Ends the current turn the way a finalize does, without the transcript
     /// and timer choreography a real one needs. GitHub #130's mid-turn case.
     func endTurnForTesting() { resetForNextUtterance() }
+    /// The mute-session check, on demand. On device it runs on the tap's
+    /// per-second heartbeat, which a test without an audio graph never has.
+    func checkForMuteSessionForTesting() { checkForMuteSession() }
     /// The tap's chunk shape, reported without an audio graph — the same
     /// method the tap calls, so the windows it sizes are the real ones.
     /// GitHub #131.
@@ -635,6 +638,17 @@ final class GeminiLiveTranslationService: ObservableObject {
         resetForNextUtterance()
         micLiveness.reset()
         resetEchoRecovery()
+        // The mute-session watch is per run, like every other watchdog here.
+        // All three used to outlive the run that filled them: the reconnect
+        // budget was spent once per PROCESS, so after two mute episodes a
+        // language was never watched again however many times the app was
+        // muted and unmuted; and the content clocks carried the previous
+        // run's last activity into the next one, so after a pause the first
+        // transcript from one session could get the other judged mute on the
+        // next beat and reconnected mid-turn.
+        lastContentAt = [:]
+        readyAt = [:]
+        muteReconnects = [:]
         dead = []
         retryAttempts = [:]
         dropBackoff = [:]
