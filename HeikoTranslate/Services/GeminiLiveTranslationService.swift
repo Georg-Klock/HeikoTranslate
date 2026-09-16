@@ -328,6 +328,14 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// home reader cannot check a translation, so a turn that vanishes with no
     /// explanation leaves them waiting instead of repeating.
     private var onTurnUnresolved: (() -> Void)?
+    /// Whether hardware echo cancellation is on for this run, reported on
+    /// every change. `false` shows the warning; `true` clears it. GitHub #130.
+    private var onEchoCancellation: ((Bool) -> Void)?
+    /// Assumed on until a start says otherwise, so the first successful
+    /// enable of a run publishes nothing.
+    private var echoCancellationActive = true
+    private var echoRecovery = EchoCancellationRecovery()
+    private var echoRecoveryTimer: (any ScheduledTimer)?
 
     /// Effective connection quality, measured end to end. iOS exposes no
     /// signal-strength API to apps (bars are private); what we CAN measure
@@ -539,6 +547,9 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// One mic buffer, delivered without an audio graph — the counter the
     /// watchdog reads is the real one the tap increments. GitHub #87.
     func noteMicBufferForTesting() { noteMicBuffer() }
+    /// Ends the current turn the way a finalize does, without the transcript
+    /// and timer choreography a real one needs. GitHub #130's mid-turn case.
+    func endTurnForTesting() { resetForNextUtterance() }
     /// The tap's chunk shape, reported without an audio graph — the same
     /// method the tap calls, so the windows it sizes are the real ones.
     /// GitHub #131.
@@ -591,7 +602,8 @@ final class GeminiLiveTranslationService: ObservableObject {
         onSessionsExhausted: (() -> Void)? = nil,
         onMicUnrecoverable: (() -> Void)? = nil,
         onConnectionQuality: ((ConnectionQuality) -> Void)? = nil,
-        onTurnUnresolved: (() -> Void)? = nil
+        onTurnUnresolved: (() -> Void)? = nil,
+        onEchoCancellation: ((Bool) -> Void)? = nil
     ) throws {
         // Second line of defence for GitHub #1. Whatever the caller does, a
         // start() that lands while we are already running must not install a
@@ -608,6 +620,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         self.onMicUnrecoverable = onMicUnrecoverable
         self.onConnectionQuality = onConnectionQuality
         self.onTurnUnresolved = onTurnUnresolved
+        self.onEchoCancellation = onEchoCancellation
         startPathMonitorIfNeeded()
         self.onInputLevel = onInputLevel
         self.onDirection = onDirection
@@ -621,6 +634,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         turn = TurnLogic(home: home, partner: partner)
         resetForNextUtterance()
         micLiveness.reset()
+        resetEchoRecovery()
         dead = []
         retryAttempts = [:]
         dropBackoff = [:]
@@ -742,6 +756,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         micLivenessTimer?.invalidate()
         micLivenessTimer = nil
         micLiveness.reset()
+        resetEchoRecovery()
         speechEndTimer?.invalidate()
         speechEndTimer = nil
         turnCoordinator.reset()
@@ -782,10 +797,16 @@ final class GeminiLiveTranslationService: ObservableObject {
         // AVAudioEngine; with it we can run full-duplex (listen while
         // speaking) like the native voice agents, instead of muting the mic
         // during playback.
+        //
+        // Still not fatal (L1.68d): full-duplex without cancellation beats not
+        // running. But no longer invisible either — the warning goes up and a
+        // background retry keeps trying until it works. GitHub #130.
         do {
             try audioGraph.enableVoiceProcessing()
+            noteEchoCancellation(active: true)
         } catch {
             diag("audio", "AEC could NOT be enabled: \(error)")
+            noteEchoCancellation(active: false)
         }
 
         // Attach and connect exactly once for the engine's lifetime. Every
@@ -951,6 +972,63 @@ final class GeminiLiveTranslationService: ObservableObject {
             stopSession()
             notify?()
         }
+    }
+
+    // MARK: - Echo cancellation recovery (#130)
+
+    /// Every `startAudioIO()` reports here — the first start, both watchdogs'
+    /// rebuilds, and the recovery's own retries — so the warning cannot
+    /// disagree with the audio path that is actually running.
+    private func noteEchoCancellation(active: Bool) {
+        if active {
+            guard !echoCancellationActive else { return }
+            echoCancellationActive = true
+            echoRecoveryTimer?.invalidate()
+            echoRecoveryTimer = nil
+            diag("audio", "echo cancellation RECOVERED after \(echoRecovery.attempts) background retr\(echoRecovery.attempts == 1 ? "y" : "ies") (#130)")
+            echoRecovery.reset()
+            onEchoCancellation?(true)
+        } else {
+            if echoCancellationActive {
+                echoCancellationActive = false
+                onEchoCancellation?(false)
+            }
+            scheduleEchoRecovery(after: echoRecovery.nextDelay)
+        }
+    }
+
+    /// One pending retry at a time. A failing retry comes back through
+    /// `noteEchoCancellation(active: false)`, which arms the next one with the
+    /// next delay. Deliberately no `isRunning` guard here: the first start
+    /// enables echo cancellation before the run is marked running, and the
+    /// retry itself checks — a timer outliving its run does nothing, and
+    /// `stopSession()` and every `start()` cancel it anyway.
+    private func scheduleEchoRecovery(after delay: TimeInterval) {
+        guard echoRecoveryTimer == nil else { return }
+        echoRecoveryTimer = clock.schedule(after: delay) { [weak self] in
+            self?.retryEchoCancellation()
+        }
+    }
+
+    private func retryEchoCancellation() {
+        echoRecoveryTimer = nil
+        guard isRunning, !echoCancellationActive else { return }
+        switch EchoCancellationRecovery.decide(turnInProgress: turnCoordinator.currentID != nil,
+                                               playingOutput: isPlayingOutput) {
+        case .waitForIdle:
+            scheduleEchoRecovery(after: EchoCancellationRecovery.busyRecheck)
+        case .retryNow:
+            echoRecovery.noteAttempt()
+            diag("audio", "retrying echo cancellation between turns (attempt \(echoRecovery.attempts), #130)")
+            rebuildAudioIO()
+        }
+    }
+
+    private func resetEchoRecovery() {
+        echoRecoveryTimer?.invalidate()
+        echoRecoveryTimer = nil
+        echoRecovery.reset()
+        echoCancellationActive = true
     }
 
     /// Tear the audio path down through the shared teardown and bring it back

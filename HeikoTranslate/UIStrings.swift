@@ -74,6 +74,12 @@ struct UIStrings {
     /// and it is read mid-conversation by someone who cannot check the
     /// translation themselves.
     let didNotCatch: String
+    /// #130: hardware echo cancellation would not switch on, so the
+    /// microphone can hear the translation being spoken. A CONDITION with its
+    /// own lifetime, shown while it holds and cleared by the background retry
+    /// that fixes it. Tells the reader what is happening and that nothing is
+    /// asked of them — the app is already repairing it.
+    let echoCancellationOff: String
 
     // Settings sheet
     /// Above the left wheel and the right wheel. They name the two sides in
@@ -138,6 +144,7 @@ struct UIStrings {
         offline: "Keine Internetverbindung.",
         micResumed: "Mikrofon wieder aktiv — die Übersetzung läuft weiter.",
         didNotCatch: "Nicht verstanden — bitte wiederholen.",
+        echoCancellationOff: "Mikrofon hört den Lautsprecher mit — wird behoben…",
         othersSpeak: "Andere sprechen",
         iSpeak: "Ich spreche",
         textSize: "Textgröße",
@@ -169,6 +176,7 @@ struct UIStrings {
         offline: "No internet connection.",
         micResumed: "Microphone back on — translation continues.",
         didNotCatch: "Didn't catch that — please say it again.",
+        echoCancellationOff: "The mic can hear the speaker — fixing it…",
         othersSpeak: "Others speak",
         iSpeak: "I speak",
         textSize: "Text size",
@@ -202,6 +210,7 @@ struct UIStrings {
         offline: "Sin conexión a internet.",
         micResumed: "Micrófono activo de nuevo — la traducción continúa.",
         didNotCatch: "No te he entendido — dilo otra vez, por favor.",
+        echoCancellationOff: "El micrófono oye el altavoz — corrigiéndolo…",
         othersSpeak: "Los demás hablan",
         iSpeak: "Yo hablo",
         textSize: "Tamaño del texto",
@@ -233,6 +242,7 @@ struct UIStrings {
         offline: "인터넷에 연결되어 있지 않습니다.",
         micResumed: "마이크가 다시 켜졌습니다 — 번역이 계속됩니다.",
         didNotCatch: "잘 못 알아들었어요 — 다시 말씀해 주세요.",
+        echoCancellationOff: "마이크에 스피커 소리가 들려요 — 고치는 중…",
         othersSpeak: "상대방이 쓰는 언어",
         iSpeak: "내가 쓰는 언어",
         textSize: "글자 크기",
