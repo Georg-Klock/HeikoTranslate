@@ -48,27 +48,29 @@ stated count against.
 
 | ID | Given | Expect | Rule |
 |---|---|---|---|
-| L1.1 | Detected language = English | Translator = German session; bubble = LEFT | R2 |
-| L1.2 | Detected language = German | Translator = partner session; bubble = RIGHT | R2 |
-| L1.3 | Detected language = Spanish | Translator = German session; bubble = LEFT | R2 |
-| L1.4 | German after English | Translates to English | §3.1 |
-| L1.5 | German after Spanish | Translates to Spanish | §3.1 |
-| L1.6 | German first, nothing heard before | Translates to English (default) | §3.1 |
+| L1.1 | de↔en, the partner language spoken; the home session translates | Translator = home session; bubble = LEFT with the home translation | R2 |
+| L1.2 | de↔en, the home language spoken; only the partner session translates | Translator = partner session; bubble = RIGHT | R2 |
+| L1.3 | German home against every partner in the v1 set, both directions; and en↔es, a non-German home | Each side lands correctly | R2 |
+| L1.4 | A third language (neither side of the pair) spoken | Translated by the home session like any foreign speech: LEFT | R2 |
+| L1.5 | — | Retired: described the pre-pair design, where German followed the last language heard. No test carries this ID | — |
+| L1.6 | — | Retired: the pre-pair default partner. No test carries this ID | — |
 | L1.7 | One utterance, both finalize paths fire | Exactly ONE bubble emitted | **R1** |
-| L1.8 | Finalize fires before language is known | NO bubble emitted (wait) | **R3** |
-| L1.9 | Turn ends | All per-turn state cleared, partner memory kept | R1 |
-| L1.10 | Next utterance after a turn | Language re-detected from scratch | R2 |
-| L1.11 | Different detection after the turn locked | Locked language wins; partner memory untouched | R2 |
-| L1.12 | Unrecognized language code (live: "ja" for English) | Ignored entirely | R2 |
-| L1.13 | Translator session silent, another has output | Fall back — but German stays one side; EN↔ES never pairs (§3.1) | R3 |
-| L1.14 | Whitespace around text | Trimmed; whitespace-only counts as absent | R3 |
+| L1.8 | No translation yet (absent or whitespace-only) | NO bubble, and the R1 latch stays open so the turn commits when it arrives | **R3** |
+| L1.8c | Nothing said (whitespace-only original) | NO bubble | **R3** |
+| L1.9 | Turn ends | All per-turn state cleared: settle, translator, direction, commit latch | R1 |
+| L1.10 | — | Retired with the pre-pair design. No test carries this ID | — |
+| L1.11 | — | Retired: "partner memory" does not exist with an explicit pair. No test carries this ID | — |
+| L1.12 | Unrecognized language code (live: "ja" for English) | Casts no global vote; a real code still settles | R2 |
+| L1.13 | Codes settled on the partner language, the home session never translated | THE CODES-VETO: no bubble, rejected as `codes-veto` rather than committed to a guessed side | R3 |
+| L1.14 | Whitespace around text | Trimmed | R3 |
 | L1.15 | Codes re-announce the previous turn's language ≤2.5s after it ended | Ignored; a different language counts (fast reply, R4) | **R2** |
+| L1.15b | `endTurn` on a turn that heard nothing | Arms no grace window | R2 |
 | L1.16 | Sessions disagree on the transcript | Translator session's transcript wins | R5 |
 | L1.17 | Opening detection burst unanimously wrong, corrected ~1s later | Plurality after the settle window wins | **R2** |
-| L1.18 | Short turn never settles a vote | Commits by plurality — utterance not lost | R4/R8 |
+| L1.18 | — | Retired: there is no plurality fallback in `commit`, which reads only a settled language; a turn whose codes never settle is judged on the outputs alone. No test carries this ID | — |
 | L1.19 | Stray code long before real speech | Stale tally expires; settle window stays intact | **R2** |
 | L1.20 | Codes claim German but the German session translated substantially | Session behavior beats the codes: LEFT, German translation | **R2/§3.1** |
-| L1.21 | The measured per-language session behavior table | Pinned as tests so the direction rule argues with data | §3.1 |
+| L1.21 | — | No test carries this ID in the current tree (it named a per-language session behaviour table) | — |
 | L1.22 | German session emits a false start ("Ich") next to full partner output | Not a translation: turn commits as German | **R2** |
 | L1.23 | Partner sessions translate first (English echoes!) | Proves nothing until German stays silent ~1.2s | **R2** |
 | L1.24 | Codes settled foreign while only the partner session output (echo) | noteOutputs refuses homeSpoken — echo audio must never play as a translation | **R2/R6** |
@@ -504,8 +506,9 @@ by a German speaker were transcribed AS GERMAN by the de session
 answers. This is not a narrow gap to be split more carefully — it is a
 proof that **no cut-off on this metric can be right about both**, which is
 why the 0.3 attempt broke L1.91 the instant it fixed L1.86. Pinned by
-L1.92, which asserts the collision rather than a direction and should fail
-the day a discriminator makes the two separable.
+L1.92, which asserts the collision rather than a direction. The
+discriminator below is a separate signal and leaves `echoShare` unchanged, so
+L1.92 stays green; it fails only if `echoShare` itself changes.
 
 What distinguishes them is WHICH tokens overlap: the foreign rows share
 proper nouns that survive translation (Apple, Google, Sue, Johnny, Queen),
@@ -545,7 +548,9 @@ echo if partner-home evidence ever appeared on it. That is #83's known
 L1.91 is the dropped turn, and it is the guard the next attempt has to
 satisfy before anything else. L1.90 was meant to represent this case and
 could not: its sentence shares no tokens at all, so it stayed green
-throughout. L1.86/87 are back under `XCTExpectFailure`.
+throughout. L1.86/87 went back under `XCTExpectFailure` for the revert and came
+out again with the function-word fix above; no `XCTExpectFailure` call remains
+under `Tests/`.
 
 The `interrupted` signal (#112, 2026-08-14). The spoken translation stutters
 — a false start, then the corrected sentence — while the written bubble is

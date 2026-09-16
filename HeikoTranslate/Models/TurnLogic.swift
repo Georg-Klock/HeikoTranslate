@@ -101,8 +101,8 @@ struct TurnLogic {
     /// The output-substance floors, PER HOME LANGUAGE. Character counts
     /// carry different amounts of meaning per script (#29): eight characters
     /// of German is one short word, eight of Chinese a substantial clause —
-    /// and `home` is not always German; the settings sheet offers all six on
-    /// the home wheel (L1.29e).
+    /// and `home` is not always German; every language in the v1 set may be
+    /// picked on the home wheel (L1.29e).
     struct OutputFloors {
         /// Absolute floor when the partner session hasn't produced anything
         /// yet — the home output must stand on its own.
@@ -213,9 +213,11 @@ struct TurnLogic {
     /// mein), while a genuine translation shares the NAMES that survive it
     /// (Sue, Johnny, Cash). 0.429 against 0.300 is not a gap, it is two
     /// points, and any threshold between them is fitted to those two points.
-    /// Fixing #32 needs a discriminator over WHICH tokens are shared, not a
-    /// better cut-off. Pinned by L1.86/87 (still expected-to-fail) and
-    /// L1.91.
+    /// Fixing #32 needed a discriminator over WHICH tokens are shared, not a
+    /// better cut-off, and that is how it was fixed the same day:
+    /// `sharesHomeFunctionWords` below, with this threshold left at 0.6.
+    /// L1.86/87 pass on that signal, and L1.91 guards against the reverted
+    /// cut-off coming back.
     static let echoShareThreshold = 0.6
     /// Echo judgments need at least this many tokens on BOTH sides — a short
     /// identical output is a cognate, number, or name ("Navigator",
@@ -223,10 +225,10 @@ struct TurnLogic {
     /// counting as one (#45's table; the swallowed turns of #23).
     ///
     /// TOKENS, not characters — deliberately unlike the floors above (#73):
-    /// word counts travel across alphabetic scripts. Chinese does not
-    /// whitespace-tokenize, so a zh output is ONE token and the echo
-    /// machinery stays inert there — no new behavior for a shipped language
-    /// rather than a wrong one. GitHub #38 tracks the calibration debt.
+    /// word counts travel across alphabetic scripts. Chinese, while it was in
+    /// the set, did not whitespace-tokenize, so a zh output was ONE token and
+    /// the echo machinery stayed inert there — no new behavior rather than a
+    /// wrong one. GitHub #38 tracks the calibration debt.
     static let echoMinTokens = 4
 
     // MARK: - The pair
@@ -324,16 +326,6 @@ struct TurnLogic {
         return Double(hits) / Double(out.count)
     }
 
-    /// A long output that mostly repeats what was heard: the #45 tell,
-    /// measured in the de↔es replays of #75. The model mis-hears home
-    /// speech as a neighbouring language, "translates" that misreading back
-    /// into the home language, and lands on the words it started from. A
-    /// genuine translation does not come back as the input's own words.
-    ///
-    /// The token floor applies to BOTH sides, as documented since #75 but
-    /// enforced only on the output side until the #77 review caught the gap:
-    /// four output tokens judged against one heard token is a ratio built
-    /// on nothing, not an echo.
     /// Function words of the HOME language that cannot be mistaken for the
     /// same word in English. Deliberately small, and admitted under
     /// `FillerWords`' rule: a token belongs here only if it is unambiguously
@@ -345,7 +337,8 @@ struct TurnLogic {
     /// California"). `war` and `den` left for the same reason (#128): both are
     /// English nouns, and an English sentence carrying both, translated
     /// correctly, cleared the two-word bar and read as home speech; `des` is
-    /// the French plural article and de↔fr is selectable. The list is checked
+    /// the French plural article, kept out so the list stays right if French
+    /// returns to the set (SPEC §3.0). The list is checked
     /// against English, Spanish and French function words by L1.105; Korean
     /// is a different script and cannot collide.
     ///
@@ -402,6 +395,16 @@ struct TurnLogic {
         return sharedFunction.count >= 2
     }
 
+    /// A long output that mostly repeats what was heard: the #45 tell,
+    /// measured in the de↔es replays of #75. The model mis-hears home
+    /// speech as a neighbouring language, "translates" that misreading back
+    /// into the home language, and lands on the words it started from. A
+    /// genuine translation does not come back as the input's own words.
+    ///
+    /// The token floor applies to BOTH sides, as documented since #75 but
+    /// enforced only on the output side until the #77 review caught the gap:
+    /// four output tokens judged against one heard token is a ratio built
+    /// on nothing, not an echo.
     static func isRoundTripEcho(_ output: String, inputs: [Lang: String]) -> Bool {
         var heard = Set<String>()
         for text in inputs.values { heard.formUnion(tokens(text)) }

@@ -23,13 +23,15 @@ import XCTest
 /// from the log, and each one's length matches the `outLen[...]` that turn
 /// recorded, so these are the real values rather than plausible ones.
 ///
-/// The two flip cases assert the CORRECT outcome under `XCTExpectFailure`:
-/// #32 is NOT fixed, so L1 stays green, and a fix reports an unexpected pass.
+/// The two flip cases assert the CORRECT outcome, with no expected-failure
+/// marker: #32 was fixed on 2026-08-14 by `TurnLogic.sharesHomeFunctionWords`
+/// (L1.94), a signal over WHICH tokens the home output shares with the input,
+/// and `homeIsRealTranslation` now reads the half translation as home speech.
 ///
 /// **A fix was attempted and reverted on 2026-08-14.** Lowering
 /// `echoShareThreshold` to 0.3 turned L1.86/87 green and dropped a real turn
-/// on device within the hour — L1.91 is that turn, and it is now the guard
-/// that the next attempt has to satisfy first. L1.90's zero-overlap sentence
+/// on device within the hour — L1.91 is that turn, and it is the guard any
+/// later change to the echo rules has to satisfy first. L1.90's zero-overlap sentence
 /// was not strict enough to catch it; L1.91 is, because its overlap comes
 /// from proper nouns that legitimately survive translation.
 final class SongTitleDirectionTests: XCTestCase {
@@ -156,10 +158,12 @@ final class SongTitleDirectionTests: XCTestCase {
     /// What separates them is WHICH tokens overlap: the foreign pair shares
     /// proper nouns that survive translation (Apple, Google), the home pair
     /// shares German function words the model left alone (ist, mein). A fix
-    /// for #32 has to read that distinction. This test does not assert a
-    /// direction — it asserts the metric cannot tell them apart, and it
-    /// should FAIL the day a discriminator makes them distinguishable, which
-    /// is exactly when it should be revisited.
+    /// for #32 has to read that distinction, and `sharesHomeFunctionWords`
+    /// (L1.94) does. This test does not assert a direction — it asserts
+    /// `echoShare` itself cannot tell them apart. The discriminator is a
+    /// separate signal and leaves `echoShare` unchanged, so this stays green;
+    /// it fails only if `echoShare` changes, which is when the reasoning above
+    /// needs revisiting.
     func testL1_92_echoShareCannotSeparateTheTwoPopulations() {
         let foreignIn  = "Apple and Google are both in California."
         let foreignOut = "Apple und Google sind beide in Kalifornien."
