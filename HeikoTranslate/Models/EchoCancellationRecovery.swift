@@ -22,6 +22,14 @@ struct EchoCancellationRecovery: Equatable {
     /// without spending an attempt.
     static let busyRecheck: TimeInterval = 1.0
 
+    /// A speech-level mic buffer this recently means someone may have started
+    /// talking. A turn only opens when the first transcript comes back from
+    /// the server, so without this a retry could fall into the gap between a
+    /// person starting to speak and their turn existing — and drop the mic
+    /// under them. Time-bound on purpose: a loud noise that never becomes a
+    /// transcript must not hold retries off forever.
+    static let speechQuietWindow: TimeInterval = 3.0
+
     enum Decision: Equatable {
         case retryNow
         case waitForIdle
@@ -35,9 +43,10 @@ struct EchoCancellationRecovery: Equatable {
     }
 
     /// Whether a due retry may run now. The rebuild behind it is only safe
-    /// between turns (R4: speech mid-turn must not fall into the gap).
-    static func decide(turnInProgress: Bool, playingOutput: Bool) -> Decision {
-        (turnInProgress || playingOutput) ? .waitForIdle : .retryNow
+    /// between turns (R4: speech must not fall into the gap) — no turn open,
+    /// nothing playing, and no speech-level sound in the last few seconds.
+    static func decide(turnInProgress: Bool, playingOutput: Bool, recentSpeech: Bool) -> Decision {
+        (turnInProgress || playingOutput || recentSpeech) ? .waitForIdle : .retryNow
     }
 
     mutating func noteAttempt() { attempts += 1 }

@@ -484,14 +484,18 @@ outcome — the first start, both watchdogs' rebuilds, the retries — so the
 warning cannot disagree with the audio path actually running. While it is off,
 a background retry rebuilds the audio path on an escalating schedule
 (3s, 10s, 30s, then every 60s, never giving up, since the app still
-translates), but only between turns, so the microphone is never dropped under
-someone speaking. The warning shares the slot under the button: below "muted"
+translates), but only between turns — no turn open, nothing playing, and no
+speech-level sound in the last three seconds, since a turn only opens once the
+first transcript comes back — so the microphone is never dropped under someone
+who has just started speaking. The outcome is reported only once the whole
+audio path is up, so a start that never ran shows no warning and a rebuild that
+fails after enabling echo cancellation is not called a recovery. The warning shares the slot under the button: below "muted"
 and a connection warning, above a transient mic notice. The German wording is a
 candidate awaiting review.
 
 | ID | Given | Expect | Rule |
 |---|---|---|---|
-| L1.109 | A retry falling due | Runs only with no turn open and nothing playing | **R4/#130** |
+| L1.109 | A retry falling due | Runs only with no turn open, nothing playing, and no speech-level sound in the last 3s | **R4/#130** |
 | L1.109b | Repeated failures | 3, 10, 30, then 60s forever; a recovery restarts the schedule | **#130** |
 | L1.109c | The real service, AEC fails at start | Still running (L1.68d); the warning reported exactly once | **R6/R8/#130** |
 | L1.109d | It keeps failing | Retries at 3s and 13s; still one warning for the episode | **#130** |
@@ -500,6 +504,9 @@ candidate awaiting review.
 | L1.109g | The run stops | No retries after; nothing left armed | **R8** |
 | L1.109h | A healthy start | Reports nothing | **#130** |
 | L1.109i | The warning in the slot | Degraded tint, localized text; below muted and connection, above a mic notice; cleared on recovery | **§4.5/#28/#130** |
+| L1.109j | Someone starts speaking before their first transcript opens a turn | The retry waits, then runs once the room has been quiet for 3s | **R4/#130** |
+| L1.109k | A start that fails after echo cancellation failed | No warning reported, nothing retried | **R8/#130** |
+| L1.109l | A retry enables echo cancellation but the engine then fails | Not reported recovered; the chain survives the throw and recovers when the whole path comes up | **#130** |
 
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1
