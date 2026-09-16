@@ -451,6 +451,27 @@ once per run. Until the first buffer the counts are the old ones exactly.
 | L1.107 | 3.2s and 16s at 64ms, 21ms and 85ms chunks; a zero duration | 50/250 (the old constants), 150, 38; the fallback never divides by zero | **R4/#131** |
 | L1.107b | The service told its chunk is 4096 frames at 48kHz, then a replacement window with 60 chunks | The rolling window holds 38 (3.2s), newest first; a later chunk report does not re-size the same path | **R4/#131** |
 
+The microphone watched for the whole run (#129, 2026-09-16). The startup
+watchdog (#87) asks only whether the first buffer arrived, so a tap that died
+later — an engine configuration change after a route change, a hardware
+reconfiguration — left the button reading as listening while speaking did
+nothing. `MicLiveness` reads the buffer count once a second for the rest of the
+run: two seconds without a buffer on a path that has delivered before is a
+stall, rebuilt through the shared teardown, and two rebuilds that bring nothing
+back give up through #87's existing path. Buffers, never loudness, so a quiet
+room stays healthy.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.108 | No buffer has arrived on this run | Not armed — the startup watchdog owns a cold start | **#87/#129** |
+| L1.108b | Buffers arriving every ~0.1s | Healthy, with no level involved at all | **#129** |
+| L1.108c | Buffers stop | Rebuild at 2s, the rebuilt tap gets its own 2s, a second rebuild, then give up | **R8/#129** |
+| L1.108d | A buffer after a rebuild | Ends the episode; the next stall starts a fresh ladder | **#129** |
+| L1.108e | The real service with a live mic for 10s | Never rebuilt, through the startup checks too | **#129** |
+| L1.108f | The real service, buffers stop mid-run, then return | One rebuild through the shared teardown, the player wired once, the run keeps going | **R8/#16/#129** |
+| L1.108g | The real service, buffers never return | Stopped, `onMicUnrecoverable` exactly once, exactly two rebuilds, nothing left armed | **R8/#87/#129** |
+| L1.108h | A stopped run | Not watched — a muted app is never rebuilt back to life | **R8** |
+
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1
 219/219 and L3 89/89, and both `de_song_lead` fixtures committed
