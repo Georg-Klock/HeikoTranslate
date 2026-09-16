@@ -27,6 +27,13 @@ struct MicLiveness: Equatable {
     /// Rebuilds per stall episode before giving up loudly. The same budget
     /// the startup watchdog has (#87).
     static let maxRebuilds = 2
+    /// How long a rebuilt path must stay healthy before the episode is over
+    /// and the budget is restored. Not one buffer: a route that drips out an
+    /// occasional buffer would otherwise reset the ladder on every drip and
+    /// rebuild forever without ever giving up — the silent "listening but
+    /// dead" state this exists to end. A stray buffer from the torn-down tap,
+    /// landing just after a rebuild, cannot reset it either.
+    static let recoveryWindow: TimeInterval = 5.0
 
     enum Action: Equatable {
         /// Buffers are arriving.
@@ -38,21 +45,19 @@ struct MicLiveness: Equatable {
         case rebuild(attempt: Int)
         /// Stalled through every rebuild: stop and say so.
         case giveUp
+        /// A rebuilt path has stayed healthy for `recoveryWindow`: the episode
+        /// is over and the budget is back. Reported once, for the log.
+        case recovered
     }
 
     private(set) var lastBufferAt: Date?
     private(set) var lastRebuildAt: Date?
     private(set) var rebuilds = 0
 
-    /// One buffer from the tap. Returns true when it ends a stall episode —
-    /// a rebuild worked — so the service can log the recovery.
-    @discardableResult
-    mutating func noteBuffer(at now: Date) -> Bool {
-        let recovered = rebuilds > 0
+    /// One buffer from the tap. It moves the stall clock and nothing else;
+    /// only sustained health, judged in `check`, ends an episode.
+    mutating func noteBuffer(at now: Date) {
         lastBufferAt = now
-        lastRebuildAt = nil
-        rebuilds = 0
-        return recovered
     }
 
     /// The periodic question. A rebuild restarts the stall clock from the
@@ -61,7 +66,14 @@ struct MicLiveness: Equatable {
     mutating func check(at now: Date) -> Action {
         guard let lastBuffer = lastBufferAt else { return .notArmed }
         let since = max(lastBuffer, lastRebuildAt ?? .distantPast)
-        guard now.timeIntervalSince(since) >= Self.stallThreshold else { return .healthy }
+        guard now.timeIntervalSince(since) >= Self.stallThreshold else {
+            if let rebuilt = lastRebuildAt, now.timeIntervalSince(rebuilt) >= Self.recoveryWindow {
+                lastRebuildAt = nil
+                rebuilds = 0
+                return .recovered
+            }
+            return .healthy
+        }
         guard rebuilds < Self.maxRebuilds else { return .giveUp }
         rebuilds += 1
         lastRebuildAt = now
