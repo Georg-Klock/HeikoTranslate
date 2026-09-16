@@ -229,6 +229,13 @@ bubbles). The red "Mikrofon pausiert" outranks it:
 | Server events lag >3 s while streaming | `Schlechte Verbindung — die Übersetzung kann darunter leiden.` | orange |
 | No server events for >6 s while streaming | `Keine Antwort vom Server — bitte Internetverbindung prüfen.` | red |
 | Network path down (NWPathMonitor) | `Keine Internetverbindung.` | red |
+| Hardware echo cancellation would not switch on (#130) | `Mikrofon hört den Lautsprecher mit — wird behoben…` *(candidate wording)* | orange |
+
+The echo row is its own condition, not a connection state: it ranks below the
+connection rows (a dead connection translates nothing; missing echo
+cancellation still translates) and above the transient "microphone back on"
+notice. The app retries it in the background between turns and clears the pill
+when it comes back.
 
 The banner degrades immediately but recovers only after ~3 s of healthy
 traffic, so a marginal connection doesn't make it flicker.

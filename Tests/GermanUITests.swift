@@ -225,6 +225,7 @@ final class GermanUITests: XCTestCase {
                 ("privacyPolicy", s.privacyPolicy), ("settingsLabel", s.settingsLabel),
                 ("startListeningLabel", s.startListeningLabel),
                 ("stopListeningLabel", s.stopListeningLabel),
+                ("echoCancellationOff", s.echoCancellationOff),
             ]
             for (name, value) in fields {
                 XCTAssertFalse(value.trimmingCharacters(in: .whitespaces).isEmpty,

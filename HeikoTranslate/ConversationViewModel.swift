@@ -198,6 +198,14 @@ final class ConversationViewModel: ObservableObject {
     /// that did not happen is worse than saying nothing. GitHub #28.
     @Published private(set) var micNotice: StatusNotice?
 
+    /// Hardware echo cancellation would not switch on (#130), so the
+    /// microphone can hear the translation being spoken. A CONDITION, like
+    /// `connectionWarning`, and a separate property for the same reason
+    /// `micNotice` is one: a connection update setting its own warning to
+    /// `nil` on a healthy network must not also clear this one. Set and
+    /// cleared by the service, which retries in the background until it works.
+    @Published private(set) var echoWarning: StatusNotice?
+
     /// How long the mic notice stays up. Generous: Heiko has to notice it and
     /// read it, and it must not become wallpaper.
     static let micNoticeDuration: TimeInterval = 5
@@ -211,17 +219,28 @@ final class ConversationViewModel: ObservableObject {
     ///
     /// 1. **Muted** — "Mikrofon pausiert" outranks everything; nothing else
     ///    matters while the app is not listening.
-    /// 2. **Connection warning** — a condition, up while it holds.
-    /// 3. **Mic notice** — a transient event, and the newest arrival, so it
+    /// 2. **Connection warning** — a condition, up while it holds. It
+    ///    outranks the echo warning because a dead connection translates
+    ///    nothing at all, while missing echo cancellation still translates.
+    /// 3. **Echo warning** — a condition too (#130), up until the background
+    ///    retry brings echo cancellation back.
+    /// 4. **Mic notice** — a transient event, and the newest arrival, so it
     ///    yields to a standing warning rather than displacing it.
     ///
     /// A second overlay on the same slot, instead of a case here, is how two
     /// messages end up drawn on top of each other. GitHub #28.
     static func bottomNotice(muted: Bool,
                              warning: StatusNotice?,
+                             echoWarning: StatusNotice? = nil,
                              micNotice: StatusNotice?) -> StatusNotice? {
         guard !muted else { return nil }
-        return warning ?? micNotice
+        return warning ?? echoWarning ?? micNotice
+    }
+
+    /// The service's echo-cancellation report, applied. One function for the
+    /// callback and the tests, so the two cannot diverge. GitHub #130.
+    func handleEchoCancellation(active: Bool) {
+        echoWarning = active ? nil : StatusNotice(text: strings.echoCancellationOff, severity: .degraded)
     }
 
     /// The whole mapping from connection quality to what the user sees, pure so
@@ -1219,6 +1238,7 @@ final class ConversationViewModel: ObservableObject {
         // "Keine Internetverbindung." sits over "Verbinde…" on a healthy
         // network. The service resets its quality state to match.
         connectionWarning = nil
+        echoWarning = nil
         do {
             try translator.start(
                 home: homeLang,
@@ -1275,6 +1295,9 @@ final class ConversationViewModel: ObservableObject {
                 },
                 onTurnUnresolved: { [weak self] in
                     self?.showUnresolvedTurnNotice()
+                },
+                onEchoCancellation: { [weak self] active in
+                    self?.handleEchoCancellation(active: active)
                 }
             )
             isListening = true

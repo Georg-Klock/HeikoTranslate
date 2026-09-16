@@ -208,6 +208,7 @@ struct ContentView: View {
     private var bottomNotice: ConversationViewModel.StatusNotice? {
         ConversationViewModel.bottomNotice(muted: viewModel.statusShowsMuted,
                                            warning: viewModel.connectionWarning,
+                                           echoWarning: viewModel.echoWarning,
                                            micNotice: viewModel.micNotice)
     }
 

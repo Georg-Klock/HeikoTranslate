@@ -478,6 +478,29 @@ room stays healthy.
 | L1.108g | The real service, buffers never return | Stopped, `onMicUnrecoverable` exactly once, exactly two rebuilds, nothing left armed | **R8/#87/#129** |
 | L1.108h | A stopped run | Not watched — a muted app is never rebuilt back to life | **R8** |
 
+Echo cancellation shown and healed (#130, 2026-09-16). A failed enable stays
+not fatal (L1.68d), and is no longer invisible. `startAudioIO()` reports every
+outcome — the first start, both watchdogs' rebuilds, the retries — so the
+warning cannot disagree with the audio path actually running. While it is off,
+a background retry rebuilds the audio path on an escalating schedule
+(3s, 10s, 30s, then every 60s, never giving up, since the app still
+translates), but only between turns, so the microphone is never dropped under
+someone speaking. The warning shares the slot under the button: below "muted"
+and a connection warning, above a transient mic notice. The German wording is a
+candidate awaiting review.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.109 | A retry falling due | Runs only with no turn open and nothing playing | **R4/#130** |
+| L1.109b | Repeated failures | 3, 10, 30, then 60s forever; a recovery restarts the schedule | **#130** |
+| L1.109c | The real service, AEC fails at start | Still running (L1.68d); the warning reported exactly once | **R6/R8/#130** |
+| L1.109d | It keeps failing | Retries at 3s and 13s; still one warning for the episode | **#130** |
+| L1.109e | A retry succeeds | Warning cleared; nothing retried afterwards | **R6/#130** |
+| L1.109f | A retry due mid-turn | Waits for the turn to end, then runs within a second | **R4/#130** |
+| L1.109g | The run stops | No retries after; nothing left armed | **R8** |
+| L1.109h | A healthy start | Reports nothing | **#130** |
+| L1.109i | The warning in the slot | Degraded tint, localized text; below muted and connection, above a mic notice; cleared on recovery | **§4.5/#28/#130** |
+
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1
 219/219 and L3 89/89, and both `de_song_lead` fixtures committed
@@ -640,7 +663,7 @@ ways because it pins behaviour that predates the fix.
 | L1.68 | start → stop → start | The player node is attached and connected exactly ONCE per engine lifetime; the tap cycles with every start | **R8** |
 | L1.68b | The engine fails to start | Rollback through the shared teardown — no tap, no playback, no activated session left; the next start succeeds | **R8** |
 | L1.68c | The 0 Hz placeholder format a cold launch can report | The converter guard's throw unwinds the same way | **R8** |
-| L1.68d | AEC cannot be enabled | Logged, not fatal — full-duplex without cancellation beats not running (pre-existing decision, pinned) | **R6** |
+| L1.68d | AEC cannot be enabled | Logged, not fatal — full-duplex without cancellation beats not running (pre-existing decision, pinned). Since #130 also surfaced and retried: L1.109 | **R6** |
 | L1.68e | The 0.5s mic watchdog rebuild | Shared teardown first, then a restart that obeys the once-only wiring | **R8/R4** |
 
 The watchdog's exhausted case (#87, 2026-08-12). Two rebuilds that both came
