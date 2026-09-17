@@ -506,7 +506,7 @@ so the hops queue behind the stop or rebuild exactly as they would on device.
 | ID | Given | Expect | Rule |
 |---|---|---|---|
 | L1.125 | Run one's tap delivers a buffer; stop and start before its hops run; run two's tap is silent | Run two's 0.5s watchdog still rebuilds — the old buffer is not run two's first | **R8/#160** |
-| L1.125b | The same stale buffer, then both of run two's sessions finish their handshake | Neither session receives it | **R4/#160** |
+| L1.125b | The same stale buffer, then both of run two's sessions finish their handshake | Neither session receives it — the stopped run's audio is not the new run's speech | **#160** |
 | L1.125c | The first tap's buffer still queued when the 0.5s watchdog rebuilds; the rebuilt tap is silent | The next check rebuilds again — the buffer is not the rebuilt tap's | **R8/#87/#160** |
 | L1.125d | A live tap stalls and is rebuilt (#129); its last queued buffer lands 1.5s after the rebuild; the rebuilt tap is silent | The check at the rebuilt tap's full 2s threshold rebuilds again — the stale buffer does not move the stall clock | **R8/#129/#160** |
 

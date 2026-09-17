@@ -101,7 +101,7 @@ final class StaleTapBufferTests: XCTestCase {
     /// L1.125b — the same stale buffer does not enter run two's audio. Before
     /// the sessions are ready the tap holds audio for them, and that hold is
     /// flushed on connect: a buffer from the stopped run would have been sent
-    /// as the new run's first speech (R4, R6).
+    /// as the new run's first speech.
     ///
     /// Fail-first: before the fix each session receives the old chunk.
     func testL1_125b_aBufferFromAStoppedRunDoesNotReachTheNextRunsSessions() async throws {
