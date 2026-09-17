@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import HeikoTranslate
 
@@ -64,6 +65,86 @@ final class AudioWindowTests: XCTestCase {
         await drain()
         XCTAssertEqual(replacement.sent.count, 38, "the rolling window is the measured 3.2s, not 50 chunks")
         XCTAssertEqual(replacement.sent.first, Data([22]), "newest chunks win")
+        service.stopSession()
+    }
+
+    // MARK: - Once per audio path, not once per service (#158)
+
+    private final class FakeAudioGraph: AudioGraphControlling {
+        var events: [String] = []
+        func activateSession() throws { events.append("activate") }
+        func enableVoiceProcessing() throws { events.append("aec") }
+        func wirePlayer() { events.append("wire") }
+        func startEngine() throws { events.append("engine") }
+        func inputFormat() -> AVAudioFormat {
+            AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 1, interleaved: false)!
+        }
+        func installTap(_ block: @escaping (AVAudioPCMBuffer, AVAudioTime) -> Void) { events.append("tap") }
+        func removeTap() { events.append("removeTap") }
+        func startPlayback() { events.append("play") }
+        func stopPlaybackAndEngine() { events.append("stopEngine") }
+        func deactivateSession() { events.append("deactivate") }
+        var engineStarts: Int { events.filter { $0 == "engine" }.count }
+    }
+
+    private func start(_ service: GeminiLiveTranslationService) throws {
+        try service.start(home: .de, partner: .en,
+                          onPartialInput: { _ in }, onUtterance: { _, _, _ in },
+                          onActivity: { _ in }, onError: { _ in })
+    }
+
+    /// L1.124 — a new run starts unmeasured. The service outlives a run (the
+    /// view model reuses it across every mute/unmute), and the measurement
+    /// used to outlive it too: run two on a 1024-frame path kept run one's
+    /// 38-chunk cap — 0.8s across a reconnect instead of 3.2s — and never
+    /// measured its own chunk.
+    ///
+    /// Fail-first: before the fix the second start reads 38/188, not 50/250.
+    func testL1_124_aNewRunMeasuresItsOwnChunk() throws {
+        let service = GeminiLiveTranslationService(clock: ManualClock())
+        service.skipAudioIOForTesting = true
+        service.sessionFactoryForTesting = { _, onEvent in FakeSocket(onEvent: onEvent) }
+        try start(service)
+        service.noteMicChunkShapeForTesting(frames: 4096, sampleRate: 48000)
+        XCTAssertEqual(service.replacementWindowChunksForTesting, 38)
+        service.stopSession()
+
+        try start(service)
+        XCTAssertEqual(service.replacementWindowChunksForTesting, 50,
+                       "before run two's first buffer: the fallback, not run one's measurement")
+        XCTAssertEqual(service.pendingWindowChunksForTesting, 250)
+        service.noteMicChunkShapeForTesting(frames: 1024, sampleRate: 48000)
+        XCTAssertEqual(service.replacementWindowChunksForTesting, 150, "run two's own 3.2s")
+        XCTAssertEqual(service.pendingWindowChunksForTesting, 750, "run two's own 16s")
+        service.stopSession()
+    }
+
+    /// L1.124b — a rebuild within a run is a new tap, and a new tap can land
+    /// on a new route: its first buffer measures again. The caps it already
+    /// has stay until then, because a rebuild can happen while a replacement
+    /// queue is holding speech that a fallback cap would cut.
+    ///
+    /// Fail-first: before the fix the rebuilt path's 1024-frame chunk is
+    /// ignored and the cap stays at 38.
+    func testL1_124b_aRebuiltTapMeasuresAgain() throws {
+        let graph = FakeAudioGraph()
+        let clock = ManualClock()
+        let service = GeminiLiveTranslationService(clock: clock)
+        service.audioGraphForTesting = graph
+        service.sessionFactoryForTesting = { _, onEvent in FakeSocket(onEvent: onEvent) }
+        try start(service)
+        service.noteMicChunkShapeForTesting(frames: 4096, sampleRate: 48000)
+        for _ in 0..<30 { service.noteMicBufferForTesting(); clock.advance(by: 0.1) }
+        XCTAssertEqual(graph.engineStarts, 1)
+
+        clock.advance(by: MicLiveness.stallThreshold + 1.05)   // the tap goes quiet: #129 rebuilds
+        XCTAssertEqual(graph.engineStarts, 2, "the stall rebuilt the audio path")
+        XCTAssertEqual(service.replacementWindowChunksForTesting, 38,
+                       "a rebuild keeps the caps it has until the new tap reports")
+
+        service.noteMicChunkShapeForTesting(frames: 1024, sampleRate: 48000)
+        XCTAssertEqual(service.replacementWindowChunksForTesting, 150, "the rebuilt tap's own chunk")
+        XCTAssertEqual(service.pendingWindowChunksForTesting, 750)
         service.stopSession()
     }
 }

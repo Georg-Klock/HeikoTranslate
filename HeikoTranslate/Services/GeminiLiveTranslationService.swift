@@ -479,6 +479,12 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// The tap's real chunk, measured once per audio path: sizes both
     /// windows and writes the number the counts were guessed against into
     /// the log, so the next device run states it instead of assuming it.
+    ///
+    /// An audio path is one installed tap with one converter format. Every
+    /// start of a run, every rebuild and every converter rebuild clears the
+    /// sentinel, so that path's first buffer measures again — a route can
+    /// change while muted or under a rebuild, and a chunk measured on the old
+    /// one says nothing about the new. GitHub #158.
     private func noteMicChunkShape(frames: Int, sampleRate: Double) {
         guard measuredChunkDuration == nil,
               let duration = AudioWindow.chunkDuration(frames: frames, sampleRate: sampleRate) else { return }
@@ -508,6 +514,23 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// history into a turn whose timers have long moved on. GitHub #15.
     private var maxReplacementChunks = AudioWindow.chunks(spanning: replacementAudioWindow,
                                                           chunkDuration: AudioWindow.assumedChunkDuration)
+
+    /// A new run starts unmeasured, with the fallback caps exactly as a new
+    /// service would. The service outlives a run — the view model keeps one
+    /// across every mute/unmute — and these three used to outlive it too: a
+    /// second run on a path with a smaller chunk kept the first run's cap,
+    /// holding 0.8s across a reconnect instead of 3.2s (R4), and never logged
+    /// its own measurement. A rebuild within a run only clears the sentinel
+    /// (`startAudioIO`): it may be holding a replacement queue, and a
+    /// fallback cap applied before the new tap reports would cut it.
+    /// GitHub #158.
+    private func resetChunkMeasurement() {
+        measuredChunkDuration = nil
+        maxPendingChunks = AudioWindow.chunks(spanning: Self.pendingAudioWindow,
+                                              chunkDuration: AudioWindow.assumedChunkDuration)
+        maxReplacementChunks = AudioWindow.chunks(spanning: Self.replacementAudioWindow,
+                                                  chunkDuration: AudioWindow.assumedChunkDuration)
+    }
 
     #if DEBUG
     /// Test seams (GitHub #15): stand in for the WebSocket sessions so the
@@ -666,6 +689,9 @@ final class GeminiLiveTranslationService: ObservableObject {
         readySessions = []
         pendingAudio = []
         pendingReplacementAudio = [:]
+        // Before the tap exists, so no buffer of this run is sized by the last
+        // run's measurement.
+        resetChunkMeasurement()
         #if DEBUG
         if !skipAudioIOForTesting { try startAudioIO() }
         #else
@@ -852,6 +878,10 @@ final class GeminiLiveTranslationService: ObservableObject {
         }
         micConverters.set(converter, inputFormat: inputFormat)
         diag("audio", "converter built for \(inputFormat)")
+        // A new tap is a new audio path, like a converter rebuild below: its
+        // first buffer measures the chunk again. A rebuild can land on a new
+        // route. GitHub #158.
+        measuredChunkDuration = nil
 
         // Passing `format: nil` makes the tap adopt the node's ACTUAL format at
         // install time. At cold launch the session/route is still settling, so
