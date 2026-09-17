@@ -197,9 +197,13 @@ translator session's audio is played.
    - **A settle on neither side** — the pool named a language nobody in the
      pair speaks (`ko` on de↔en, clean German). That is proof the pool is
      corrupt, not evidence about the speech; when the partner session's own
-     votes say home and its output is a translation rather than an echo, its
-     reading routes the turn instead of the veto dropping it. With no such
-     reading, or with an echoing partner, the veto stands.
+     votes say home, its output is a translation rather than an echo, and its
+     own transcript reads as home-language text (two home function words), its
+     reading routes the turn instead of the veto dropping it. The transcript
+     test is #159: a genuine translation of foreign speech is not an echo
+     either, so codes and "not an echo" alone let one lying code stream put
+     Spanish on the home side. With any of the three missing — or for a home
+     with no measured function-word list — the veto stands.
    - **The partner echoed** — the partner session's output repeats what that
      session itself heard while the home session's votes say it heard the
      partner language. That is foreign speech echoed back, and the home

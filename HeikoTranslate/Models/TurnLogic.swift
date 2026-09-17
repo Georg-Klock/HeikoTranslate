@@ -405,6 +405,18 @@ struct TurnLogic {
     /// enforced only on the output side until the #77 review caught the gap:
     /// four output tokens judged against one heard token is a ratio built
     /// on nothing, not an echo.
+    /// Whether `text` reads as the home language: at least two distinct home
+    /// function words in it. Evidence about the WORDS, independent of the
+    /// language codes a session emits alongside them (#159). The same list and
+    /// the same two-word bar `sharesHomeFunctionWords` uses, and the same
+    /// honesty about coverage: a home with no measured list returns false, so
+    /// anything gated on this stays off rather than guessing.
+    static func readsAsHome(_ text: String, home: Lang) -> Bool {
+        let function = homeFunctionWords(for: home)
+        guard !function.isEmpty else { return false }
+        return Set(tokens(text).filter { function.contains($0) }).count >= 2
+    }
+
     static func isRoundTripEcho(_ output: String, inputs: [Lang: String]) -> Bool {
         var heard = Set<String>()
         for text in inputs.values { heard.formUnion(tokens(text)) }
@@ -638,13 +650,24 @@ struct TurnLogic {
         return partnerHeardHome
     }
 
-    /// The overrule itself asks for content as well as codes: the partner
-    /// session's votes say home AND its output is a translation, not an echo
-    /// of its own transcript. A stray quorum of partner-home codes over
-    /// foreign speech comes with the partner echoing that speech, and the
-    /// veto then stands.
+    /// The overrule asks for three things: the partner session's votes say
+    /// home, its output is a translation rather than an echo of its own
+    /// transcript, AND that transcript reads as home-language text.
+    ///
+    /// The third is #159. "Not an echo" separates a translation from a
+    /// repetition, but it says nothing about the SOURCE language: a partner
+    /// session that genuinely translates Spanish or Korean into English is not
+    /// echoing either, and one lying code stream then turned foreign speech
+    /// into a home-side bubble — the foreign words as the "home" original.
+    /// What the partner session actually wrote down is evidence about the
+    /// words, independent of the codes it emitted beside them. The measured
+    /// #125 turn has it (the partner transcribed the German correctly); the
+    /// #159 counterexample cannot. A home with no measured function-word list
+    /// never overrules, and the neither-side veto keeps deciding.
     func thirdLanguageSettleOverruled(outputs: [Lang: String], inputs: [Lang: String]) -> Bool {
-        thirdLanguageSettleWithPartnerHome && !partnerEchoedOwnTranscript(outputs: outputs, inputs: inputs)
+        thirdLanguageSettleWithPartnerHome
+            && !partnerEchoedOwnTranscript(outputs: outputs, inputs: inputs)
+            && Self.readsAsHome(inputs[partner] ?? "", home: home)
     }
 
     /// The partner session repeated what was heard, and the home session
