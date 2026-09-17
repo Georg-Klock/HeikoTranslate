@@ -170,10 +170,11 @@ final class ConversationViewModel: ObservableObject {
     /// red, with nothing failing and nothing warning. Text and severity are
     /// set together here so they cannot disagree. GitHub #28.
     ///
-    /// Named for the slot rather than for connections because two different
-    /// things share it now: a connection warning and the microphone notice
-    /// below. A mic notice is not a `ConnectionWarning`, and `.info` is not a
-    /// severity a connection warning ever has.
+    /// Named for the slot rather than for connections because several
+    /// different things share it: a connection warning, the echo warning, the
+    /// request to repeat a discarded turn and the microphone notice below. A
+    /// mic notice is not a `ConnectionWarning`, and `.info` is not a severity a
+    /// connection warning ever has.
     struct StatusNotice: Equatable {
         enum Severity { case info, degraded, lost }
         let text: String
@@ -191,7 +192,7 @@ final class ConversationViewModel: ObservableObject {
     /// than another value of `connectionWarning`: one is a condition with a
     /// lifetime of its own, and merging them means whichever is set last
     /// clobbers the other. They share the single bottom overlay instead, with
-    /// the precedence in `bottomNotice(muted:warning:micNotice:)`.
+    /// the precedence in `bottomNotice(muted:repeatRequest:warning:echoWarning:micNotice:)`.
     ///
     /// Set only after a resume has actually SUCCEEDED — see
     /// `resumeAfterInterruption()`. "The microphone is on again" over a start
@@ -206,35 +207,75 @@ final class ConversationViewModel: ObservableObject {
     /// cleared by the service, which retries in the background until it works.
     @Published private(set) var echoWarning: StatusNotice?
 
-    /// How long the mic notice stays up. Generous: Heiko has to notice it and
-    /// read it, and it must not become wallpaper.
+    /// "Nicht verstanden — bitte wiederholen.": a turn was abandoned and the
+    /// person who spoke has to say it again (#152). An EVENT, like `micNotice`,
+    /// but not the same kind of event: the resume notice reports something that
+    /// worked, this one asks for an action, and it is needed most while a
+    /// connection or echo warning stands — a turn is abandoned most often
+    /// exactly then. As the same property it inherited the resume notice's
+    /// place below every warning, and was hidden, and expired, in the case it
+    /// exists for. Its own property so it can have its own place. GitHub #161.
+    @Published private(set) var repeatRequest: StatusNotice?
+
+    /// How long the mic notice and the repeat request stay up. Generous: Heiko
+    /// has to notice it and read it, and it must not become wallpaper.
     static let micNoticeDuration: TimeInterval = 5
 
     private var micNoticeDismissal: (any ScheduledTimer)?
+    private var repeatRequestDismissal: (any ScheduledTimer)?
 
     /// Which occupant of the slot under the button wins, in one place.
     ///
-    /// The slot can only ever say one thing, and three things want it. Pure so
+    /// The slot can only ever say one thing, and five things want it. Pure so
     /// L1 pins the precedence rather than the view implying it:
     ///
     /// 1. **Muted** — "Mikrofon pausiert" outranks everything; nothing else
-    ///    matters while the app is not listening.
-    /// 2. **Connection warning** — a condition, up while it holds. It
+    ///    matters while the app is not listening, and asking someone to repeat
+    ///    into a microphone that is off asks for something that cannot work.
+    /// 2. **Repeat request** — a turn was just discarded and the speaker has
+    ///    to act. It outranks the warnings because it is the only thing in the
+    ///    slot that is about THIS turn, and it is gone in five seconds, while a
+    ///    warning is a standing condition that loses nothing by waiting that
+    ///    long and is still there afterwards. A warning arriving while it is up
+    ///    does not cut it short: on marginal LTE a warning can flap, and each
+    ///    flap would otherwise take the instruction down before it was read.
+    ///    GitHub #161.
+    /// 3. **Connection warning** — a condition, up while it holds. It
     ///    outranks the echo warning because a dead connection translates
     ///    nothing at all, while missing echo cancellation still translates.
-    /// 3. **Echo warning** — a condition too (#130), up until the background
+    /// 4. **Echo warning** — a condition too (#130), up until the background
     ///    retry brings echo cancellation back.
-    /// 4. **Mic notice** — a transient event, and the newest arrival, so it
-    ///    yields to a standing warning rather than displacing it.
+    /// 5. **Mic notice** — "the microphone is on again": informational, a
+    ///    transient event, and the newest arrival, so it yields to a standing
+    ///    warning rather than displacing it.
     ///
     /// A second overlay on the same slot, instead of a case here, is how two
     /// messages end up drawn on top of each other. GitHub #28.
     static func bottomNotice(muted: Bool,
+                             repeatRequest: StatusNotice? = nil,
                              warning: StatusNotice?,
                              echoWarning: StatusNotice? = nil,
                              micNotice: StatusNotice?) -> StatusNotice? {
         guard !muted else { return nil }
-        return warning ?? echoWarning ?? micNotice
+        return repeatRequest ?? warning ?? echoWarning ?? micNotice
+    }
+
+    /// What the slot under the button shows right now: the precedence above,
+    /// applied to this model's own state. The view binds this rather than
+    /// assembling the arguments itself, so a test holding a real view model
+    /// reads exactly what the screen draws.
+    var slotNotice: StatusNotice? {
+        Self.bottomNotice(muted: statusShowsMuted,
+                          repeatRequest: repeatRequest,
+                          warning: connectionWarning,
+                          echoWarning: echoWarning,
+                          micNotice: micNotice)
+    }
+
+    /// The service's connection-quality report, applied. One function for the
+    /// callback and the tests, like `handleEchoCancellation(active:)`.
+    func handleConnectionQuality(_ quality: GeminiLiveTranslationService.ConnectionQuality) {
+        connectionWarning = Self.warning(for: quality, in: homeLang)
     }
 
     /// The service's echo-cancellation report, applied. One function for the
@@ -693,6 +734,7 @@ final class ConversationViewModel: ObservableObject {
     func noteManualToggle() {
         resumeWhenActive = false
         clearMicNotice()
+        clearRepeatRequest()
         // There is no longer a language restart sitting on a timer to cancel
         // here: it fires when the sheet is dismissed, and the button is not
         // reachable until it has been (#146). The remaining window — a tap
@@ -979,22 +1021,34 @@ final class ConversationViewModel: ObservableObject {
 
     /// #152: the turn refused to pick a side, so ask for it again.
     ///
-    /// Rides the mic-notice slot deliberately rather than inventing a fourth
-    /// occupant: it is the same kind of thing — a transient event, newest wins,
-    /// gone after `micNoticeDuration` — and `bottomNotice` already encodes the
-    /// precedence, so "Mikrofon pausiert" still outranks it. A second
-    /// mechanism would be a second chance for two notices to fight over one
-    /// slot, which is the bug #28 was filed for.
+    /// Shares the one slot under the button and its one precedence function,
+    /// `bottomNotice` — a second overlay would be a second chance for two
+    /// notices to fight over the slot, which is the bug #28 was filed for. It
+    /// first shared the mic notice's PROPERTY as well, and with it the mic
+    /// notice's place below every warning, which hid it whenever the
+    /// connection was the reason the turn was lost (#161). Its own property
+    /// now, ranked above the warnings and below "Mikrofon pausiert"; gone after
+    /// `micNoticeDuration`, and since only muting can cover it and muting
+    /// clears it, that duration is time on screen.
     ///
     /// `.info`, not a warning: nothing failed. The app heard something and
     /// could not tell who said it, and the person can fix that in two seconds
     /// by saying it again.
     func showUnresolvedTurnNotice() {
-        micNoticeDismissal?.invalidate()
-        micNotice = StatusNotice(text: strings.didNotCatch, severity: .info)
-        micNoticeDismissal = clock.schedule(after: Self.micNoticeDuration) { [weak self] in
-            self?.clearMicNotice()
+        repeatRequestDismissal?.invalidate()
+        repeatRequest = StatusNotice(text: strings.didNotCatch, severity: .info)
+        repeatRequestDismissal = clock.schedule(after: Self.micNoticeDuration) { [weak self] in
+            self?.clearRepeatRequest()
         }
+    }
+
+    /// Take the repeat request down and cancel its timer. Idempotent, like
+    /// `clearMicNotice()`: a request to repeat belongs to the listening state
+    /// it was raised in, so every path that ends that state calls it.
+    func clearRepeatRequest() {
+        repeatRequestDismissal?.invalidate()
+        repeatRequestDismissal = nil
+        repeatRequest = nil
     }
 
     /// Raise the notice and start its dismissal clock. Internal rather than
@@ -1290,8 +1344,7 @@ final class ConversationViewModel: ObservableObject {
                     self?.handleMicUnrecoverable()
                 },
                 onConnectionQuality: { [weak self] quality in
-                    guard let self else { return }
-                    self.connectionWarning = Self.warning(for: quality, in: self.homeLang)
+                    self?.handleConnectionQuality(quality)
                 },
                 onTurnUnresolved: { [weak self] in
                     self?.showUnresolvedTurnNotice()
@@ -1322,8 +1375,11 @@ final class ConversationViewModel: ObservableObject {
         invalidatePendingStart()
         translator.stopSession()
         // The notice describes a listening state that is now over — it must
-        // never linger over "Mikrofon pausiert". GitHub #28.
+        // never linger over "Mikrofon pausiert". GitHub #28. Nor may a request
+        // to repeat a turn from before the stop: it would still be asking
+        // after the next tap, about a turn nobody remembers. GitHub #161.
         clearMicNotice()
+        clearRepeatRequest()
         isListening = false
         // Nothing is running, so nothing has a pair. Leaving the old value
         // here would make the next dismissal compare against sessions that no

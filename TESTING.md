@@ -520,6 +520,22 @@ session one second into a new run look a minute silent. Both are reset on every
 | L1.115 | A pause between runs, then the partner's first transcript | The home session is not reconnected — it is one second into its run, not a minute silent | **R7/#139** |
 | L1.115b | Run 1 spends both mute reconnects; run 2's home session goes mute | Run 2 reconnects it — the budget is per run | **R7/#139** |
 
+The request to repeat has its own place in the slot (#161). "Nicht verstanden —
+bitte wiederholen." shared the microphone-resumed notice's property, and with it
+that notice's place below every warning: a turn abandoned while the connection
+was degraded or silent — the likeliest time — was announced behind the warning,
+and the announcement expired there. It now ranks above the warnings and below
+"Mikrofon pausiert" (SPEC §4.5). These cases read `slotNotice`, the value the
+view draws, off a real view model on a `ManualClock`.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.122 | A turn abandoned under each connection warning (degraded, silent, offline) | The slot shows the request to repeat | **R8/§5.1/#161** |
+| L1.122b | A turn abandoned under the echo warning, then a connection warning on top | The request still shows | **R8/§4.5/#161** |
+| L1.122c | The request up under a warning, a second warning arriving part-way | Visible for its whole duration, not shortened; then the warning shows through | **R8/#161** |
+| L1.122d | The resume notice under a warning; a request, then a stop | The resume notice still yields; the stop clears the request and leaves nothing armed | **#28/#161** |
+| L1.122e | Every occupant of the slot, pairwise | muted > repeat request > connection > echo > resume notice | **§4.5/#161** |
+
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1
 219/219 and L3 89/89, and both `de_song_lead` fixtures committed
