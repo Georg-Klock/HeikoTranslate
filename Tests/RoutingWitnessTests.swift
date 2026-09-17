@@ -294,3 +294,84 @@ final class RoutingWitnessTests: XCTestCase {
                        "two English nouns must not count as two German function words")
     }
 }
+
+/// GitHub #159: the third-language override (#125, L1.104) took a partner
+/// session's home votes plus "its output is not an echo" as proof that home
+/// speech was spoken. A genuine translation of FOREIGN speech is not an echo
+/// either, so one lying partner code stream turned Spanish into a home-side
+/// bubble. The override now also needs the partner session's own transcript to
+/// read as home-language text — evidence about the words, not the codes.
+final class ThirdLanguageOverrideEvidenceTests: XCTestCase {
+
+    private func t(_ seconds: TimeInterval) -> Date {
+        Date(timeIntervalSinceReferenceDate: 700_000_000 + seconds)
+    }
+
+    /// The issue's shape: the pool settles `ko` on de↔en (the home session
+    /// votes Korean), the partner session's codes vote German with a strict
+    /// quorum, and the partner session translates whatever was said.
+    private func thirdLanguageTurn() -> TurnLogic {
+        var turn = TurnLogic(home: .de, partner: .en)
+        _ = turn.noteInputLanguage("ko", from: .de, at: t(0))
+        _ = turn.noteInputLanguage("de", from: .en, at: t(0.1))
+        _ = turn.noteInputLanguage("ko", from: .de, at: t(1.6))
+        for i in 0..<3 {
+            _ = turn.noteInputLanguage("de", from: .en, at: t(1.7 + Double(i) * 0.2))
+            _ = turn.noteInputLanguage("ko", from: .de, at: t(1.8 + Double(i) * 0.2))
+        }
+        return turn
+    }
+
+    /// L1.126 — the #159 failing case: Spanish speech, the partner session
+    /// translating it correctly into English, its codes wrongly saying German.
+    ///
+    /// Fail-first: before the text witness this committed on the home side,
+    /// Spanish as the "German" original with English beneath it.
+    func testL1_126_foreignSpeechIsNotMadeHomeByLyingPartnerCodes() {
+        var turn = thirdLanguageTurn()
+        let spoken = "Necesitamos una mesa tranquila cerca de la ventana, por favor."
+        let inputs: [TurnLogic.Lang: String] = [.de: spoken, .en: spoken]
+        let outputs: [TurnLogic.Lang: String] = [.de: "", .en: "We need a quiet table near the window, please."]
+
+        XCTAssertEqual(turn.spokenLang, .ko, "precondition: a neither-side settle")
+        XCTAssertTrue(turn.thirdLanguageSettleWithPartnerHome, "precondition: the partner's codes say home")
+        XCTAssertFalse(turn.thirdLanguageSettleOverruled(outputs: outputs, inputs: inputs),
+                       "codes alone are not evidence the words were German")
+        let bubble = turn.commit(inputs: inputs, outputs: outputs)
+        XCTAssertNotEqual(bubble?.isHome, true, "Spanish must not land on the German side")
+        XCTAssertTrue(turn.lastRejectReason?.contains("codes-veto") == true,
+                      "the neither-side veto stands — got \(turn.lastRejectReason ?? "nil")")
+        XCTAssertNil(turn.direction)
+    }
+
+    /// L1.126b — the live path, with a language on neither side whose partner
+    /// output is a real translation: Korean speech translated into English.
+    /// (English speech cannot reproduce this — into the English session it is
+    /// always an echo of its own transcript, which the echo check already
+    /// refuses.) The live line must not resolve home either.
+    ///
+    /// Fail-first: under the old rule the direction resolved `homeSpoken`.
+    func testL1_126b_theLiveLineDoesNotResolveHomeOnForeignSpeech() {
+        var turn = thirdLanguageTurn()
+        let spoken = "창가 쪽에 조용한 자리 부탁드려요."
+        let inputs: [TurnLogic.Lang: String] = [.de: spoken, .en: spoken]
+        let outputs: [TurnLogic.Lang: String] = [.de: "", .en: "A quiet table by the window, please."]
+        turn.noteOutputs(outputs, inputs: inputs, at: t(10))
+        turn.noteOutputs(outputs, inputs: inputs, at: t(10 + TurnLogic.homeSilenceConfirmDelay + 0.1))
+        XCTAssertNotEqual(turn.direction, .homeSpoken)
+        XCTAssertNotEqual(turn.commit(inputs: inputs, outputs: outputs)?.isHome, true)
+    }
+
+    /// L1.126c — the text witness itself: German with two function words reads
+    /// as home; Spanish, English and Korean do not; one shared word is not
+    /// enough; and a home without a measured list keeps the veto untouched.
+    func testL1_126c_theTextWitness() {
+        XCTAssertTrue(TurnLogic.readsAsHome("Wir hätten gerne die Zwiebelringe mit Ranch.", home: .de))
+        XCTAssertFalse(TurnLogic.readsAsHome("Necesitamos una mesa tranquila cerca de la ventana.", home: .de))
+        XCTAssertFalse(TurnLogic.readsAsHome("Could we get a quiet table by the window?", home: .de))
+        XCTAssertFalse(TurnLogic.readsAsHome("창가 쪽 조용한 자리 있나요?", home: .de))
+        XCTAssertFalse(TurnLogic.readsAsHome("Das Schnitzel, bitte.", home: .de), "one function word is not a witness")
+        XCTAssertFalse(TurnLogic.readsAsHome("We would like the onion rings with ranch.", home: .en),
+                       "no measured list for this home — inert, the veto keeps deciding")
+    }
+}

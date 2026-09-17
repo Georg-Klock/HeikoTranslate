@@ -583,6 +583,21 @@ view draws, off a real view model on a `ManualClock`.
 | L1.122d | The resume notice under a warning; a request, then a stop | The resume notice still yields; the stop clears the request and leaves nothing armed | **#28/#161** |
 | L1.122e | Every occupant of the slot, pairwise | muted > repeat request > connection > echo > resume notice | **§4.5/#161** |
 
+The third-language override needs evidence about the words (#159, 2026-09-16).
+#156's override took a neither-side settle, the partner session's home votes,
+and a partner output that is not an echo as proof of home speech. A genuine
+translation of foreign speech is not an echo either, so one lying partner code
+stream committed Spanish or Korean on the home side. The override now also
+needs the partner session's own transcript to read as home-language text — two
+distinct home function words (the #32 list). The measured #125 turn still has it;
+a home with no measured list never overrules.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.126 | Spanish on de↔en, pool settled `ko`, partner codes vote German, partner translates into English | Not overruled: the neither-side veto stands, no side decided | **R2/R3/#159** |
+| L1.126b | The same shape with Korean speech, streamed past the confirm delay | The live line never resolves home, and commit is not home | **R2/#159** |
+| L1.126c | `readsAsHome` | German with two function words reads as home; Spanish, English and Korean do not; one word is not enough; a home without a list is inert | **#159** |
+
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1
 219/219 and L3 89/89, and both `de_song_lead` fixtures committed
