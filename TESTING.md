@@ -506,6 +506,25 @@ room stays healthy.
 | L1.108g | The real service, buffers never return | Stopped, `onMicUnrecoverable` exactly once, exactly two rebuilds, nothing left armed | **R8/#87/#129** |
 | L1.108h | A stopped run | Not watched — a muted app is never rebuilt back to life | **R8** |
 
+A buffer belongs to the tap that delivered it (#160, 2026-09-16). The tap hands
+each buffer to the main actor in unstructured tasks, which checked only
+`isRunning`. A buffer delivered just before its tap was removed — by a stop, or
+by a rebuild — was still queued when the next tap went live, and was taken as
+the new tap's: it satisfied the 0.5s startup watchdog, moved `MicLiveness`'s
+stall clock, and was held and flushed as the new run's first speech. Each
+installed tap now captures a generation by value; every install and every
+teardown moves the current one on, and both hops drop a buffer from a
+superseded tap before touching any state. These cases capture the block the
+service installs and call it with a real `AVAudioPCMBuffer`, without yielding,
+so the hops queue behind the stop or rebuild exactly as they would on device.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.125 | Run one's tap delivers a buffer; stop and start before its hops run; run two's tap is silent | Run two's 0.5s watchdog still rebuilds — the old buffer is not run two's first | **R8/#160** |
+| L1.125b | The same stale buffer, then both of run two's sessions finish their handshake | Neither session receives it — the stopped run's audio is not the new run's speech | **#160** |
+| L1.125c | The first tap's buffer still queued when the 0.5s watchdog rebuilds; the rebuilt tap is silent | The next check rebuilds again — the buffer is not the rebuilt tap's | **R8/#87/#160** |
+| L1.125d | A live tap stalls and is rebuilt (#129); its last queued buffer lands 1.5s after the rebuild; the rebuilt tap is silent | The check at the rebuilt tap's full 2s threshold rebuilds again — the stale buffer does not move the stall clock | **R8/#129/#160** |
+
 Echo cancellation shown and healed (#130, 2026-09-16). A failed enable stays
 not fatal (L1.68d), and is no longer invisible. `startAudioIO()` reports every
 outcome — the first start, both watchdogs' rebuilds, the retries — so the
@@ -1479,7 +1498,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 301 XCTest cases (`Tools/l1.sh`, 2026-09-16, on the #158 branch) bound to the real `TurnLogic`, `TurnCoordinator`, `SpeechEndPolicy`, `FinalizePolicy`, `SessionLiveness`, `SessionRegistry`, `AudioWindow`, `AppVersion`, `UIStrings`, `GeminiLiveTranslationService` and `ConversationViewModel`, with the service's timers driven through `ManualClock` (#153) |
+| L1 | ✅ Built and passing — 305 XCTest cases (`Tools/l1.sh`, 2026-09-16, on the #160 branch) bound to the real `TurnLogic`, `TurnCoordinator`, `SpeechEndPolicy`, `FinalizePolicy`, `SessionLiveness`, `SessionRegistry`, `AudioWindow`, `AppVersion`, `UIStrings`, `GeminiLiveTranslationService` and `ConversationViewModel`, with the service's timers driven through `ManualClock` (#153) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ⚠️ Passing, flaky per case — 89/89 on f800645 (2026-09-14); on 2026-09-16 both that commit and `main` failed one or two cases in about half of the runs, always as a missing or truncated translation, with no code regression behind it (see **Flakiness**). Earlier: 71 assertions across 10 replays (2026-08-10); 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Turn-arbiter branch measured on device 2026-08-18 (build 2.4.75 EC, ~13 min, two sessions): **direction correct on 17 of 17 bubbles** across three pairs — de↔en (3), de↔fr (8) and fr↔en (6). The fr↔en run is the load-bearing one: home was French, and one badly garbled utterance whose partner session reported German (`votes=de×2,fr×3`) still settled home correctly. Speech end held: 19 stops, no commit landed mid-utterance, and the single deferral behaved as designed — a loud mic buffer vetoed the stop, and it sealed 0.25 s later once the mic went quiet. No session errors, no reconnects. **One turn was lost**: a short fragment reached one session, neither session produced a translation, the finalize deferred three times and the turn was then cleared with no bubble and no indication. That is the repair-state gap `docs/TURN_ARBITER_EXPERIMENT.md` names in its own future work, not a coordinator regression — the rejection is the commit gate and the retry ladder is #21's. **Unproven on device:** the #83 resume path (`speaker resumed during the commit window`) did not occur once, so the reconciliation this branch made between #83 and the turn-ID threading rests on L1 alone. Also found, unrelated to this branch: scrolling the language wheel restarted the sessions five times and stopped the microphone five times for one language change (#146). |

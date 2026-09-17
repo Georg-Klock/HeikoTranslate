@@ -355,6 +355,19 @@ continuously while the mic is open and has **no offline mode**.
   and `onMicUnrecoverable` tells the UI to show the stopped state with the
   existing "Mikrofon ist aus — bitte antippen." sentence, so a tap starts a
   fresh run with a fresh watchdog (R8, GitHub #87).
+- **A buffer is evidence only for the tap that delivered it.** The tap
+  block runs on the render thread and hands each buffer to the main actor
+  in unstructured tasks, so a buffer delivered just before a stop or a
+  rebuild can arrive after the next tap is live. Each installed tap
+  captures a generation by value (the render thread reads nothing of the
+  service's state, GitHub #2), every install and teardown moves the
+  current generation on, and the main-actor hops drop a buffer from a
+  superseded tap before it can count toward the startup watchdog, move
+  `MicLiveness`, size the audio windows or be held and sent as speech.
+  Without it one queued buffer from a stopped run told the new run's
+  watchdog a dead tap was alive (GitHub #160). The session registry's
+  tokens (GitHub #20) are the same idea for WebSocket callbacks, kept
+  separate.
 - **A turn must not end while its translation is still streaming.** Same
   session: `"…wir haben im Moment keine"` committed as one bubble and the
   rest of that sentence, `"Gurken mehr."`, landed in the next one against

@@ -260,6 +260,18 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// `@MainActor` type. See `MicConverterBox`. GitHub #2.
     private let micConverters = MicConverterBox()
     private var tapInstalled = false
+    /// Which installed tap a buffer belongs to. Each install takes a new
+    /// value, captured by value into that tap's block, and each teardown
+    /// moves it on again; the main-actor hops drop a buffer whose value is no
+    /// longer current. A buffer the render thread delivered just before its
+    /// tap was removed — by a stop, or by a watchdog or echo-cancellation
+    /// rebuild — is still queued when the next tap goes live, and `isRunning`
+    /// alone cannot tell it from the new tap's: it used to be counted as
+    /// proof the new tap works (satisfying the startup watchdog and feeding
+    /// `MicLiveness`) and held or sent as the new run's audio. Main-actor
+    /// state, read only in the hops; the render thread sees only the copy.
+    /// Separate from the session registry's tokens (GitHub #20). GitHub #160.
+    private var tapGeneration = 0
 
     /// Startup health, for the watchdog below.
     private var micBufferCount = 0
@@ -889,6 +901,8 @@ final class GeminiLiveTranslationService: ObservableObject {
         // then fails conversion, which is exactly the "spoke at launch, nothing
         // happened until I muted and unmuted" bug (R4). The converter is
         // rebuilt below whenever a buffer's real format doesn't match it.
+        tapGeneration &+= 1
+        let generation = tapGeneration
         audioGraph.installTap { [weak self] buffer, _ in
             guard let self else { return }
             // This block runs on the real-time audio render thread, NOT the
@@ -913,7 +927,9 @@ final class GeminiLiveTranslationService: ObservableObject {
             let rms = Self.rms(of: pcmData)
             let level = min(1.0, rms / 4000.0)
             Task { @MainActor in
-                guard self.isRunning else { return }
+                // Before any state is touched: a buffer from a superseded tap
+                // is not this tap's evidence, speech or measurement. #160.
+                guard self.isRunning, self.tapGeneration == generation else { return }
                 if let rebuiltFormat {
                     diag("audio", "format changed to \(rebuiltFormat) — converter rebuilt")
                     self.measuredChunkDuration = nil   // a new route may deliver a new chunk
@@ -940,7 +956,7 @@ final class GeminiLiveTranslationService: ObservableObject {
             Task { @MainActor in
                 // Full-duplex: keep forwarding the mic even while a translation
                 // plays — the AEC cancels our own output, so we don't loop.
-                guard self.isRunning else { return }
+                guard self.isRunning, self.tapGeneration == generation else { return }
                 guard self.isSendingAudio else {
                     // Not connected yet — hold the audio, don't drop it.
                     if self.pendingAudio.count < self.maxPendingChunks {
@@ -1164,6 +1180,10 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// started is harmless. The player node deliberately stays wired —
     /// `playerWired` is per engine lifetime, not per start. GitHub #16.
     private func stopAudioIO() {
+        // Every buffer the removed tap already handed over is stale from here
+        // on, including when the rebuild that follows fails before a new tap
+        // is installed. GitHub #160.
+        tapGeneration &+= 1
         if tapInstalled {
             audioGraph.removeTap()
             tapInstalled = false
