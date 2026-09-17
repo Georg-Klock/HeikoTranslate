@@ -237,6 +237,25 @@ cancellation still translates) and above the transient "microphone back on"
 notice. The app retries it in the background between turns and clears the pill
 when it comes back.
 
+**The slot holds one thing at a time, in this order** (GitHub #28, #130, #161):
+
+1. `Mikrofon pausiert` — nothing else matters while the app is not listening.
+2. *"Nicht verstanden — bitte wiederholen."* (§5.1) — a turn was just
+   discarded and the speaker has to act.
+3. A connection warning (the first three rows above).
+4. The echo warning.
+5. *"Mikrofon wieder aktiv — die Übersetzung läuft weiter."* — informational.
+
+The request to repeat outranks the warnings because a turn is abandoned most
+often exactly while the connection is degraded or silent, so below them it was
+hidden in the case it exists for, and its five seconds ran out behind the
+warning. It is up for five seconds of screen time — a warning appearing while
+it shows does not shorten it, since a flapping warning would otherwise take it
+down before it was read — and then the standing warning shows through again.
+Muting takes it down: it asks for speech the app cannot hear. The "microphone
+back on" notice reports something that worked, so it still yields to every
+warning.
+
 The banner degrades immediately but recovers only after ~3 s of healthy
 traffic, so a marginal connection doesn't make it flicker.
 

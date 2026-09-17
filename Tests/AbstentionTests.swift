@@ -171,12 +171,13 @@ final class AbstentionTests: XCTestCase {
     func testL1_76_theNoticeSaysWhatToDo() {
         let vm = ConversationViewModel()
         vm.homeLang = .de
-        XCTAssertNil(vm.micNotice)
+        XCTAssertNil(vm.repeatRequest)
 
         vm.showUnresolvedTurnNotice()
 
-        XCTAssertEqual(vm.micNotice?.text, UIStrings.german.didNotCatch)
-        XCTAssertEqual(vm.micNotice?.severity, .info,
+        XCTAssertEqual(vm.repeatRequest?.text, UIStrings.german.didNotCatch)
+        XCTAssertNil(vm.micNotice, "its own property since #161, not the resume notice's")
+        XCTAssertEqual(vm.repeatRequest?.severity, .info,
                        "nothing failed — it heard something and could not tell who said it")
     }
 
@@ -186,7 +187,7 @@ final class AbstentionTests: XCTestCase {
         let vm = ConversationViewModel()
         vm.homeLang = .es
         vm.showUnresolvedTurnNotice()
-        XCTAssertEqual(vm.micNotice?.text, UIStrings.spanish.didNotCatch)
+        XCTAssertEqual(vm.repeatRequest?.text, UIStrings.spanish.didNotCatch)
     }
 
     // L1.76c — muted still outranks it. The slot holds one thing, and
@@ -197,7 +198,7 @@ final class AbstentionTests: XCTestCase {
         let notice = ConversationViewModel.StatusNotice(
             text: UIStrings.german.didNotCatch, severity: .info)
         let shown = ConversationViewModel.bottomNotice(
-            muted: true, warning: nil, micNotice: notice)
+            muted: true, repeatRequest: notice, warning: nil, micNotice: nil)
         XCTAssertNotEqual(shown?.text, UIStrings.german.didNotCatch,
                           "the mute notice owns the slot while the mic is off")
     }

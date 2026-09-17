@@ -176,6 +176,7 @@ struct ContentView: View {
         // be Equatable.
         .animation(.easeInOut(duration: 0.3), value: viewModel.connectionWarning)
         .animation(.easeInOut(duration: 0.3), value: viewModel.micNotice)
+        .animation(.easeInOut(duration: 0.3), value: viewModel.repeatRequest)
         .preferredColorScheme(.dark)
         // The status line and hint are rewritten wholesale when the home
         // language changes — crossfade rather than snap.
@@ -206,10 +207,7 @@ struct ContentView: View {
     /// itself lives in `ConversationViewModel.bottomNotice` so L1 can pin it;
     /// this is the binding. GitHub #28.
     private var bottomNotice: ConversationViewModel.StatusNotice? {
-        ConversationViewModel.bottomNotice(muted: viewModel.statusShowsMuted,
-                                           warning: viewModel.connectionWarning,
-                                           echoWarning: viewModel.echoWarning,
-                                           micNotice: viewModel.micNotice)
+        viewModel.slotNotice
     }
 
     /// True while the overlay pill covers the status/hint slot.
