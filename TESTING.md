@@ -440,6 +440,21 @@ the real service; nothing timing-related is mirrored in a test file.
 | L1.97 | The shipping `WallClock` | Arms a real timer that fires on the main actor — the one deliberate wall-clock wait, 50ms against a 10s allowance | **#153** |
 | L1.98 | The mic notice, on the clock | Stays up for its whole reviewed duration, dismisses on the clock, and a clear cancels the dismissal | **#5/#153** |
 
+`ManualClock` delivers a body inline, and the shipping clock does not (#162).
+`WallClock` queues the body onto the main actor once the timer fires, and
+`invalidate()` cannot recall a body already queued. The notice dismissals called
+an unqualified clear, so a notice raised in that gap was cleared by the previous
+notice's dismissal. `DeferredClock` splits "the timer fired" from "the main
+actor ran the body" so a test can act in between; each dismissal now clears only
+the raise it was armed for.
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.123 | A repeat request's timer fires, a second request is raised before the queued dismissal runs | The newer request stays up, and its own timer still takes it down | **R8/#162** |
+| L1.123b | The same for the microphone-resumed notice | The newer notice stays up, its own timer still armed | **#162** |
+| L1.123c | Both dismissals queued, both notices cleared by hand and raised again | The queued dismissals reach neither new notice | **#162** |
+| L1.123d | `DeferredClock` itself | A body queued before `invalidate()` still runs; a timer invalidated before it fires queues nothing | **#153/#162** |
+
 Audio windows in seconds (#131, 2026-09-08). `maxPendingChunks` (250) and
 `maxReplacementChunks` (50) were chunk counts calibrated against a 64ms
 chunk; the tap delivers whatever the hardware does, and the 2026-08-18

@@ -22,6 +22,13 @@ protocol ScheduledTimer: AnyObject {
 ///
 /// The body runs on the main actor when the timer fires — for a repeating
 /// timer, every `interval` until it is invalidated.
+///
+/// **`invalidate()` does not recall a body that is already on its way.**
+/// `WallClock` queues the body onto the main actor once its timer fires, so a
+/// body can still run after an `invalidate()` made in that gap. A body that
+/// clears state something newer may have replaced has to check that the state
+/// is still the one it was armed for (GitHub #162, `DeferredClock` in the
+/// tests reproduces the gap).
 @MainActor
 protocol TimerScheduling: AnyObject {
     var now: Date { get }

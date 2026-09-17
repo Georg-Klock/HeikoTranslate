@@ -224,6 +224,18 @@ final class ConversationViewModel: ObservableObject {
     private var micNoticeDismissal: (any ScheduledTimer)?
     private var repeatRequestDismissal: (any ScheduledTimer)?
 
+    /// Which raising of each notice a dismissal belongs to. GitHub #162.
+    ///
+    /// Invalidating the previous timer is not enough on the shipping clock:
+    /// `WallClock` queues a body onto the main actor once its timer fires, and
+    /// nothing recalls a body already queued. A notice raised in that gap was
+    /// cleared by the previous notice's dismissal — its own timer cancelled
+    /// with it. Every raise and every clear moves the generation on, and a
+    /// dismissal clears only the raise it was armed for. The invalidation stays
+    /// as the ordinary path; this covers the gap it cannot reach.
+    private var micNoticeGeneration = 0
+    private var repeatRequestGeneration = 0
+
     /// Which occupant of the slot under the button wins, in one place.
     ///
     /// The slot can only ever say one thing, and five things want it. Pure so
@@ -1036,9 +1048,12 @@ final class ConversationViewModel: ObservableObject {
     /// by saying it again.
     func showUnresolvedTurnNotice() {
         repeatRequestDismissal?.invalidate()
+        repeatRequestGeneration &+= 1
+        let generation = repeatRequestGeneration
         repeatRequest = StatusNotice(text: strings.didNotCatch, severity: .info)
         repeatRequestDismissal = clock.schedule(after: Self.micNoticeDuration) { [weak self] in
-            self?.clearRepeatRequest()
+            guard let self, self.repeatRequestGeneration == generation else { return }
+            self.clearRepeatRequest()
         }
     }
 
@@ -1046,6 +1061,7 @@ final class ConversationViewModel: ObservableObject {
     /// `clearMicNotice()`: a request to repeat belongs to the listening state
     /// it was raised in, so every path that ends that state calls it.
     func clearRepeatRequest() {
+        repeatRequestGeneration &+= 1
         repeatRequestDismissal?.invalidate()
         repeatRequestDismissal = nil
         repeatRequest = nil
@@ -1056,15 +1072,19 @@ final class ConversationViewModel: ObservableObject {
     /// app is `resumeAfterInterruption()`, after a start has succeeded.
     func showMicNotice() {
         micNoticeDismissal?.invalidate()
+        micNoticeGeneration &+= 1
+        let generation = micNoticeGeneration
         micNotice = StatusNotice(text: strings.micResumed, severity: .info)
         micNoticeDismissal = clock.schedule(after: Self.micNoticeDuration) { [weak self] in
-            self?.clearMicNotice()
+            guard let self, self.micNoticeGeneration == generation else { return }
+            self.clearMicNotice()
         }
     }
 
     /// Take the notice down and cancel its timer. Idempotent, so every path
     /// that ends the resumed state can call it without checking first.
     func clearMicNotice() {
+        micNoticeGeneration &+= 1
         micNoticeDismissal?.invalidate()
         micNoticeDismissal = nil
         micNotice = nil
