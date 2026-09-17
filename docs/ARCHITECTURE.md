@@ -99,8 +99,10 @@ translator session's audio is played.
 
 1. Mic chunks (16kHz PCM; the chunk is whatever the tap delivers — device
    logs of 2026-08-18 count ~11 a second, and since #131 the first buffer's
-   frames and rate are logged once per run and both audio windows are sized
-   in seconds from them) stream to both sessions of the pair. Audio captured
+   frames and rate are logged once per audio path — every run, every rebuilt
+   tap, every converter rebuild (#158) — and both audio windows are sized
+   in seconds from them; a device run of 2026-09-16 measured 1600 frames at
+   16kHz, 100ms) stream to both sessions of the pair. Audio captured
    before the sockets finish connecting is buffered (up to 16s,
    `pendingAudioWindow`) and flushed on connect (SPEC R4). The mic "opens"
    when every session that is still alive has finished its handshake

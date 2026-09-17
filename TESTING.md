@@ -461,12 +461,25 @@ chunk; the tap delivers whatever the hardware does, and the 2026-08-18
 device logs count ~11 buffers a second. Both windows are now stated in
 seconds (16s at launch, 3.2s across a reconnect), sized by `AudioWindow`
 from the first buffer's frames and rate, and the measured chunk is logged
-once per run. Until the first buffer the counts are the old ones exactly.
+once per audio path. Until the first buffer the counts are the old ones exactly.
+
+Once per audio path, not once per service (#158, 2026-09-16). The measurement
+and both caps outlived the run that took them — the view model keeps one
+service across every mute/unmute — so a second run on a smaller chunk kept the
+first run's cap (38 chunks at 1024 frames and 48kHz is 0.8s across a
+reconnect, not 3.2s) and never logged its own. Every run now starts from the
+fallback caps with nothing measured. A rebuild within a run (#129's liveness,
+#87's startup watchdog, #130's echo retry) installs a new tap that can sit on a
+new route, so its first buffer measures again, like a converter rebuild; it
+keeps the caps it has until then, because it can land while a replacement
+queue holds speech that a fallback cap would cut.
 
 | ID | Given | Expect | Rule |
 |---|---|---|---|
 | L1.107 | 3.2s and 16s at 64ms, 21ms and 85ms chunks; a zero duration | 50/250 (the old constants), 150, 38; the fallback never divides by zero | **R4/#131** |
 | L1.107b | The service told its chunk is 4096 frames at 48kHz, then a replacement window with 60 chunks | The rolling window holds 38 (3.2s), newest first; a later chunk report does not re-size the same path | **R4/#131** |
+| L1.124 | Run one measures 4096 frames at 48kHz; stop; the same service starts again, then reports 1024 frames at 48kHz | Before run two's first buffer the caps are the fallback 50/250; after it, 150/750 — run two's own | **R4/#158** |
+| L1.124b | A measured run whose tap stalls and is rebuilt (#129), then the rebuilt tap reports 1024 frames at 48kHz | The rebuild keeps 38 until the new tap reports, then re-sizes to 150/750 | **R4/#158** |
 
 The microphone watched for the whole run (#129, 2026-09-16). The startup
 watchdog (#87) asks only whether the first buffer arrived, so a tap that died
@@ -1466,7 +1479,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 276 XCTest cases (`Tools/l1.sh`, 2026-09-16, on the #134 branch at `main`'s code) bound to the real `TurnLogic`, `TurnCoordinator`, `SpeechEndPolicy`, `FinalizePolicy`, `SessionLiveness`, `SessionRegistry`, `AudioWindow`, `AppVersion`, `UIStrings`, `GeminiLiveTranslationService` and `ConversationViewModel`, with the service's timers driven through `ManualClock` (#153) |
+| L1 | ✅ Built and passing — 301 XCTest cases (`Tools/l1.sh`, 2026-09-16, on the #158 branch) bound to the real `TurnLogic`, `TurnCoordinator`, `SpeechEndPolicy`, `FinalizePolicy`, `SessionLiveness`, `SessionRegistry`, `AudioWindow`, `AppVersion`, `UIStrings`, `GeminiLiveTranslationService` and `ConversationViewModel`, with the service's timers driven through `ManualClock` (#153) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ⚠️ Passing, flaky per case — 89/89 on f800645 (2026-09-14); on 2026-09-16 both that commit and `main` failed one or two cases in about half of the runs, always as a missing or truncated translation, with no code regression behind it (see **Flakiness**). Earlier: 71 assertions across 10 replays (2026-08-10); 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Turn-arbiter branch measured on device 2026-08-18 (build 2.4.75 EC, ~13 min, two sessions): **direction correct on 17 of 17 bubbles** across three pairs — de↔en (3), de↔fr (8) and fr↔en (6). The fr↔en run is the load-bearing one: home was French, and one badly garbled utterance whose partner session reported German (`votes=de×2,fr×3`) still settled home correctly. Speech end held: 19 stops, no commit landed mid-utterance, and the single deferral behaved as designed — a loud mic buffer vetoed the stop, and it sealed 0.25 s later once the mic went quiet. No session errors, no reconnects. **One turn was lost**: a short fragment reached one session, neither session produced a translation, the finalize deferred three times and the turn was then cleared with no bubble and no indication. That is the repair-state gap `docs/TURN_ARBITER_EXPERIMENT.md` names in its own future work, not a coordinator regression — the rejection is the commit gate and the retry ladder is #21's. **Unproven on device:** the #83 resume path (`speaker resumed during the commit window`) did not occur once, so the reconciliation this branch made between #83 and the turn-ID threading rests on L1 alone. Also found, unrelated to this branch: scrolling the language wheel restarted the sessions five times and stopped the microphone five times for one language change (#146). |
