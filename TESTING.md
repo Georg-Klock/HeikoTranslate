@@ -598,6 +598,22 @@ a home with no measured list never overrules.
 | L1.126b | The same shape with Korean speech, streamed past the confirm delay | The live line never resolves home, and commit is not home | **R2/#159** |
 | L1.126c | `readsAsHome` | German with two function words reads as home; Spanish, English and Korean do not; one word is not enough; a home without a list is inert | **#159** |
 
+The crossed shape does not mean the speech was home (#177, 2026-09-17). Each
+session naming the other side's language is the #75/#125 mis-hearing AND a
+plain foreign turn whose partner session mislabels it; on device three English
+turns in a row were refused — twice as the #125 abstention, once as the #137
+echo — with the correct German translation produced and discarded each time.
+`foreignSpeechWitness` separates the two by where the home language sits: in
+the transcripts (home speech) or only in the home session's output (a
+translation of foreign speech).
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.127 | Crossed codes, settle on the partner, foreign transcripts, a real home translation | Commits LEFT/foreign, no abstention | **R2/#177** |
+| L1.127b | The same turn with the settle on home, the partner session echoing its own transcript | Commits LEFT/foreign — neither the crossed shape nor #137 buries the translation | **R2/#177** |
+| L1.127c | The live line on that turn | Resolves `foreignSpoken` and stays there past the confirm delay | **L1.47g/#177** |
+| L1.127d | Home speech in the same crossed shape (both transcripts German) | The witness is silent and the #75 rescue still commits HOME | **#75/#125** |
+
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1
 219/219 and L3 89/89, and both `de_song_lead` fixtures committed

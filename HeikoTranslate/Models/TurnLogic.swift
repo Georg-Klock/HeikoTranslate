@@ -417,6 +417,38 @@ struct TurnLogic {
         return Set(tokens(text).filter { function.contains($0) }).count >= 2
     }
 
+    /// The words say the speech was FOREIGN, whatever the codes did (#177).
+    ///
+    /// `readsAsHome` is the #159 witness read the other way round. The crossed
+    /// shape — each session naming the other side's language — is identical in
+    /// the measured #75/#125 mis-hearing and in a plain foreign turn whose
+    /// partner session lies about the code, so the codes cannot separate them
+    /// and neither can their disagreement. What separates them is where the
+    /// home language appears:
+    ///
+    /// - The mis-hearing (#75/#125): the transcripts are home text. The
+    ///   speaker really did speak home, and the home session's "translation"
+    ///   is that same text round-tripped.
+    /// - Foreign speech (#177, measured on device 2026-09-17): the transcripts
+    ///   are not home text and the home session's OUTPUT is — which is what a
+    ///   genuine translation of foreign speech looks like.
+    ///
+    /// All three conditions are required. The output alone would accept the
+    /// round-trip echo, which is home text too; the round-trip test alone was
+    /// #83. Neither transcript may read as home, because in the crossed shape
+    /// either session may hold the cleaner reading of the same speech.
+    ///
+    /// Inert for a home language with no measured function-word list, like
+    /// every other rule built on `homeFunctionWords` — the refusal then stands
+    /// as it does today (#176).
+    func foreignSpeechWitness(outputs: [Lang: String], inputs: [Lang: String]) -> Bool {
+        let homeText = (outputs[home] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.readsAsHome(homeText, home: home) else { return false }
+        guard !Self.readsAsHome(inputs[home] ?? "", home: home),
+              !Self.readsAsHome(inputs[partner] ?? "", home: home) else { return false }
+        return !Self.isRoundTripEcho(homeText, inputs: inputs)
+    }
+
     static func isRoundTripEcho(_ output: String, inputs: [Lang: String]) -> Bool {
         var heard = Set<String>()
         for text in inputs.values { heard.formUnion(tokens(text)) }
@@ -849,7 +881,14 @@ struct TurnLogic {
         // session's own output (see `homeSettleWithCrossedEvidence`). Without
         // it the size ratio re-decides on every streamed chunk and the
         // direction oscillates against two agreeing witnesses. L1.64.
-        if !homeSettleWithCrossedEvidence, !concordantHomeEvidence(outputs: outputs, inputs: inputs),
+        //
+        // It does not outrank the WORDS (#177). The crossed shape is the same
+        // in a mis-heard home turn and in a foreign turn the partner session
+        // mislabels; `foreignSpeechWitness` is the evidence that tells them
+        // apart, and where it fires this rule has nothing left to protect.
+        // Same gate as commit's, so the two still cannot disagree (L1.47g).
+        if !homeSettleWithCrossedEvidence || foreignSpeechWitness(outputs: outputs, inputs: inputs),
+           !concordantHomeEvidence(outputs: outputs, inputs: inputs),
            Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
                                       spokenLang: spokenLang,
                                       partnerHomeEvidence: partnerHeardHome) {
@@ -1135,8 +1174,15 @@ struct TurnLogic {
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let partnerHeardSomething = !(inputs[partner] ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        //
+        // And it yields to `foreignSpeechWitness` for the mirror reason (#177):
+        // the two accounts contradict each other only in the CODES. When the
+        // words themselves say foreign — no home text in either transcript, a
+        // home translation that is not the round-trip echo — there is no
+        // contradiction to abstain over, and the turn commits below.
         if crossedEvidence, spokenLang == partner,
            homeHeardSomething, partnerHeardSomething,
+           !foreignSpeechWitness(outputs: outputs, inputs: inputs),
            !partnerEvidenceOverridesForeignVeto(outputs: outputs, inputs: inputs) {
             direction = nil
             abstained = true
@@ -1148,7 +1194,8 @@ struct TurnLogic {
         // share `homeIsRealTranslation` at all: the live line and the
         // committed bubble must not be able to disagree about the side
         // (L1.47g's doctrine). L1.64b.
-        if !homeSettleWithCrossedEvidence, !concordantHomeEvidence(outputs: outputs, inputs: inputs),
+        if !homeSettleWithCrossedEvidence || foreignSpeechWitness(outputs: outputs, inputs: inputs),
+           !concordantHomeEvidence(outputs: outputs, inputs: inputs),
            Self.homeIsRealTranslation(outputs, inputs: inputs, home: home, partner: partner,
                                       spokenLang: spokenLang,
                                       partnerHomeEvidence: partnerHeardHome) {
