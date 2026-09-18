@@ -613,6 +613,8 @@ translation of foreign speech).
 | L1.127b | The same turn with the settle on home, the partner session echoing its own transcript | Commits LEFT/foreign — neither the crossed shape nor #137 buries the translation | **R2/#177** |
 | L1.127c | The live line on that turn | Resolves `foreignSpoken` and stays there past the confirm delay | **L1.47g/#177** |
 | L1.127d | Home speech in the same crossed shape (both transcripts German) | The witness is silent and the #75 rescue still commits HOME | **#75/#125** |
+| L1.127e | Both sessions mis-hearing home speech into foreign words | Commits LEFT — the known limit, pinned; only an independent witness can separate it (#179) | **#179** |
+| L1.127f | A three-word German prefix mid-stream | The witness stays silent until there are enough words to read; the live line resolves only then | **L1.64/#177** |
 
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1

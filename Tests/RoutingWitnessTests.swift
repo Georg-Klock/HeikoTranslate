@@ -481,4 +481,50 @@ final class CrossedCodesForeignSpeechTests: XCTestCase {
         XCTAssertEqual(turn.commit(inputs: inputs, outputs: outputs)?.isHome, true,
                        "the #75 rescue is unchanged — got \(turn.lastRejectReason ?? "no bubble")")
     }
+
+    /// L1.127e — the known limit, pinned rather than claimed away (#179).
+    ///
+    /// When BOTH sessions mis-hear home speech into foreign words, every text
+    /// test above reads the turn as foreign: the transcripts are not home text,
+    /// the home session's German is not an echo of them, and the partner
+    /// session's "translation" of its own mis-hearing scores as one. Nothing in
+    /// the turn distinguishes it from the measured #177 shape, so it commits
+    /// LEFT where it used to commit RIGHT.
+    ///
+    /// What is NOT at stake is the words on screen: both lines are built from
+    /// the mis-transcription either way, so the turn was already wrong before
+    /// the side changed. An independent witness (#135/#169) is what could
+    /// separate these; this case exists so the limit is visible and fails
+    /// loudly if anyone believes otherwise.
+    func testL1_127e_bothSessionsMishearingHomeSpeechIsNotSeparable() {
+        var turn = crossedTurn(settle: .de)
+        let misheard = "He have another question about the deposit, right?"
+        let inputs: [TurnLogic.Lang: String] = [.de: misheard, .en: misheard]
+        let outputs: [TurnLogic.Lang: String] = [
+            .de: "Ich habe noch eine Frage zur Anzahlung.",
+            .en: "I have another question about the down payment."
+        ]
+        XCTAssertTrue(turn.foreignSpeechWitness(outputs: outputs, inputs: inputs),
+                      "the text evidence is identical to a genuine foreign turn")
+        XCTAssertEqual(turn.commit(inputs: inputs, outputs: outputs)?.isHome, false,
+                       "so it commits LEFT — the limit, not a claim that this is foreign speech")
+    }
+
+    /// L1.127f — the witness is evaluated on every streamed chunk, so it may
+    /// not answer off text too short to judge: a German prefix clears the
+    /// two-function-word bar before it reaches the echo test's floor. The live
+    /// line stays undecided until there is enough of the turn to read, and
+    /// only then resolves foreign (L1.64's oscillation).
+    func testL1_127f_thePartialTurnDoesNotResolveEarly() {
+        var turn = crossedTurn(settle: .de)
+        let partial: [TurnLogic.Lang: String] = [.de: "Ich bin nicht", .en: "I'm"]
+        XCTAssertFalse(turn.foreignSpeechWitness(outputs: partial, inputs: [.de: "I'm", .en: "I'm"]),
+                       "three words are not a reading of the turn")
+        turn.noteOutputs(partial, inputs: [.de: "I'm", .en: "I'm"], at: t(9))
+        XCTAssertNil(turn.direction)
+
+        let (inputs, outputs) = foreignTurnText
+        turn.noteOutputs(outputs, inputs: inputs, at: t(10))
+        XCTAssertEqual(turn.direction, .foreignSpoken, "and resolves once the whole turn is there")
+    }
 }

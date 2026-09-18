@@ -446,7 +446,26 @@ struct TurnLogic {
         guard Self.readsAsHome(homeText, home: home) else { return false }
         guard !Self.readsAsHome(inputs[home] ?? "", home: home),
               !Self.readsAsHome(inputs[partner] ?? "", home: home) else { return false }
-        return !Self.isRoundTripEcho(homeText, inputs: inputs)
+        // Enough words on both sides for the echo test to be able to answer.
+        // `isRoundTripEcho` returns false below its own 4-token floors, so
+        // without this the witness would read "not an echo" off text too short
+        // to judge — and a streamed home output crosses the two-function-word
+        // bar before it crosses that floor, which is how a partial echo would
+        // fire the witness for a moment and flip the live line (#75/L1.64).
+        var heard = Set<String>()
+        for text in inputs.values { heard.formUnion(Self.tokens(text)) }
+        guard Self.tokens(homeText).count >= Self.echoMinTokens,
+              heard.count >= Self.echoMinTokens else { return false }
+        guard !Self.isRoundTripEcho(homeText, inputs: inputs) else { return false }
+        // And the corroboration, the same shape `homeIsRealTranslation` asks of
+        // its own echo test: one session's account is not enough. Speech in the
+        // partner's language leaves that session nothing to translate, so it
+        // repeats what it heard — the #137 echo, present on all three measured
+        // turns. Both sessions mis-hearing home speech into foreign words while
+        // the home session writes a fresh German sentence would otherwise
+        // satisfy everything above; there the partner session has something to
+        // translate and does, so this is what separates them.
+        return partnerEchoedOwnTranscript(outputs: outputs, inputs: inputs)
     }
 
     static func isRoundTripEcho(_ output: String, inputs: [Lang: String]) -> Bool {

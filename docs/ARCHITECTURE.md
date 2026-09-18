@@ -216,7 +216,13 @@ translator session's audio is played.
      crossed shape's claim over the foreign branch, in the live line and at
      commit together. Measured 2026-09-17: three consecutive English turns
      refused on de↔en with the correct German translation produced each time.
-     Inert for a home with no measured function-word list (#176).
+     The witness needs enough words for the echo test to answer and the partner
+     session's own echo as corroboration, so a partial stream cannot fire it
+     (L1.64's oscillation). Both sessions mis-hearing home speech into foreign
+     words satisfies every text test and is the documented limit (#179): the
+     bubble is built from the mis-transcription either way, and only an
+     independent witness (#135) can tell the two apart. Inert for a home with no
+     measured function-word list (#176).
    - **The partner echoed** — the partner session's output repeats what that
      session itself heard while the home session's votes say it heard the
      partner language. That is foreign speech echoed back, and the home
