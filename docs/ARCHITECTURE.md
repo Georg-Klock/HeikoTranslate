@@ -206,6 +206,23 @@ translator session's audio is played.
      either, so codes and "not an echo" alone let one lying code stream put
      Spanish on the home side. With any of the three missing — or for a home
      with no measured function-word list — the veto stands.
+   - **The two sessions named each other's languages** — the crossed shape. It
+     is the same shape whether the home session misheard home speech (#75/#125)
+     or the partner session mislabelled foreign speech (#177), so the codes and
+     their disagreement cannot separate them; where the home language appears
+     can. Foreign speech leaves no home text in either transcript while the home
+     session's output IS home text and is not the round-trip echo — the shape of
+     a genuine translation. That witness lifts the #125 abstention and the
+     crossed shape's claim over the foreign branch, in the live line and at
+     commit together. Measured 2026-09-17: three consecutive English turns
+     refused on de↔en with the correct German translation produced each time.
+     The witness needs enough words for the echo test to answer and the partner
+     session's own echo as corroboration, so a partial stream cannot fire it
+     (L1.64's oscillation). Both sessions mis-hearing home speech into foreign
+     words satisfies every text test and is the documented limit (#179): the
+     bubble is built from the mis-transcription either way, and only an
+     independent witness (#135) can tell the two apart. Inert for a home with no
+     measured function-word list (#176).
    - **The partner echoed** — the partner session's output repeats what that
      session itself heard while the home session's votes say it heard the
      partner language. That is foreign speech echoed back, and the home
