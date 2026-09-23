@@ -25,6 +25,21 @@ import Foundation
 /// its transcript has enough words to classify, so the hub holds the reply
 /// until it knows, then flushes it to the right proxy. The service holds
 /// audio until commit anyway, so the wait costs no playback time.
+/// What a hub drives: one connection (or a pair of them, for Soniox) that
+/// hears the whole conversation.
+protocol InterpreterBackend: AnyObject {
+    func connect()
+    func close()
+    func sendAudio(_ pcm16kData: Data)
+}
+
+extension RealtimeSocketSession: InterpreterBackend {}
+
+/// A backend's events. `language` is set when the backend KNOWS which of the
+/// pair an output event is in (Soniox labels every token); the hub then
+/// routes it directly. Nil means "work it out from the reply's transcript".
+typealias InterpreterEventSink = (_ event: GeminiLiveSession.Event, _ language: String?) -> Void
+
 final class InterpreterHub {
 
     // MARK: Registry — one live hub per pair
@@ -32,15 +47,20 @@ final class InterpreterHub {
     private static let registryLock = NSLock()
     private static var live: [String: InterpreterHub] = [:]
 
-    static func proxy(target: String, partner: String, languageSet: [String], apiKey: String,
-                      onEvent: @escaping (GeminiLiveSession.Event) -> Void) -> InterpreterProxy {
-        let key = [target, partner].sorted().joined(separator: "|")
+    /// `makeBackend` builds the connection the first time a pair's hub is
+    /// created; the second side of the pair attaches to that hub.
+    static func proxy(engine: TranslationEngine, target: String, partner: String,
+                      onEvent: @escaping (GeminiLiveSession.Event) -> Void,
+                      makeBackend: @escaping (_ pair: [String], _ sink: @escaping InterpreterEventSink) -> InterpreterBackend)
+        -> InterpreterProxy {
+        let pair = [target, partner].sorted()
+        let key = engine.rawValue + "|" + pair.joined(separator: "|")
         registryLock.lock()
         let hub: InterpreterHub
         if let existing = live[key], !existing.isDead {
             hub = existing
         } else {
-            hub = InterpreterHub(key: key, pair: [target, partner].sorted(), languageSet: languageSet, apiKey: apiKey)
+            hub = InterpreterHub(key: key, pair: pair, makeBackend: makeBackend)
             live[key] = hub
         }
         registryLock.unlock()
@@ -58,7 +78,7 @@ final class InterpreterHub {
     private let key: String
     private let pair: [String]
     private let lock = NSLock()
-    private var socket: RealtimeSocketSession!
+    private var socket: InterpreterBackend!
     private var proxies: [String: InterpreterProxy] = [:]
     private var started = false
     private var ready = false
@@ -71,12 +91,11 @@ final class InterpreterHub {
 
     private var isDead: Bool { lock.lock(); defer { lock.unlock() }; return dead }
 
-    private init(key: String, pair: [String], languageSet: [String], apiKey: String) {
+    private init(key: String, pair: [String],
+                 makeBackend: (_ pair: [String], _ sink: @escaping InterpreterEventSink) -> InterpreterBackend) {
         self.key = key
         self.pair = pair
-        socket = RealtimeSocketSession(
-            dialect: OpenAIInterpreterDialect(pair: pair, languageSet: languageSet),
-            apiKey: apiKey) { [weak self] event in self?.handle(event) }
+        socket = makeBackend(pair) { [weak self] event, language in self?.handle(event, language: language) }
     }
 
     // MARK: Proxy calls
@@ -117,10 +136,17 @@ final class InterpreterHub {
 
     // MARK: Socket events
 
-    private func handle(_ event: GeminiLiveSession.Event) {
+    private func handle(_ event: GeminiLiveSession.Event, language: String? = nil) {
         switch event {
         case .audioChunk, .outputTranscript:
-            route(event)
+            if let language {
+                // Labelled by the backend: straight to that side. The
+                // speaker's vote came from the backend too, with the words.
+                lock.lock(); let target = proxies[language]; lock.unlock()
+                target?.onEvent(event)
+            } else {
+                route(event)
+            }
         case .turnComplete:
             finishReply()
             broadcast(.turnComplete)
@@ -191,7 +217,7 @@ final class InterpreterHub {
     /// network.
     static func makeForTesting(pair: [String], onEvent: @escaping (String, GeminiLiveSession.Event) -> Void)
         -> (hub: InterpreterHub, proxies: [InterpreterProxy]) {
-        let hub = InterpreterHub(key: "test", pair: pair.sorted(), languageSet: pair, apiKey: "")
+        let hub = InterpreterHub(key: "test", pair: pair.sorted()) { _, _ in NullBackend() }
         let proxies = pair.map { lang in InterpreterProxy(hub: hub, language: lang) { onEvent(lang, $0) } }
         hub.lock.lock()
         for p in proxies { hub.proxies[p.language] = p }
@@ -199,7 +225,12 @@ final class InterpreterHub {
         hub.lock.unlock()
         return (hub, proxies)
     }
-    func simulate(_ event: GeminiLiveSession.Event) { handle(event) }
+    func simulate(_ event: GeminiLiveSession.Event, language: String? = nil) { handle(event, language: language) }
+    private final class NullBackend: InterpreterBackend {
+        func connect() {}
+        func close() {}
+        func sendAudio(_ pcm16kData: Data) {}
+    }
     #endif
 
     /// Both sides, always in pair order. Dictionary order changes from run

@@ -32,6 +32,7 @@ SESSION_SOURCES=(
   HeikoTranslate/Services/RealtimeSocketSession.swift
   HeikoTranslate/Services/RealtimeDialects.swift
   HeikoTranslate/Services/InterpreterHub.swift
+  HeikoTranslate/Services/SonioxBackend.swift
   HeikoTranslate/Models/TranslationEngine.swift
   HeikoTranslate/Models/TranscriptLanguageWitness.swift
   HeikoTranslate/Models/PCMResampler.swift

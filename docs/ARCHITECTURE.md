@@ -164,6 +164,26 @@ This engine is turn-based: it translates only after the speaker pauses.
 
 Cost: $0.019/min in and $0.077/min out, for one session instead of two.
 
+**Soniox (`soniox`, 2026-09-23).** A different shape again, on the same hub:
+one Soniox speech-to-text stream in `two_way` translation mode transcribes
+and translates both directions, and a second connection speaks the
+translations with Soniox's own voice (`Services/SonioxBackend.swift`).
+
+- **Direction is labelled, not inferred.** Every final token is tagged
+  `original` or `translation`, with its `language`. The original tokens'
+  language is the speaker's vote. Translation tokens and their voice audio go
+  straight to their language's side, skipping the hub's classification.
+- **Only final tokens are passed on.** Soniox revises non-final tokens, and
+  the service appends every transcript it receives.
+- **One voice stream per utterance and language.** The stream is opened by
+  the first translated text and closed at Soniox's `<end>` token. A failed
+  voice stream is logged and does not end the session; the text still arrived.
+- **Keepalives.** Both connections get a keepalive every 10s, because the
+  silence gate can leave them without audio for minutes.
+- **Cost.** About $0.12/hour of audio for speech-to-text plus translation, and
+  about $0.70 per hour of generated voice (2026-09): roughly a tenth of OpenAI.
+- **Not yet verified against the live API:** no `SONIOX_API_KEY` in this build.
+
 **Server `error` frames** are fatal only before the session is ready. After
 that they are logged and the session continues, because these protocols report
 a rejected client event (for example a history delete) that way without closing

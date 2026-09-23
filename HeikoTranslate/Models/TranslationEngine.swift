@@ -18,6 +18,10 @@ import Foundation
 /// - `openAIRealtime`: ONE `gpt-realtime-2` session interpreting both
 ///   directions, told so by its instructions (`InterpreterHub`). Half the
 ///   sessions of `openAI`; who spoke is read from the language of its reply.
+/// - `soniox`: ONE Soniox stream transcribing and translating both ways
+///   (`two_way`), every token labelled with its language, spoken by Soniox's
+///   own voice (`SonioxBackend`). Text first, then a synthetic voice, at a
+///   fraction of the others' price.
 /// - `grok`: xAI's voice agent (`grok-voice-latest`), a general speech model
 ///   told by its instructions to act as a one-way interpreter. Turn-based
 ///   (server VAD), so its output arrives after the speaker pauses rather
@@ -26,6 +30,7 @@ enum TranslationEngine: String, CaseIterable, Identifiable {
     case gemini
     case openAI = "openai"
     case openAIRealtime = "openai-realtime"
+    case soniox
     case grok
 
     var id: String { rawValue }
@@ -43,6 +48,7 @@ enum TranslationEngine: String, CaseIterable, Identifiable {
         case .gemini: return "Google Gemini"
         case .openAI: return "OpenAI Translate"
         case .openAIRealtime: return "OpenAI Realtime"
+        case .soniox: return "Soniox"
         case .grok: return "Grok"
         }
     }
@@ -52,6 +58,7 @@ enum TranslationEngine: String, CaseIterable, Identifiable {
         switch self {
         case .gemini: return "GEMINI_API_KEY"
         case .openAI, .openAIRealtime: return "OPENAI_API_KEY"
+        case .soniox: return "SONIOX_API_KEY"
         case .grok: return "XAI_API_KEY"
         }
     }

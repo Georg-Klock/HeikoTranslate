@@ -19,8 +19,14 @@ enum LiveSessionFactory {
             return RealtimeSocketSession(dialect: OpenAITranslateDialect(target: target, languageSet: languageSet),
                                          apiKey: apiKey, onEvent: onEvent)
         case .openAIRealtime:
-            return InterpreterHub.proxy(target: target, partner: partner, languageSet: languageSet,
-                                        apiKey: apiKey, onEvent: onEvent)
+            return InterpreterHub.proxy(engine: engine, target: target, partner: partner, onEvent: onEvent) { pair, sink in
+                RealtimeSocketSession(dialect: OpenAIInterpreterDialect(pair: pair, languageSet: languageSet),
+                                      apiKey: apiKey) { sink($0, nil) }
+            }
+        case .soniox:
+            return InterpreterHub.proxy(engine: engine, target: target, partner: partner, onEvent: onEvent) { pair, sink in
+                SonioxBackend(pair: pair, apiKey: apiKey, sink: sink)
+            }
         case .grok:
             return RealtimeSocketSession(dialect: GrokVoiceDialect(target: target, languageSet: languageSet),
                                          apiKey: apiKey, onEvent: onEvent)

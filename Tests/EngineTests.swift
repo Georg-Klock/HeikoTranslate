@@ -345,6 +345,77 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(got.count, 1, "delivered to exactly one side at the end of the reply")
     }
 
+    // MARK: - Soniox
+
+    private func token(_ text: String, final: Bool = true, status: String = "original",
+                       language: String? = nil) -> [String: Any] {
+        var t: [String: Any] = ["text": text, "is_final": final, "translation_status": status]
+        if let language { t["language"] = language }
+        return t
+    }
+
+    /// L1.137 — Soniox's tokens: finals only, originals are the speaker's
+    /// words and vote, translations go to their language's voice stream, and
+    /// `<end>` closes the utterance.
+    ///
+    /// Non-final tokens are revised by later messages, and the service
+    /// appends every transcript it receives, so a non-final passed on would
+    /// stay in the bubble after Soniox corrected it.
+    func testL1_137_sonioxTokensBecomeWordsVotesAndVoice() {
+        var p = SonioxTokenParser(pair: ["de", "en"])
+        XCTAssertEqual(p.consume([token("Wo ist", final: false, language: "de")]), [],
+                       "a non-final is a draft, not a transcript")
+        let first = p.consume([
+            token("Wo", language: "de"), token(" ist", language: "de"),
+            token("Where", status: "translation", language: "en"),
+            token(" is", status: "translation", language: "en"),
+        ])
+        XCTAssertEqual(first, [
+            .spoken(text: "Wo ist", language: "de"),
+            .translated(text: "Where is", language: "en"),
+            .speak(streamID: "u0-en", text: "Where is", language: "en", opens: true),
+        ])
+        let rest = p.consume([
+            token(" der Bahnhof?", language: "de"),
+            token(" the station?", status: "translation", language: "en"),
+            token("<end>"),
+        ])
+        XCTAssertEqual(rest, [
+            .spoken(text: " der Bahnhof?", language: "de"),
+            .translated(text: " the station?", language: "en"),
+            .speak(streamID: "u0-en", text: " the station?", language: "en", opens: false),
+            .endSpeech(streamID: "u0-en"),
+            .utteranceEnded,
+        ])
+        // The reply opens a new stream, in the other language.
+        let reply = p.consume([token("Right", language: "en"),
+                               token("Rechts", status: "translation", language: "de")])
+        XCTAssertEqual(reply.last, .speak(streamID: "u1-de", text: "Rechts", language: "de", opens: true))
+        XCTAssertEqual(SonioxTokenParser.language(ofStream: "u1-de"), "de")
+    }
+
+    /// L1.137b — a translation labelled outside the pair is dropped rather
+    /// than routed to a side that does not exist.
+    func testL1_137b_sonioxIgnoresLanguagesOutsideThePair() {
+        var p = SonioxTokenParser(pair: ["de", "en"])
+        XCTAssertEqual(p.consume([token("Hola", status: "translation", language: "es")]), [])
+    }
+
+    /// L1.137c — a labelled output skips the hub's classification: it goes
+    /// straight to its side, with no vote of the hub's own.
+    func testL1_137c_labelledOutputGoesStraightToItsSide() {
+        var got: [String] = []
+        let (hub, _) = InterpreterHub.makeForTesting(pair: ["de", "en"]) { lang, event in
+            switch event {
+            case .audioChunk: got.append("\(lang):audio")
+            case .inputLanguage: got.append("\(lang):vote")
+            default: break
+            }
+        }
+        hub.simulate(.audioChunk(Data([1])), language: "de")
+        XCTAssertEqual(got, ["de:audio"])
+    }
+
     // MARK: - The switch
 
     /// L1.133 — choosing an engine mid-conversation switches the sessions
