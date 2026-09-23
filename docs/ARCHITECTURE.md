@@ -139,6 +139,31 @@ people talk and nearly everything while nobody does. Gemini is not gated:
 input is the cheap half of its bill, and its behaviour was measured on a
 continuous stream.
 
+**One-session interpreter (`openAIRealtime`, 2026-09-23).** A single
+`gpt-realtime-2` session told to interpret both ways, instead of one
+fixed-target session per side (`Services/InterpreterHub.swift`):
+- Each of the two sessions the service builds is a proxy onto one shared
+  connection. Only one proxy's copy of each mic chunk is sent.
+- A reply is held until its transcript shows which of the pair it is in, then
+  delivered to that language's side, with the other language cast as the
+  speaker's vote on both sides. The translating side talks and the other
+  stays silent, which is the shape `TurnLogic` already reads.
+
+Measured before building it: the API refuses audio and text output together,
+and with audio only, a language label asked of the model is spoken aloud. So
+the language is read from the reply, not asked for.
+
+This engine is turn-based: it translates only after the speaker pauses.
+- L3 went 86/89. The failures were all `de_pause`: two sentences with a breath
+  between them became two correct bubbles instead of one, because the input
+  transcript arrives per sentence, after it ends, so the turn logic commits
+  the first before the second's words exist.
+- A 58-word sentence committed about 10s after the speaker finished.
+- `semantic_vad` (low eagerness) lost two whole English turns and was
+  reverted.
+
+Cost: $0.019/min in and $0.077/min out, for one session instead of two.
+
 **Server `error` frames** are fatal only before the session is ready. After
 that they are logged and the session continues, because these protocols report
 a rejected client event (for example a history delete) that way without closing

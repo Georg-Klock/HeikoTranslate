@@ -31,6 +31,7 @@ SESSION_SOURCES=(
   # Grok dialects with the factory, and what the dialects need on the side.
   HeikoTranslate/Services/RealtimeSocketSession.swift
   HeikoTranslate/Services/RealtimeDialects.swift
+  HeikoTranslate/Services/InterpreterHub.swift
   HeikoTranslate/Models/TranslationEngine.swift
   HeikoTranslate/Models/TranscriptLanguageWitness.swift
   HeikoTranslate/Models/PCMResampler.swift

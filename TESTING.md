@@ -637,6 +637,8 @@ read off the transcript, two wire dialects and the switch on the sheet
 | L1.132b | A Grok session with no key | An error naming the missing entry | **setup** |
 | L1.135 | 10s of room noise, then one loud chunk | Nothing sent during the noise; the loud chunk goes out behind 1s of pre-roll, oldest first | **cost / R4** |
 | L1.135b | Speech, a 2s pause, speech, then 10s quiet | The pause is sent whole; the tail is exactly the 4s hangover; less is sent than heard | **cost / R5** |
+| L1.136 | One-session interpreter: reply audio before its words, then an English transcript; then a German reply | Held until known; delivered to the English side only; a `de` vote on both sides; the next reply routes to German | **R2 / one session** |
+| L1.136b | A one-word reply ("Ja") | Held mid-reply, delivered to exactly one side at the reply's end | **R4** |
 | L1.133 | Engine changed twice while listening, then the sheet closed | Persisted at once, one restart on dismiss, survives a relaunch | **#146** |
 | L1.133b | Engine changed and changed back; an unknown stored engine | No restart; falls back to Gemini | **#146** |
 

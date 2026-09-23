@@ -15,6 +15,9 @@ import Foundation
 ///   source auto-detected — but it reports no language code, so the input
 ///   language is read off its transcript on the device
 ///   (`TranscriptLanguageWitness`).
+/// - `openAIRealtime`: ONE `gpt-realtime-2` session interpreting both
+///   directions, told so by its instructions (`InterpreterHub`). Half the
+///   sessions of `openAI`; who spoke is read from the language of its reply.
 /// - `grok`: xAI's voice agent (`grok-voice-latest`), a general speech model
 ///   told by its instructions to act as a one-way interpreter. Turn-based
 ///   (server VAD), so its output arrives after the speaker pauses rather
@@ -22,6 +25,7 @@ import Foundation
 enum TranslationEngine: String, CaseIterable, Identifiable {
     case gemini
     case openAI = "openai"
+    case openAIRealtime = "openai-realtime"
     case grok
 
     var id: String { rawValue }
@@ -37,7 +41,8 @@ enum TranslationEngine: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .gemini: return "Google Gemini"
-        case .openAI: return "OpenAI"
+        case .openAI: return "OpenAI Translate"
+        case .openAIRealtime: return "OpenAI Realtime"
         case .grok: return "Grok"
         }
     }
@@ -46,7 +51,7 @@ enum TranslationEngine: String, CaseIterable, Identifiable {
     var secretsKey: String {
         switch self {
         case .gemini: return "GEMINI_API_KEY"
-        case .openAI: return "OPENAI_API_KEY"
+        case .openAI, .openAIRealtime: return "OPENAI_API_KEY"
         case .grok: return "XAI_API_KEY"
         }
     }

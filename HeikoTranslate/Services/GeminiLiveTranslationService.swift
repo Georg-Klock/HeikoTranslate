@@ -199,6 +199,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         #endif
         return LiveSessionFactory.make(engine: engine,
                                        target: lang.rawValue,
+                                       partner: activePair.subtracting([lang]).first?.rawValue ?? lang.rawValue,
                                        languageSet: Lang.allCases.map(\.rawValue),
                                        apiKey: apiKey,
                                        onEvent: onEvent)

@@ -32,9 +32,10 @@ func loadAPIKey() -> String {
 
 /// A session on `harnessEngine` — through the app's own factory, so a
 /// harness exercises exactly the wire path the app would pick.
-func makeHarnessSession(target: String, apiKey: String,
+func makeHarnessSession(target: String, partner: String? = nil, apiKey: String,
                         onEvent: @escaping (GeminiLiveSession.Event) -> Void) -> LiveTranslationSocket {
     LiveSessionFactory.make(engine: harnessEngine, target: target,
+                            partner: partner ?? (target == "de" ? "en" : "de"),
                             languageSet: ["de", "en", "es", "ko"],
                             apiKey: apiKey, onEvent: onEvent)
 }

@@ -4,8 +4,11 @@ import Foundation
 /// one place an engine name turns into a wire protocol — the service and the
 /// harnesses both come through here, so the harnesses test what ships.
 enum LiveSessionFactory {
+    /// `partner` is the other language of the pair. Only the one-session
+    /// engine needs it: its session serves both sides.
     static func make(engine: TranslationEngine,
                      target: String,
+                     partner: String,
                      languageSet: [String],
                      apiKey: String,
                      onEvent: @escaping (GeminiLiveSession.Event) -> Void) -> LiveTranslationSocket {
@@ -15,6 +18,9 @@ enum LiveSessionFactory {
         case .openAI:
             return RealtimeSocketSession(dialect: OpenAITranslateDialect(target: target, languageSet: languageSet),
                                          apiKey: apiKey, onEvent: onEvent)
+        case .openAIRealtime:
+            return InterpreterHub.proxy(target: target, partner: partner, languageSet: languageSet,
+                                        apiKey: apiKey, onEvent: onEvent)
         case .grok:
             return RealtimeSocketSession(dialect: GrokVoiceDialect(target: target, languageSet: languageSet),
                                          apiKey: apiKey, onEvent: onEvent)

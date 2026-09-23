@@ -296,6 +296,55 @@ final class EngineTests: XCTestCase {
         XCTAssertLessThan(gate.sentBytes, gate.offeredBytes)
     }
 
+    // MARK: - One-session interpreter
+
+    /// L1.136 — one session serves both sides: a reply goes to the side of
+    /// the language it is IN, only once that language is known, and names
+    /// the speaker's language as a vote on both sides.
+    ///
+    /// The service expects two sessions and reads direction from which one
+    /// translated. The hub reproduces that shape from one connection: a
+    /// German speaker's English reply must arrive on the English side only,
+    /// held until its transcript says it is English.
+    func testL1_136_interpreterRoutesTheReplyToItsLanguage() {
+        var got: [String] = []
+        let (hub, _) = InterpreterHub.makeForTesting(pair: ["de", "en"]) { lang, event in
+            switch event {
+            case .audioChunk: got.append("\(lang):audio")
+            case .outputTranscript(let t): got.append("\(lang):out(\(t))")
+            case .inputLanguage(let c): got.append("\(lang):vote(\(c))")
+            case .turnComplete: got.append("\(lang):done")
+            default: break
+            }
+        }
+        hub.simulate(.audioChunk(Data([1, 2])))            // before any words: held
+        XCTAssertTrue(got.isEmpty, "audio before the language is known is held, not guessed")
+        hub.simulate(.outputTranscript("I'm doing well, thank you."))
+        XCTAssertEqual(got, ["de:vote(de)", "en:vote(de)", "en:audio", "en:out(I'm doing well, thank you.)"])
+        got = []
+        hub.simulate(.audioChunk(Data([3])))
+        hub.simulate(.turnComplete)
+        XCTAssertEqual(got.filter { !$0.hasSuffix("done") }, ["en:audio"], "the rest of the reply follows directly")
+
+        // The next reply starts fresh and can go the other way.
+        got = []
+        hub.simulate(.outputTranscript("Wo ist der Bahnhof, bitte?"))
+        XCTAssertEqual(got, ["de:vote(en)", "en:vote(en)", "de:out(Wo ist der Bahnhof, bitte?)"])
+    }
+
+    /// L1.136b — a reply too short to classify mid-stream still goes
+    /// somewhere at its end, on the better of the two readings.
+    func testL1_136b_aShortReplyIsRoutedAtItsEnd() {
+        var got: [String] = []
+        let (hub, _) = InterpreterHub.makeForTesting(pair: ["de", "en"]) { lang, event in
+            if case .outputTranscript = event { got.append(lang) }
+        }
+        hub.simulate(.outputTranscript("Ja"))
+        XCTAssertTrue(got.isEmpty)
+        hub.simulate(.turnComplete)
+        XCTAssertEqual(got.count, 1, "delivered to exactly one side at the end of the reply")
+    }
+
     // MARK: - The switch
 
     /// L1.133 — choosing an engine mid-conversation switches the sessions

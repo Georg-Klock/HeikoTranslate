@@ -230,7 +230,9 @@ final class ReplayRunner {
 
     func run(pcm: Data) {
         for lang in [home, partner] {
-            let session = makeHarnessSession(target: lang.rawValue, apiKey: apiKey) { [weak self] event in
+            let session = makeHarnessSession(target: lang.rawValue,
+                                             partner: (lang == home ? partner : home).rawValue,
+                                             apiKey: apiKey) { [weak self] event in
                 guard let self else { return }
                 self.q.async { self.handle(lang, event) }
             }

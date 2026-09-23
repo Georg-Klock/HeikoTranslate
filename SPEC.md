@@ -199,7 +199,8 @@ link App Review 5.1.1(i) requires, placed here so the one-button screen
 stays one button (#91).
 
 A **Übersetzungsdienst** row picks the engine the sessions run on: Google
-Gemini (the default), OpenAI or Grok. The options are vendor names and are
+Gemini (the default), OpenAI Translate (two sessions), OpenAI Realtime (one
+session interpreting both ways) or Grok. The options are vendor names and are
 shown untranslated in every UI language. It follows the wheels' rule: the
 choice is remembered at once and takes effect when the sheet closes, so
 switching mid-conversation restarts the translation exactly once, and closing

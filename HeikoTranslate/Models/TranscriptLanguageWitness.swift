@@ -60,6 +60,15 @@ struct TranscriptLanguageWitness {
         classify(text, candidates: candidates, with: NLLanguageRecognizer())
     }
 
+    /// The better-scoring candidate however unsure, for a caller that must
+    /// route text SOMEWHERE (the interpreter hub at the end of a reply).
+    static func best(_ text: String, candidates: [String]) -> String? {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        let hypotheses = recognizer.languageHypotheses(withMaximum: 100)
+        return candidates.max { (hypotheses[NLLanguage(rawValue: $0)] ?? 0) < (hypotheses[NLLanguage(rawValue: $1)] ?? 0) }
+    }
+
     /// The best-scoring CANDIDATE, if it is a confident one.
     ///
     /// `languageConstraints` looks like the way to do this and is not: measured
