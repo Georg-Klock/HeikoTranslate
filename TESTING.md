@@ -625,7 +625,7 @@ read off the transcript, two wire dialects and the switch on the sheet
 |---|---|---|---|
 | L1.128 | A 1600-sample tone resampled 16k→24k whole, and again in uneven chunks down to 1 sample | Identical output; 3:2 length ± the held-back seam sample | **OpenAI input** |
 | L1.128b | A constant signal | Stays exactly constant | **OpenAI input** |
-| L1.129 | A sentence in each of de/en/es/ko; a two-letter fragment | Each named correctly; the fragment abstains | **R2 witness** |
+| L1.129 | A sentence in each of de/en/es/ko; a two-letter fragment; filler the recognizer calls Dutch or Polish | Each named correctly; the fragment abstains; filler votes one of the four or nothing (`languageConstraints` alone let `fi`/`id` through at L3) | **R2 witness / #125** |
 | L1.129b | English, then German after a pause longer than `utteranceGap` | The German votes `de`, not the English it followed | **R2 witness** |
 | L1.130 | OpenAI setup and one audio chunk | Translation endpoint, bearer auth, `output.language` = target, audio sent at 24kHz | **OpenAI wire** |
 | L1.130b | OpenAI's input/output transcript, audio, `session.closed` and `error` frames | A language vote ahead of the input transcript; `serverEnding`; `serverError` | **OpenAI wire / R7** |
@@ -1104,9 +1104,16 @@ builds its sessions through the app's own `LiveSessionFactory`, so
 `ENGINE=openai Tools/l2probe.sh de "Where is the train station?"` and
 `ENGINE=grok Tools/l3replay.sh` exercise exactly what the sheet's picker
 would run. The key comes from the engine's `Secrets.plist` entry
-(`OPENAI_API_KEY`, `XAI_API_KEY`). As of 2026-09-23 neither non-Gemini
-engine has been run against the live API: the wire shapes come from vendor
-documentation, and L2 on each is the first thing owed once keys exist.
+(`OPENAI_API_KEY`, `XAI_API_KEY`).
+
+**OpenAI, verified 2026-09-23.** L2 translated into de, en and es on the first
+try, with the documented wire shapes and no unrecognized frames. L3 went 83/84
+on the first run: `en_short` produced no translation, then passed twice on
+rerun. That run also showed `fi` and `id` language votes, which the transcript
+witness let through because `NLLanguageRecognizer.languageConstraints` does not
+constrain (see L1.129). With the witness filtering, the next full run went
+**89/89**. One run is a data point, not a flake rate. **Grok has not been run
+against the live API** yet: no key.
 
 **`Tools/l2probe.sh <target> "<sentence>"` is the working one-shot probe**:
 it rides the Swift `GeminiLiveSession` — the path the app ships. It exists

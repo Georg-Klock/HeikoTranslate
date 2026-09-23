@@ -73,6 +73,14 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(TranscriptLanguageWitness.classify("¿Dónde está la estación de tren?", candidates: languageSet), "es")
         XCTAssertEqual(TranscriptLanguageWitness.classify("기차역이 어디에 있나요?", candidates: languageSet), "ko")
         XCTAssertNil(TranscriptLanguageWitness.classify("Ja", candidates: languageSet), "two letters is a guess")
+        // Filler the recognizer assigns to a language OUTSIDE the set
+        // (measured: Dutch, Polish). `languageConstraints` did not stop
+        // those, and an L3 run on OpenAI carried `fi`/`id` votes. Whatever
+        // comes back must be one of the four, or nothing.
+        for filler in ["ok ok ok ok ok ok", "Hmm hmm hmm hmm", "mhm mhm mhm mhm"] {
+            let code = TranscriptLanguageWitness.classify(filler, candidates: languageSet)
+            XCTAssertTrue(code == nil || languageSet.contains(code!), "\(filler) voted \(code!)")
+        }
     }
 
     /// L1.129b — the witness forgets between utterances.

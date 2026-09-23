@@ -22,7 +22,7 @@ import NaturalLanguage
 ///   settle window waits for the first code, so a wrong early one steers the
 ///   whole turn.
 ///
-/// Constrained to the app's own language set, so a German sentence full of
+/// Limited to the app's own language set, so a German sentence full of
 /// English loanwords can be misread as English but never as Dutch.
 struct TranscriptLanguageWitness {
 
@@ -37,8 +37,10 @@ struct TranscriptLanguageWitness {
     /// read from `TurnLogic.Lang` so the session harnesses can link this
     /// file without the turn sources.
     init(candidates: [String]) {
-        recognizer.languageConstraints = candidates.map { NLLanguage(rawValue: $0) }
+        self.candidates = candidates
     }
+
+    private let candidates: [String]
 
     /// Feed one transcript fragment; returns a language code to vote with,
     /// or nil when there is not yet enough text to say.
@@ -48,21 +50,40 @@ struct TranscriptLanguageWitness {
         }
         lastDeltaAt = now
         buffer += delta
-        return Self.classify(buffer, with: recognizer)
+        return Self.classify(buffer, candidates: candidates, with: recognizer)
     }
 
     /// The pure half, for tests and for the harnesses.
     static func classify(_ text: String, candidates: [String]) -> String? {
-        let recognizer = NLLanguageRecognizer()
-        recognizer.languageConstraints = candidates.map { NLLanguage(rawValue: $0) }
-        return classify(text, with: recognizer)
+        classify(text, candidates: candidates, with: NLLanguageRecognizer())
     }
 
-    private static func classify(_ text: String, with recognizer: NLLanguageRecognizer) -> String? {
+    /// The best-scoring CANDIDATE, if it is a confident one.
+    ///
+    /// `languageConstraints` looks like the way to do this and is not: measured
+    /// 2026-09-23 on macOS, a recognizer constrained to de/en/es/ko still named
+    /// "ok ok ok ok ok ok" Dutch and "Hmm hmm hmm hmm" Polish, and an L3
+    /// replay on OpenAI carried `fi` and `id` votes into the turn. A vote for
+    /// a language outside the pair is the #125 shape. So the full hypothesis
+    /// list is read and filtered here, and a text none of the four clearly
+    /// owns abstains.
+    private static func classify(_ text: String, candidates: [String],
+                                 with recognizer: NLLanguageRecognizer) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= minimumCharacters else { return nil }
         recognizer.reset()
         recognizer.processString(trimmed)
-        return recognizer.dominantLanguage?.rawValue
+        let hypotheses = recognizer.languageHypotheses(withMaximum: 100)
+        guard let best = candidates
+            .compactMap({ code in hypotheses[NLLanguage(rawValue: code)].map { (code, $0) } })
+            .max(by: { $0.1 < $1.1 }),
+              best.1 >= minimumConfidence
+        else { return nil }
+        return best.0
     }
+
+    /// How sure the recognizer must be of the winning candidate. "Hello
+    /// there" scores English at 0.64; filler that belongs to no language
+    /// scores every candidate far lower.
+    static let minimumConfidence = 0.5
 }
