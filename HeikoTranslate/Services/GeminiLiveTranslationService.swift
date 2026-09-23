@@ -214,6 +214,8 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// a change mid-run would give the pair two different engines after the
     /// first reconnect. `ConversationViewModel` restarts around a change.
     var engine: TranslationEngine = .default
+    /// Per run; reset at start, summarized at stop.
+    private var audioGate = AudioGate()
     private var dead: Set<Lang> = []
     /// Per-session reconnect attempts after an error, so a transient network
     /// blip doesn't kill a language for the rest of the conversation (R7) —
@@ -711,6 +713,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         // One session per side of the selected pair, both fed the same mic
         // audio. The pair is explicit (settings), so exactly two sessions.
         activePair = [home, partner]
+        audioGate = AudioGate()
         let apiKey = liveAPIKey
         for lang in [home, partner] {
             let session = makeSession(lang, apiKey: apiKey)
@@ -745,6 +748,24 @@ final class GeminiLiveTranslationService: ObservableObject {
                 queueForReplacement(lang, chunk)
             }
         }
+    }
+
+    /// A live mic chunk, through the silence gate on engines that bill for
+    /// every second they receive (`AudioGate`). Gemini keeps the continuous
+    /// stream it was measured on. Audio buffered while connecting is not
+    /// gated: it goes out through `flushPendingAudio` exactly as before.
+    private func forwardLive(_ chunk: Data, rms: Double) {
+        guard engine != .gemini else { forward(chunk); return }
+        let (send, transition) = audioGate.admit(chunk, rms: rms, at: clock.now)
+        switch transition {
+        case .opened(let preRoll)?:
+            diag("audio", "gate OPEN — speech, sending with \(preRoll) pre-roll chunks")
+        case .closed?:
+            diag("audio", "gate CLOSED — \(Int(AudioGate.hangover))s quiet, holding audio on the phone")
+        case nil:
+            break
+        }
+        for c in send { forward(c) }
     }
 
     private func queueForReplacement(_ lang: Lang, _ chunk: Data) {
@@ -789,6 +810,7 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Mute button — tears everything down.
     func stopSession() {
         diag("app", "listening stopped; mic buffers this run=\(micBufferCount) peakRMS=\(Int(peakMicRMS))")
+        if engine != .gemini, audioGate.offeredBytes > 0 { diag("audio", audioGate.summary) }
         DiagnosticLog.shared.flush()
         isSendingAudio = false
         anySessionReady = false
@@ -962,7 +984,7 @@ final class GeminiLiveTranslationService: ObservableObject {
                     }
                     return
                 }
-                self.forward(pcmData)
+                self.forwardLive(pcmData, rms: rms)
             }
         }
         tapInstalled = true

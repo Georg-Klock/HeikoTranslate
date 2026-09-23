@@ -121,6 +121,24 @@ reports each pong as `.heartbeat`. The event feeds the banner's liveness clock
 but not the mute watch (#139), which still judges a session only by what it
 transcribes.
 
+**Silence gate (OpenAI and Grok).** OpenAI bills per minute of audio received,
+per session, silence included, and the app listens from launch (R4). Live mic
+chunks on those engines pass through `AudioGate`:
+- While the room is quiet, the last 1s of audio stays on the phone and nothing
+  is sent.
+- The gate opens when a chunk's RMS passes 250, below the 400 speech floor on
+  purpose. It sends that second of pre-roll first, so a word's soft onset is
+  not lost.
+- It stays open for 4s after the last loud chunk, because the model needs
+  trailing silence to finish the sentence.
+
+Each run logs `audio gate: sent Xs of Ys heard`. L3 on OpenAI passes 89/89
+through the gate (2026-09-23). Replaying the gate over a scripted, dense
+device conversation sends about 76% of the audio, so it saves little while
+people talk and nearly everything while nobody does. Gemini is not gated:
+input is the cheap half of its bill, and its behaviour was measured on a
+continuous stream.
+
 **Server `error` frames** are fatal only before the session is ready. After
 that they are logged and the session continues, because these protocols report
 a rejected client event (for example a history delete) that way without closing

@@ -34,6 +34,7 @@ SESSION_SOURCES=(
   HeikoTranslate/Models/TranslationEngine.swift
   HeikoTranslate/Models/TranscriptLanguageWitness.swift
   HeikoTranslate/Models/PCMResampler.swift
+  HeikoTranslate/Models/AudioGate.swift
 )
 
 # Turn arbitration. Only l3replay.sh needs these — it exercises the turn

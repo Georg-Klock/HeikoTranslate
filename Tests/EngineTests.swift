@@ -237,6 +237,65 @@ final class EngineTests: XCTestCase {
         session.close()
     }
 
+    // MARK: - Silence gate
+
+    /// Feeds `seconds` of 100ms chunks at one loudness, returning what the
+    /// gate sent. Each chunk's first byte is its index, so order is checkable.
+    private func feed(_ gate: inout AudioGate, rms: Double, seconds: Double,
+                      from start: inout Date, index: inout UInt8) -> [Data] {
+        var sent: [Data] = []
+        for _ in 0..<Int((seconds * 10).rounded()) {
+            var chunk = Data(count: 3200)
+            chunk[0] = index
+            index &+= 1
+            sent += gate.admit(chunk, rms: rms, at: start).send
+            start = start.addingTimeInterval(0.1)
+        }
+        return sent
+    }
+
+    /// L1.135 — silence stays on the phone; speech goes out with the second
+    /// before it, in order.
+    ///
+    /// OpenAI bills per minute of audio received, per session, silence
+    /// included, and the app listens from launch (R4). The pre-roll is what
+    /// keeps the gate from costing the first syllable: a word's onset is
+    /// quieter than the threshold that opens the gate.
+    func testL1_135_silenceIsHeldAndSpeechCarriesItsPreRoll() {
+        var gate = AudioGate()
+        var t = Date(timeIntervalSince1970: 0)
+        var i: UInt8 = 0
+        XCTAssertTrue(feed(&gate, rms: 30, seconds: 10, from: &t, index: &i).isEmpty,
+                      "ten seconds of room noise: nothing sent")
+        XCTAssertFalse(gate.isOpen)
+
+        let onset = feed(&gate, rms: 3000, seconds: 0.1, from: &t, index: &i)
+        XCTAssertTrue(gate.isOpen)
+        XCTAssertEqual(onset.count, 11, "one second of pre-roll (10 chunks) plus the loud chunk")
+        XCTAssertEqual(onset.map { $0[0] }, Array(90...100).map(UInt8.init), "oldest first, nothing reordered")
+    }
+
+    /// L1.135b — the gate stays open through `hangover` after the last loud
+    /// chunk, then closes; a pause shorter than that sends straight through.
+    ///
+    /// The model needs trailing silence to finish the sentence it is
+    /// translating, and a speaker who breathes mid-sentence must not be cut.
+    func testL1_135b_hangoverKeepsTheTailAndBridgesPauses() {
+        var gate = AudioGate()
+        var t = Date(timeIntervalSince1970: 0)
+        var i: UInt8 = 0
+        _ = feed(&gate, rms: 3000, seconds: 2, from: &t, index: &i)
+        let pause = feed(&gate, rms: 30, seconds: 2, from: &t, index: &i)
+        XCTAssertEqual(pause.count, 20, "a 2s pause inside the hangover is sent whole")
+        _ = feed(&gate, rms: 3000, seconds: 1, from: &t, index: &i)
+        let tail = feed(&gate, rms: 30, seconds: 10, from: &t, index: &i)
+        XCTAssertEqual(Double(tail.count), AudioGate.hangover * 10, accuracy: 1,
+                       "the tail is the hangover, then nothing")
+        XCTAssertFalse(gate.isOpen)
+        XCTAssertTrue(gate.summary.hasPrefix("audio gate: sent"))
+        XCTAssertLessThan(gate.sentBytes, gate.offeredBytes)
+    }
+
     // MARK: - The switch
 
     /// L1.133 — choosing an engine mid-conversation switches the sessions

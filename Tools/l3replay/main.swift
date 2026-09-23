@@ -276,15 +276,30 @@ final class ReplayRunner {
                 let now = Date()
                 q.async { self.lastLoudMicAt = now }
             }
-            for s in sessionList { s.sendAudio(chunk) }
+            send(chunk, to: sessionList)
             offset = end
             Thread.sleep(forTimeInterval: 0.064)
         }
         q.async { self.streamEndedAt = Date() }
         let silence = Data(count: chunkBytes)
         while !(q.sync { finished }) {
-            for s in sessionList { s.sendAudio(silence) }
+            send(silence, to: sessionList)
             Thread.sleep(forTimeInterval: 0.064)
+        }
+        if harnessEngine != .gemini { print("    (\(gate.summary))") }
+    }
+
+    /// The app's own silence gate on the engines it gates (`AudioGate`), so
+    /// a replay on OpenAI or Grok proves the model still finishes its
+    /// translation once the audio stops arriving.
+    private var gate = AudioGate()
+    private func send(_ chunk: Data, to sessionList: [LiveTranslationSocket]) {
+        guard harnessEngine != .gemini else {
+            for s in sessionList { s.sendAudio(chunk) }
+            return
+        }
+        for c in gate.admit(chunk, rms: rms(chunk), at: Date()).send {
+            for s in sessionList { s.sendAudio(c) }
         }
     }
 

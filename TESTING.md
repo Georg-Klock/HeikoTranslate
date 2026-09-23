@@ -635,6 +635,8 @@ read off the transcript, two wire dialects and the switch on the sheet
 | L1.131b | Two items, then `response.done` twice | Both items deleted once, with `turnComplete`; the instructions name the target | **Grok history** |
 | L1.132 | `error` before ready, `session.updated` twice, `error` after | `error`, one `setupComplete`, `debug` | **R7/R8** |
 | L1.132b | A Grok session with no key | An error naming the missing entry | **setup** |
+| L1.135 | 10s of room noise, then one loud chunk | Nothing sent during the noise; the loud chunk goes out behind 1s of pre-roll, oldest first | **cost / R4** |
+| L1.135b | Speech, a 2s pause, speech, then 10s quiet | The pause is sent whole; the tail is exactly the 4s hangover; less is sent than heard | **cost / R5** |
 | L1.133 | Engine changed twice while listening, then the sheet closed | Persisted at once, one restart on dismiss, survives a relaunch | **#146** |
 | L1.133b | Engine changed and changed back; an unknown stored engine | No restart; falls back to Gemini | **#146** |
 
