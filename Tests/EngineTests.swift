@@ -83,6 +83,39 @@ final class EngineTests: XCTestCase {
         }
     }
 
+    /// L1.129c — short replies vote when the recognizer is sure, and only
+    /// then.
+    ///
+    /// Device run 2026-09-23 on OpenAI: "Ja, gerne." landed LEFT. OpenAI's
+    /// home session repeats home speech rather than staying silent, and the
+    /// old 12-character minimum left the turn with no vote to say the speech
+    /// was German, so the repeat read as a translation. The bar for short
+    /// text is now confidence, not length.
+    func testL1_129c_shortRepliesVoteOnlyWhenSure() {
+        XCTAssertEqual(TranscriptLanguageWitness.classify("Ja, gerne.", candidates: languageSet), "de")
+        XCTAssertEqual(TranscriptLanguageWitness.classify("Danke.", candidates: languageSet), "de")
+        XCTAssertEqual(TranscriptLanguageWitness.classify("Yeah", candidates: languageSet), "en")
+        XCTAssertEqual(TranscriptLanguageWitness.classify("Thank you.", candidates: languageSet), "en")
+        for unsure in ["Ja", "Okay.", "Perfekt."] {
+            XCTAssertNil(TranscriptLanguageWitness.classify(unsure, candidates: languageSet),
+                         "\(unsure) is too ambiguous to vote")
+        }
+    }
+
+    /// L1.134 — a bubble does not open with the previous sentence's
+    /// punctuation, and keeps its own Spanish opening mark.
+    ///
+    /// Seen on device 2026-09-23 as ". Und wo kann ich…" and "? We can
+    /// call…": a turn's closing punctuation arriving after its commit.
+    func testL1_134_bubbleDropsStrayLeadingPunctuation() {
+        let b = TurnLogic.Bubble(original: " . Und wo kann ich ein Taxi bekommen?",
+                                 translation: "? And where can I get a taxi?", isHome: true)
+        XCTAssertEqual(b.original, "Und wo kann ich ein Taxi bekommen?")
+        XCTAssertEqual(b.translation, "And where can I get a taxi?")
+        XCTAssertEqual(TurnLogic.Bubble.withoutStrayLead("¿Dónde está?"), "¿Dónde está?")
+        XCTAssertEqual(TurnLogic.Bubble.withoutStrayLead("…"), "")
+    }
+
     /// L1.129b — the witness forgets between utterances.
     ///
     /// A German reply right after an English sentence must not be classified

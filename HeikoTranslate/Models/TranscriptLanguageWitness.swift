@@ -17,17 +17,19 @@ import NaturalLanguage
 ///   fresh buffer. Without that, a German reply would be classified together
 ///   with the English sentence before it and vote English for its first
 ///   second — exactly the stale-vote failure the settle window exists for.
-/// - **It stays quiet on too little text.** Below `minimumCharacters` the
-///   recognizer is guessing, and a guessed vote is worse than no vote: the
-///   settle window waits for the first code, so a wrong early one steers the
-///   whole turn.
+/// - **It stays quiet when it is guessing.** A short text must score at
+///   least `shortTextConfidence`, a longer one `minimumConfidence`. A
+///   guessed vote is worse than no vote: the settle window waits for the
+///   first code, so a wrong early one steers the whole turn.
 ///
 /// Limited to the app's own language set, so a German sentence full of
 /// English loanwords can be misread as English but never as Dutch.
 struct TranscriptLanguageWitness {
 
     static let utteranceGap: TimeInterval = 1.0
-    static let minimumCharacters = 12
+    /// Below this many characters a text counts as SHORT and must clear
+    /// `shortTextConfidence` instead of `minimumConfidence`.
+    static let shortTextLength = 12
 
     private let recognizer = NLLanguageRecognizer()
     private var buffer = ""
@@ -70,14 +72,14 @@ struct TranscriptLanguageWitness {
     private static func classify(_ text: String, candidates: [String],
                                  with recognizer: NLLanguageRecognizer) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= minimumCharacters else { return nil }
+        guard !trimmed.isEmpty else { return nil }
         recognizer.reset()
         recognizer.processString(trimmed)
         let hypotheses = recognizer.languageHypotheses(withMaximum: 100)
         guard let best = candidates
             .compactMap({ code in hypotheses[NLLanguage(rawValue: code)].map { (code, $0) } })
             .max(by: { $0.1 < $1.1 }),
-              best.1 >= minimumConfidence
+              best.1 >= (trimmed.count < shortTextLength ? shortTextConfidence : minimumConfidence)
         else { return nil }
         return best.0
     }
@@ -86,4 +88,14 @@ struct TranscriptLanguageWitness {
     /// there" scores English at 0.64; filler that belongs to no language
     /// scores every candidate far lower.
     static let minimumConfidence = 0.5
+
+    /// The bar for short text. It was a flat 12-character minimum until
+    /// 2026-09-23, and that is what put "Ja, gerne." on the wrong side on
+    /// device: OpenAI's home session repeats home speech instead of staying
+    /// silent, and with no vote to say the speech was German the repeat was
+    /// read as a translation. Length was the wrong proxy for "too little to
+    /// tell". Measured scores: "Ja, gerne." de 0.91, "Danke." de 0.96,
+    /// "Yeah" en 0.88, "Thank you." en 0.87 all clear it; "Ja" 0.08,
+    /// "Okay." 0.39 and "Perfekt." 0.28 do not, and those still abstain.
+    static let shortTextConfidence = 0.85
 }

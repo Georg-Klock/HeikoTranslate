@@ -1144,6 +1144,30 @@ struct TurnLogic {
         let translation: String
         /// Home language spoken → right side; anything else → left.
         let isHome: Bool
+
+        init(original: String, translation: String, isHome: Bool) {
+            self.original = Self.withoutStrayLead(original)
+            self.translation = Self.withoutStrayLead(translation)
+            self.isHome = isHome
+        }
+
+        /// Punctuation that belongs to the PREVIOUS sentence, stripped off
+        /// the front of this one. Transcript deltas split wherever the server
+        /// likes, so the full stop ending one turn can arrive after it
+        /// commits and open the next: measured on OpenAI 2026-09-23 as
+        /// bubbles reading ". Und wo kann ich…" and "? We can call…".
+        /// `FillerWords.strip` trims this only when it removed a filler (its
+        /// fast path returns text untouched), so it lives here, where every
+        /// bubble passes. Spanish opening marks `¿` `¡` belong to THIS
+        /// sentence and are kept.
+        static func withoutStrayLead(_ text: String) -> String {
+            let stray: Set<Character> = [".", ",", ";", ":", "!", "?", "…"]
+            var result = Substring(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            while let first = result.first, stray.contains(first) || first.isWhitespace {
+                result = result.dropFirst()
+            }
+            return String(result)
+        }
     }
 
     /// The SPEC §5.1 commit gate. A bubble always carries a home-language

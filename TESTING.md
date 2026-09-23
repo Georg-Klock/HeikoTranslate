@@ -626,6 +626,8 @@ read off the transcript, two wire dialects and the switch on the sheet
 | L1.128 | A 1600-sample tone resampled 16k→24k whole, and again in uneven chunks down to 1 sample | Identical output; 3:2 length ± the held-back seam sample | **OpenAI input** |
 | L1.128b | A constant signal | Stays exactly constant | **OpenAI input** |
 | L1.129 | A sentence in each of de/en/es/ko; a two-letter fragment; filler the recognizer calls Dutch or Polish | Each named correctly; the fragment abstains; filler votes one of the four or nothing (`languageConstraints` alone let `fi`/`id` through at L3) | **R2 witness / #125** |
+| L1.129c | Short replies: "Ja, gerne.", "Danke.", "Yeah", "Thank you."; and "Ja", "Okay.", "Perfekt." | The first four vote their language; the last three abstain. Device, OpenAI: "Ja, gerne." landed LEFT under a 12-character minimum | **R2 / device 2026-09-23** |
+| L1.134 | A bubble whose text opens with the previous sentence's "." or "?"; a Spanish "¿" | Stray punctuation dropped; "¿" kept | **device 2026-09-23** |
 | L1.129b | English, then German after a pause longer than `utteranceGap` | The German votes `de`, not the English it followed | **R2 witness** |
 | L1.130 | OpenAI setup and one audio chunk | Translation endpoint, bearer auth, `output.language` = target, audio sent at 24kHz | **OpenAI wire** |
 | L1.130b | OpenAI's input/output transcript, audio, `session.closed` and `error` frames | A language vote ahead of the input transcript; `serverEnding`; `serverError` | **OpenAI wire / R7** |
