@@ -36,6 +36,21 @@ enum AppConfig {
         return key
     }()
 
+    /// The key for the chosen engine. Gemini's stays the fatal read above:
+    /// it is the default engine and the app cannot run without it. The
+    /// others are read SOFTLY — a build without an OpenAI or xAI key still
+    /// runs on Gemini, and choosing the missing engine surfaces as a session
+    /// error that names the missing entry ("no API key for openai/de").
+    static func apiKey(for engine: TranslationEngine) -> String {
+        if engine == .gemini { return geminiAPIKey }
+        guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
+              let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let key = plist[engine.secretsKey] as? String, key != "REPLACE-ME"
+        else { return "" }
+        return key
+    }
+
     /// Where "Zum Aktualisieren antippen" leads: this app's install page,
     /// read from `APP_UPDATE_URL` in Secrets.plist. Optional and read
     /// SOFTLY, unlike the key above — a build without it still shows the

@@ -198,6 +198,16 @@ opens the published privacy policy in the browser
 link App Review 5.1.1(i) requires, placed here so the one-button screen
 stays one button (#91).
 
+A **Übersetzungsdienst** row picks the engine the sessions run on: Google
+Gemini (the default), OpenAI or Grok. The options are vendor names and are
+shown untranslated in every UI language. It follows the wheels' rule: the
+choice is remembered at once and takes effect when the sheet closes, so
+switching mid-conversation restarts the translation exactly once, and closing
+the sheet on the engine already running costs nothing. It exists to compare
+vendors on real conversations. A choice whose key is missing from the build
+fails as a connection error, never as the update sentence
+(ARCHITECTURE.md, "Engines").
+
 The pill replaced a gear because the destination is language selection, and
 for a user who reads no English two flags say that better than a cog does.
 It doubles as the only permanent readout of which pair is active.

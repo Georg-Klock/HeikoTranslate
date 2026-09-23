@@ -27,6 +27,13 @@
 SESSION_SOURCES=(
   HeikoTranslate/Models/KeyCheck.swift
   HeikoTranslate/Services/GeminiLiveSession.swift
+  # The other engines (2026-09-23): the shared transport, the OpenAI and
+  # Grok dialects with the factory, and what the dialects need on the side.
+  HeikoTranslate/Services/RealtimeSocketSession.swift
+  HeikoTranslate/Services/RealtimeDialects.swift
+  HeikoTranslate/Models/TranslationEngine.swift
+  HeikoTranslate/Models/TranscriptLanguageWitness.swift
+  HeikoTranslate/Models/PCMResampler.swift
 )
 
 # Turn arbitration. Only l3replay.sh needs these — it exercises the turn

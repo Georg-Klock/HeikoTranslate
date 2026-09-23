@@ -128,7 +128,7 @@ final class ReplayRunner {
     private let home: TurnLogic.Lang
     private let partner: TurnLogic.Lang
 
-    private var sessions: [TurnLogic.Lang: GeminiLiveSession] = [:]
+    private var sessions: [TurnLogic.Lang: LiveTranslationSocket] = [:]
     private var ready: Set<TurnLogic.Lang> = []
 
     // Mirrors GeminiLiveTranslationService's per-utterance state.
@@ -230,7 +230,7 @@ final class ReplayRunner {
 
     func run(pcm: Data) {
         for lang in [home, partner] {
-            let session = GeminiLiveSession(targetLanguageCode: lang.rawValue, apiKey: apiKey) { [weak self] event in
+            let session = makeHarnessSession(target: lang.rawValue, apiKey: apiKey) { [weak self] event in
                 guard let self else { return }
                 self.q.async { self.handle(lang, event) }
             }
@@ -321,7 +321,7 @@ final class ReplayRunner {
             // release (#78).
             releaseArmed = true
             releaseDeferredSince = nil
-        case .outputLanguage:
+        case .outputLanguage, .heartbeat:
             break
         case .outputTranscript(let text):
             trace("OUT", lang, text)
@@ -581,7 +581,7 @@ let names = args.isEmpty
     ? defaultOrder
     : args.map { ($0 as NSString).lastPathComponent.replacingOccurrences(of: ".wav", with: "") }
 
-print("L3 — Replay tests (real GeminiLiveSession + real TurnLogic, live API)")
+print("L3 — Replay tests (real \(harnessEngine.rawValue) session + real TurnLogic, live API)")
 for name in names {
     runCase(name: name, apiKey: apiKey)
 }
