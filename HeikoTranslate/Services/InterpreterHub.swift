@@ -202,9 +202,12 @@ final class InterpreterHub {
     func simulate(_ event: GeminiLiveSession.Event) { handle(event) }
     #endif
 
+    /// Both sides, always in pair order. Dictionary order changes from run
+    /// to run, and a hub whose event order depends on it is not repeatable:
+    /// L1.136 caught exactly that, failing one run in three.
     private func broadcast(_ event: GeminiLiveSession.Event) {
         lock.lock()
-        let all = Array(proxies.values)
+        let all = pair.compactMap { proxies[$0] }
         lock.unlock()
         for proxy in all { proxy.onEvent(event) }
     }
