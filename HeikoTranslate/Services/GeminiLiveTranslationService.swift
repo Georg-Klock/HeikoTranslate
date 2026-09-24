@@ -671,6 +671,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         anySessionReady = false
         setActivity(.connecting)
         turn = TurnLogic(home: home, partner: partner)
+        turn.codesStraggle = engine != .soniox
         resetForNextUtterance()
         micLiveness.reset()
         resetEchoRecovery()

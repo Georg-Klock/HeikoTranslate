@@ -226,6 +226,7 @@ final class ReplayRunner {
         self.home = home
         self.partner = partner
         self.turn = TurnLogic(home: home, partner: partner)
+        self.turn.codesStraggle = harnessEngine != .soniox
     }
 
     func run(pcm: Data) {
@@ -454,6 +455,11 @@ final class ReplayRunner {
                 // Gating this on `currentID` hung every case until the
                 // timeout, which reads as an API outage rather than a
                 // harness bug.
+                if verbose, let id = turnCoordinator.currentID {
+                    print("      (verbose) stream over with turn \(id) still open: translator=\(turn.translator?.rawValue ?? "none") "
+                          + "lastTranslatorAudio=\(lastTranslatorAudioAt.map { String(format: "%.1fs ago", now.timeIntervalSince($0)) } ?? "never") "
+                          + "mayFinalize=\(turnMayFinalize(id, at: now))")
+                }
                 finished = true
                 doneSem.signal()
                 return

@@ -202,19 +202,22 @@ final class SonioxBackend: NSObject, InterpreterBackend {
         let tokens = (object["tokens"] as? [[String: Any]]) ?? []
         for action in parser.consume(tokens) {
             switch action {
-            case .spoken(let text, let language):
-                if let language { sink(.inputLanguage(language), nil) }
+            case .vote(let language):
+                sink(.inputLanguage(language), nil)
+            case .spoken(let text):
                 sink(.inputTranscript(text), nil)
             case .translated(let text, let language):
                 sink(.outputTranscript(text), language)
             case .speak(let streamID, let text, let language, let opens):
                 if opens {
+                    diag("session", "[soniox] voice stream \(streamID) open")
                     sendTTS(["api_key": apiKey, "stream_id": streamID, "model": Self.ttsModel,
                              "language": language, "voice": Self.voice,
                              "audio_format": "pcm_s16le", "sample_rate": 24_000])
                 }
                 sendTTS(["stream_id": streamID, "text": text, "text_end": false])
             case .endSpeech(let streamID):
+                diag("session", "[soniox] voice stream \(streamID) end (utterance ended)")
                 sendTTS(["stream_id": streamID, "text": "", "text_end": true])
             case .utteranceEnded:
                 sink(.turnComplete, nil)
@@ -231,6 +234,9 @@ final class SonioxBackend: NSObject, InterpreterBackend {
             diag("session", "[soniox] \(message)")
             sink(.debug(message), nil)
             return
+        }
+        if (object["terminated"] as? Bool) == true {
+            diag("session", "[soniox] voice stream \(streamID) terminated")
         }
         if let base64 = object["audio"] as? String, let audio = Data(base64Encoded: base64), !audio.isEmpty,
            let language = SonioxTokenParser.language(ofStream: streamID) {
@@ -279,16 +285,23 @@ extension SonioxBackend: URLSessionWebSocketDelegate {
 /// rules are pinned at L1 without a socket.
 ///
 /// Soniox sends every final token once and non-final tokens repeatedly, as a
-/// revisable tail. Only finals count here. Within finals:
-/// - `original` tokens are the speaker's words (the input transcript), and
-///   their `language` is the speaker's vote;
+/// revisable tail.
+/// - **Votes come from every original token, final or not.** A vote is never
+///   appended to a bubble, so a draft is safe to vote with, and drafts arrive
+///   continuously while the person speaks, the way Gemini's codes do. Voting
+///   only from finals was measured (2026-09-23, L3 `de_pause`) to give a whole
+///   sentence ONE vote, which landed inside `staleCodeGrace` after the
+///   previous turn and was dropped: the turn never learned its language.
+/// - **Text comes from finals only.** Within finals:
+/// - `original` tokens are the speaker's words (the input transcript);
 /// - `translation` tokens are the translation (the output transcript) and
 ///   the text to speak, in their own `language`;
 /// - `<end>` closes the utterance: the voice streams it opened are ended.
 struct SonioxTokenParser {
 
     enum Action: Equatable {
-        case spoken(text: String, language: String?)
+        case vote(language: String)
+        case spoken(text: String)
         case translated(text: String, language: String)
         /// Send `text` to TTS stream `streamID`, opening it first if `opens`.
         case speak(streamID: String, text: String, language: String, opens: Bool)
@@ -311,9 +324,16 @@ struct SonioxTokenParser {
 
     mutating func consume(_ tokens: [[String: Any]]) -> [Action] {
         var actions: [Action] = []
-        var spoken = "", spokenLanguage: String?
+        var spoken = "", vote: String?
         var translated: [String: String] = [:]
         var ended = false
+
+        for token in tokens where (token["translation_status"] as? String) != "translation" {
+            if let language = token["language"] as? String, pair.contains(language),
+               let text = token["text"] as? String, !text.hasPrefix("<") {
+                vote = language
+            }
+        }
 
         for token in tokens where (token["is_final"] as? Bool) == true {
             guard let text = token["text"] as? String else { continue }
@@ -326,11 +346,11 @@ struct SonioxTokenParser {
                 translated[language, default: ""] += text
             default:  // "original" or "none"
                 spoken += text
-                if let language, pair.contains(language) { spokenLanguage = language }
             }
         }
 
-        if !spoken.isEmpty { actions.append(.spoken(text: spoken, language: spokenLanguage)) }
+        if let vote { actions.append(.vote(language: vote)) }
+        if !spoken.isEmpty { actions.append(.spoken(text: spoken)) }
         for language in pair {
             guard let text = translated[language], !text.isEmpty else { continue }
             actions.append(.translated(text: text, language: language))

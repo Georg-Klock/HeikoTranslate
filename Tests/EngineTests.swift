@@ -363,15 +363,16 @@ final class EngineTests: XCTestCase {
     /// stay in the bubble after Soniox corrected it.
     func testL1_137_sonioxTokensBecomeWordsVotesAndVoice() {
         var p = SonioxTokenParser(pair: ["de", "en"])
-        XCTAssertEqual(p.consume([token("Wo ist", final: false, language: "de")]), [],
-                       "a non-final is a draft, not a transcript")
+        XCTAssertEqual(p.consume([token("Wo ist", final: false, language: "de")]), [.vote(language: "de")],
+                       "a draft votes, but is not a transcript")
         let first = p.consume([
             token("Wo", language: "de"), token(" ist", language: "de"),
             token("Where", status: "translation", language: "en"),
             token(" is", status: "translation", language: "en"),
         ])
         XCTAssertEqual(first, [
-            .spoken(text: "Wo ist", language: "de"),
+            .vote(language: "de"),
+            .spoken(text: "Wo ist"),
             .translated(text: "Where is", language: "en"),
             .speak(streamID: "u0-en", text: "Where is", language: "en", opens: true),
         ])
@@ -381,7 +382,8 @@ final class EngineTests: XCTestCase {
             token("<end>"),
         ])
         XCTAssertEqual(rest, [
-            .spoken(text: " der Bahnhof?", language: "de"),
+            .vote(language: "de"),
+            .spoken(text: " der Bahnhof?"),
             .translated(text: " the station?", language: "en"),
             .speak(streamID: "u0-en", text: " the station?", language: "en", opens: false),
             .endSpeech(streamID: "u0-en"),
@@ -414,6 +416,31 @@ final class EngineTests: XCTestCase {
         }
         hub.simulate(.audioChunk(Data([1])), language: "de")
         XCTAssertEqual(got, ["de:audio"])
+    }
+
+    /// L1.138 — the stale-code window is Gemini's, not Soniox's.
+    ///
+    /// Right after a German turn ends, a German code is a straggler on
+    /// Gemini (the sessions re-announce a finished turn's language for ~2s)
+    /// and must be dropped. On Soniox a code only exists while words are
+    /// being spoken, so the same code is the speaker's next sentence, and
+    /// dropping it left that sentence with no language at all.
+    func testL1_138_sonioxCodesAreNeverStragglers() {
+        let t0 = Date(timeIntervalSince1970: 1000)
+        var gemini = TurnLogic(home: .de, partner: .en)
+        gemini.noteInputLanguage("de", from: .de, at: t0)
+        gemini.endTurn(at: t0.addingTimeInterval(1))
+        XCTAssertNil(gemini.noteInputLanguage("de", from: .de, at: t0.addingTimeInterval(2)),
+                     "Gemini: a same-language code right after a turn is a straggler")
+
+        var soniox = TurnLogic(home: .de, partner: .en)
+        soniox.codesStraggle = false
+        soniox.noteInputLanguage("de", from: .de, at: t0)
+        soniox.endTurn(at: t0.addingTimeInterval(1))
+        soniox.noteInputLanguage("de", from: .de, at: t0.addingTimeInterval(2))
+        soniox.noteInputLanguage("de", from: .en, at: t0.addingTimeInterval(2.1))
+        XCTAssertEqual(soniox.noteInputLanguage("de", from: .de, at: t0.addingTimeInterval(4)), .de,
+                       "Soniox: the same code is the next sentence, and it settles")
     }
 
     // MARK: - The switch

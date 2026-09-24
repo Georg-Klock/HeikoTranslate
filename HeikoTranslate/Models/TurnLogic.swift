@@ -93,6 +93,14 @@ struct TurnLogic {
     /// Codes for the PREVIOUS turn's language straggle in for ~2s after it
     /// finalizes; codes for a different language are a fast reply and count.
     static let staleCodeGrace: TimeInterval = 2.5
+
+    /// Whether this engine's language codes can straggle past the end of a
+    /// turn, and so need `staleCodeGrace`. True for every engine but Soniox,
+    /// whose codes come only from words being spoken now: there the grace
+    /// window threw away the fresh codes of a speaker who simply went on to a
+    /// second sentence, and the turn ended with no language (measured
+    /// 2026-09-23, L3 `de_pause` on Soniox).
+    var codesStraggle = true
     /// Votes collect this long before the plurality settles the spoken-
     /// language guess — the opening burst can be unanimously wrong.
     static let settleWindow: TimeInterval = 1.5
@@ -997,7 +1005,7 @@ struct TurnLogic {
                                     at now: Date = Date()) -> Lang? {
         let c = code.lowercased()
         let spoken = Lang.allCases.first { c.hasPrefix($0.rawValue) }
-        if let spoken,
+        if codesStraggle, let spoken,
            let ended = lastTurnEnd, now.timeIntervalSince(ended) < Self.staleCodeGrace,
            spoken == previousSpokenLang {
             return nil

@@ -182,7 +182,15 @@ translations with Soniox's own voice (`Services/SonioxBackend.swift`).
   silence gate can leave them without audio for minutes.
 - **Cost.** About $0.12/hour of audio for speech-to-text plus translation, and
   about $0.70 per hour of generated voice (2026-09): roughly a tenth of OpenAI.
-- **Not yet verified against the live API:** no `SONIOX_API_KEY` in this build.
+- **Verified live 2026-09-23.** L2 was correct on the first try. L3 went 87/89,
+  every bubble on the correct side, Spanish and Korean included. The two
+  failures are `de_pause`: like OpenAI Realtime, Soniox closes a sentence as
+  soon as it ends, so two sentences with a breath between them become two
+  correct bubbles.
+- **Two fixes from those runs.** Codes now come from draft tokens as well as
+  finals: finals alone gave a sentence one code. `TurnLogic.staleCodeGrace` is
+  also off for this engine (`codesStraggle`): it dropped the fresh codes of a
+  speaker who went on to a second sentence, and the turn had no language.
 
 **Server `error` frames** are fatal only before the session is ready. After
 that they are logged and the session continues, because these protocols report
