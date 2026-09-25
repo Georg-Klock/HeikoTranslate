@@ -199,9 +199,11 @@ link App Review 5.1.1(i) requires, placed here so the one-button screen
 stays one button (#91).
 
 A **Übersetzungsdienst** row picks the engine the sessions run on: Google
-Gemini (the default), OpenAI Translate (two sessions), OpenAI Realtime (one
+Gemini, OpenAI Translate (two sessions), OpenAI Realtime (one
 session interpreting both ways), Soniox (text translation spoken by a synthetic
-voice) or Grok. The options are vendor names and are
+voice) or Grok. **Soniox is the default since 2026-09-24**: it names each word's
+language and costs about a tenth of the others. Its voice is synthetic, not
+the speaker-like voice §6 describes for the speech-to-speech engines. The options are vendor names and are
 shown untranslated in every UI language. It follows the wheels' rule: the
 choice is remembered at once and takes effect when the sheet closes, so
 switching mid-conversation restarts the translation exactly once, and closing

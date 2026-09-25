@@ -214,7 +214,9 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// start and at every reconnect — so it must only change while stopped:
     /// a change mid-run would give the pair two different engines after the
     /// first reconnect. `ConversationViewModel` restarts around a change.
-    var engine: TranslationEngine = .default
+    /// Gemini until the view model says otherwise: the service's own tests
+    /// are Gemini-shaped, and the view model sets this before every start.
+    var engine: TranslationEngine = .gemini
     /// Per run; reset at start, summarized at stop.
     private var audioGate = AudioGate()
     private var dead: Set<Lang> = []

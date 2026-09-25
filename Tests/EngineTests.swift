@@ -485,9 +485,23 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(vm.languageRestartCount, 0)
 
         let defaults = UserDefaults(suiteName: "EngineTests")!
+        defaults.set(TranslationEngine.defaultGeneration, forKey: TranslationEngine.generationKey)
         defaults.set("carrier-pigeon", forKey: TranslationEngine.defaultsKey)
-        XCTAssertEqual(TranslationEngine.load(from: defaults), .gemini)
+        XCTAssertEqual(TranslationEngine.load(from: defaults), .default)
         defaults.removePersistentDomain(forName: "EngineTests")
+    }
+
+    /// L1.139 — Soniox is the default, and a phone that picked an engine
+    /// before the default changed is moved to it once; a choice made after
+    /// that sticks.
+    func testL1_139_newDefaultIsAdoptedOnceThenChoicesStick() {
+        XCTAssertEqual(TranslationEngine.default, .soniox)
+        let defaults = UserDefaults(suiteName: "EngineTests139")!
+        defer { defaults.removePersistentDomain(forName: "EngineTests139") }
+        defaults.set("openai-realtime", forKey: TranslationEngine.defaultsKey)   // picked while testing
+        XCTAssertEqual(TranslationEngine.load(from: defaults), .soniox, "moved to the new default once")
+        defaults.set("gemini", forKey: TranslationEngine.defaultsKey)            // chosen afterwards
+        XCTAssertEqual(TranslationEngine.load(from: defaults), .gemini, "a later choice sticks")
     }
 }
 

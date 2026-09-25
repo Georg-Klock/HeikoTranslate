@@ -35,7 +35,19 @@ enum TranslationEngine: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    static let `default`: TranslationEngine = .gemini
+    /// Soniox since 2026-09-24, by decision: it labels each word's language
+    /// instead of leaving direction to be inferred, and costs about a tenth of
+    /// the speech-to-speech engines. The trade is a synthetic voice in place
+    /// of one that follows the speaker (SPEC §6).
+    static let `default`: TranslationEngine = .soniox
+
+    /// Bumped when the default changes in a way every phone should adopt.
+    /// A phone whose stored choice predates the current generation is moved
+    /// to the new default once; after that, a choice made on the sheet
+    /// sticks. Without this, a phone that had picked an engine during testing
+    /// would never see the new default.
+    static let defaultGeneration = 2
+    static let generationKey = "settings.engineGeneration"
 
     /// Where the choice is persisted.
     static let defaultsKey = "settings.engine"
@@ -66,6 +78,11 @@ enum TranslationEngine: String, CaseIterable, Identifiable {
     /// A stored value this build does not know (a removed engine, a typo in
     /// a launch argument) falls back to the default rather than failing.
     static func load(from defaults: UserDefaults = .standard) -> TranslationEngine {
-        defaults.string(forKey: defaultsKey).flatMap(TranslationEngine.init(rawValue:)) ?? .default
+        if defaults.integer(forKey: generationKey) < defaultGeneration {
+            defaults.set(defaultGeneration, forKey: generationKey)
+            defaults.set(TranslationEngine.default.rawValue, forKey: defaultsKey)
+            return .default
+        }
+        return defaults.string(forKey: defaultsKey).flatMap(TranslationEngine.init(rawValue:)) ?? .default
     }
 }

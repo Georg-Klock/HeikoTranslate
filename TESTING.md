@@ -643,8 +643,9 @@ read off the transcript, two wire dialects and the switch on the sheet
 | L1.137b | A translation token labelled outside the pair | Dropped | **R2** |
 | L1.137c | A backend-labelled audio chunk at the hub | Straight to its side, no hub vote | **R2** |
 | L1.138 | A same-language code 1s after a turn ends, on Gemini and on Soniox | Gemini drops it (straggler, `staleCodeGrace`); Soniox counts it and settles | **R4 / #177-era rule scoped** |
+| L1.139 | A phone with an engine stored before the default changed; then a new choice | Moved to Soniox once; the later choice sticks | **default 2026-09-24** |
 | L1.133 | Engine changed twice while listening, then the sheet closed | Persisted at once, one restart on dismiss, survives a relaunch | **#146** |
-| L1.133b | Engine changed and changed back; an unknown stored engine | No restart; falls back to Gemini | **#146** |
+| L1.133b | Engine changed and changed back; an unknown stored engine | No restart; falls back to the default | **#146** |
 
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1
