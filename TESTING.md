@@ -616,6 +616,37 @@ translation of foreign speech).
 | L1.127e | Both sessions mis-hearing home speech into foreign words | Commits LEFT — the known limit, pinned; only an independent witness can separate it (#179) | **#179** |
 | L1.127f | A three-word German prefix mid-stream | The witness stays silent until there are enough words to read; the live line resolves only then | **L1.64/#177** |
 
+**Engines (2026-09-23).** OpenAI and Grok ride the same turn machinery as
+Gemini, so what is new is below the session boundary: resampling, a language
+read off the transcript, two wire dialects and the switch on the sheet
+(ARCHITECTURE.md, "Engines").
+
+| ID | Given | Expect | Rule |
+|---|---|---|---|
+| L1.128 | A 1600-sample tone resampled 16k→24k whole, and again in uneven chunks down to 1 sample | Identical output; 3:2 length ± the held-back seam sample | **OpenAI input** |
+| L1.128b | A constant signal | Stays exactly constant | **OpenAI input** |
+| L1.129 | A sentence in each of de/en/es/ko; a two-letter fragment; filler the recognizer calls Dutch or Polish | Each named correctly; the fragment abstains; filler votes one of the four or nothing (`languageConstraints` alone let `fi`/`id` through at L3) | **R2 witness / #125** |
+| L1.129c | Short replies: "Ja, gerne.", "Danke.", "Yeah", "Thank you."; and "Ja", "Okay.", "Perfekt." | The first four vote their language; the last three abstain. Device, OpenAI: "Ja, gerne." landed LEFT under a 12-character minimum | **R2 / device 2026-09-23** |
+| L1.134 | A bubble whose text opens with the previous sentence's "." or "?"; a Spanish "¿" | Stray punctuation dropped; "¿" kept | **device 2026-09-23** |
+| L1.129b | English, then German after a pause longer than `utteranceGap` | The German votes `de`, not the English it followed | **R2 witness** |
+| L1.130 | OpenAI setup and one audio chunk | Translation endpoint, bearer auth, `output.language` = target, audio sent at 24kHz | **OpenAI wire** |
+| L1.130b | OpenAI's input/output transcript, audio, `session.closed` and `error` frames | A language vote ahead of the input transcript; `serverEnding`; `serverError` | **OpenAI wire / R7** |
+| L1.131 | Grok cumulative transcript frames (`…updated` ×2, `…completed`) | Each word emitted once | **R1** |
+| L1.131b | Two items, then `response.done` twice | Both items deleted once, with `turnComplete`; the instructions name the target | **Grok history** |
+| L1.132 | `error` before ready, `session.updated` twice, `error` after | `error`, one `setupComplete`, `debug` | **R7/R8** |
+| L1.132b | A Grok session with no key | An error naming the missing entry | **setup** |
+| L1.135 | 10s of room noise, then one loud chunk | Nothing sent during the noise; the loud chunk goes out behind 1s of pre-roll, oldest first | **cost / R4** |
+| L1.135b | Speech, a 2s pause, speech, then 10s quiet | The pause is sent whole; the tail is exactly the 4s hangover; less is sent than heard | **cost / R5** |
+| L1.136 | One-session interpreter: reply audio before its words, then an English transcript; then a German reply | Held until known; delivered to the English side only; a `de` vote on both sides; the next reply routes to German | **R2 / one session** |
+| L1.136b | A one-word reply ("Ja") | Held mid-reply, delivered to exactly one side at the reply's end | **R4** |
+| L1.137 | Soniox tokens: a non-final, then originals + translations, then `<end>`, then a reply | Non-finals vote but add no text (voting only from finals left `de_pause`'s second sentence one vote, dropped by `staleCodeGrace`); final originals → transcript; translations → output + one voice stream per utterance and language; `<end>` ends the stream | **R1/R2 Soniox** |
+| L1.137b | A translation token labelled outside the pair | Dropped | **R2** |
+| L1.137c | A backend-labelled audio chunk at the hub | Straight to its side, no hub vote | **R2** |
+| L1.138 | A same-language code 1s after a turn ends, on Gemini and on Soniox | Gemini drops it (straggler, `staleCodeGrace`); Soniox counts it and settles | **R4 / #177-era rule scoped** |
+| L1.139 | A phone with an engine stored before the default changed; then a new choice | Moved to Soniox once; the later choice sticks | **default 2026-09-24** |
+| L1.133 | Engine changed twice while listening, then the sheet closed | Persisted at once, one restart on dismiss, survives a relaunch | **#146** |
+| L1.133b | Engine changed and changed back; an unknown stored engine | No restart; falls back to the default | **#146** |
+
 **A fix was attempted and reverted the same hour, 2026-08-14.** Lowering
 `echoShareThreshold` from 0.6 to 0.3 turned L1.86/87 green, passed L1
 219/219 and L3 89/89, and both `de_song_lead` fixtures committed
@@ -1079,6 +1110,22 @@ probe) and `Tools/l2expiry.sh` (session-lifetime probe, ~10–20 min), both
 compiled against the app's real `GeminiLiveSession`. `Tools/livetest.py`
 is the Python twin and is **not** a working probe — see below.
 
+**Every harness takes `ENGINE=gemini|openai|grok`** (default `gemini`) and
+builds its sessions through the app's own `LiveSessionFactory`, so
+`ENGINE=openai Tools/l2probe.sh de "Where is the train station?"` and
+`ENGINE=grok Tools/l3replay.sh` exercise exactly what the sheet's picker
+would run. The key comes from the engine's `Secrets.plist` entry
+(`OPENAI_API_KEY`, `XAI_API_KEY`).
+
+**OpenAI, verified 2026-09-23.** L2 translated into de, en and es on the first
+try, with the documented wire shapes and no unrecognized frames. L3 went 83/84
+on the first run: `en_short` produced no translation, then passed twice on
+rerun. That run also showed `fi` and `id` language votes, which the transcript
+witness let through because `NLLanguageRecognizer.languageConstraints` does not
+constrain (see L1.129). With the witness filtering, the next full run went
+**89/89**. One run is a data point, not a flake rate. **Grok has not been run
+against the live API** yet: no key.
+
 **`Tools/l2probe.sh <target> "<sentence>"` is the working one-shot probe**:
 it rides the Swift `GeminiLiveSession` — the path the app ships. It exists
 because `livetest.py` went silent server-side while the Swift path worked
@@ -1531,7 +1578,7 @@ without guessing.
 
 | Level | State |
 |---|---|
-| L1 | ✅ Built and passing — 305 XCTest cases (`Tools/l1.sh`, 2026-09-16, on the #160 branch) bound to the real `TurnLogic`, `TurnCoordinator`, `SpeechEndPolicy`, `FinalizePolicy`, `SessionLiveness`, `SessionRegistry`, `AudioWindow`, `AppVersion`, `UIStrings`, `GeminiLiveTranslationService` and `ConversationViewModel`, with the service's timers driven through `ManualClock` (#153) |
+| L1 | ✅ Built and passing — 335 XCTest cases (`Tools/l1.sh`, 2026-09-23, on the engine-picker branch) bound to the real `TurnLogic`, `TurnCoordinator`, `SpeechEndPolicy`, `FinalizePolicy`, `SessionLiveness`, `SessionRegistry`, `AudioWindow`, `AppVersion`, `UIStrings`, `GeminiLiveTranslationService` and `ConversationViewModel`, with the service's timers driven through `ManualClock` (#153) |
 | L2 | ✅ Fully verified, including L2.6 reconnect-after-expiry (2026-07-25) |
 | L3 | ⚠️ Passing, flaky per case — 89/89 on f800645 (2026-09-14); on 2026-09-16 both that commit and `main` failed one or two cases in about half of the runs, always as a missing or truncated translation, with no code regression behind it (see **Flakiness**). Earlier: 71 assertions across 10 replays (2026-08-10); 56 across 8, twice in a row (2026-07-25). Found and fixed live: straggler-code carryover (wrong-side bubbles), garbage transcripts from the target==spoken session, unanimous-then-corrected opening misdetections |
 | L4 | ⚠️ Turn-arbiter branch measured on device 2026-08-18 (build 2.4.75 EC, ~13 min, two sessions): **direction correct on 17 of 17 bubbles** across three pairs — de↔en (3), de↔fr (8) and fr↔en (6). The fr↔en run is the load-bearing one: home was French, and one badly garbled utterance whose partner session reported German (`votes=de×2,fr×3`) still settled home correctly. Speech end held: 19 stops, no commit landed mid-utterance, and the single deferral behaved as designed — a loud mic buffer vetoed the stop, and it sealed 0.25 s later once the mic went quiet. No session errors, no reconnects. **One turn was lost**: a short fragment reached one session, neither session produced a translation, the finalize deferred three times and the turn was then cleared with no bubble and no indication. That is the repair-state gap `docs/TURN_ARBITER_EXPERIMENT.md` names in its own future work, not a coordinator regression — the rejection is the commit gate and the retry ladder is #21's. **Unproven on device:** the #83 resume path (`speaker resumed during the commit window`) did not occur once, so the reconciliation this branch made between #83 and the turn-ID threading rests on L1 alone. Also found, unrelated to this branch: scrolling the language wheel restarted the sessions five times and stopped the microphone five times for one language change (#146). |

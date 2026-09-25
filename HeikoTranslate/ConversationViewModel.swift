@@ -108,6 +108,22 @@ final class ConversationViewModel: ObservableObject {
     /// without changing anything free.
     private(set) var runningPair: (home: TurnLogic.Lang, partner: TurnLogic.Lang)?
 
+    /// Which vendor translates. Persisted; like the pair, choosing one only
+    /// records it — the sessions switch when the sheet closes
+    /// (`languageSelectionDidFinish`), so a conversation can change engine
+    /// mid-flight without a relaunch and without a restart per tap.
+    @Published var engine: TranslationEngine = TranslationEngine.load() {
+        didSet {
+            guard engine != oldValue else { return }
+            UserDefaults.standard.set(engine.rawValue, forKey: TranslationEngine.defaultsKey)
+            diag("app", "engine set to \(engine.rawValue)")
+        }
+    }
+
+    /// The engine the live sessions were started on, or nil when stopped.
+    /// Set and cleared with `runningPair`.
+    private(set) var runningEngine: TranslationEngine?
+
     /// Selecting a language persists it and nothing else.
     ///
     /// The wheels are rotaries: one flick crosses several notches and every
@@ -140,9 +156,10 @@ final class ConversationViewModel: ObservableObject {
     /// listening there is nothing to restart: the next start reads the stored
     /// pair, which `persistAndApplyLanguages` has already written.
     func languageSelectionDidFinish() {
-        guard let runningPair, runningPair != (homeLang, partnerLang) else { return }
+        guard let runningPair,
+              runningPair != (homeLang, partnerLang) || runningEngine != engine else { return }
         languageRestartCount += 1
-        diag("app", "language selection finished — restarting sessions as \(homeLang.rawValue)↔\(partnerLang.rawValue)")
+        diag("app", "settings finished — restarting sessions as \(homeLang.rawValue)↔\(partnerLang.rawValue) on \(engine.rawValue)")
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.stop()
@@ -523,6 +540,14 @@ final class ConversationViewModel: ObservableObject {
     /// exhausted belt) can ask again once the network is back.
     private func confirmKeyNow(_ evidence: String) {
         guard !keyRevoked, keyConfirmationTask == nil else { return }
+        // The probe asks Google about the Gemini key. On another engine its
+        // answer says nothing about the key actually failing, and a
+        // "revoked" verdict there would put the terminal update sentence on
+        // screen over a bad OpenAI or xAI key.
+        guard (runningEngine ?? engine) == .gemini else {
+            diag("app", "key probe skipped (\(evidence)) — engine \((runningEngine ?? engine).rawValue) has no probe")
+            return
+        }
         let probe = keyProbeForTesting ?? KeyProbe.currentVerdict
         keyConfirmationTask = Task { @MainActor [weak self] in
             if await probe() == .revoked { self?.noteKeyRevoked(evidence) }
@@ -1302,7 +1327,7 @@ final class ConversationViewModel: ObservableObject {
         // stub stands in only for the audio-and-network step below it.
         if let stub = serviceStartForTesting {
             isListening = stub()
-            if isListening { runningPair = (homeLang, partnerLang) }
+            if isListening { runningPair = (homeLang, partnerLang); runningEngine = engine }
             return
         }
         #endif
@@ -1313,6 +1338,7 @@ final class ConversationViewModel: ObservableObject {
         // network. The service resets its quality state to match.
         connectionWarning = nil
         echoWarning = nil
+        translator.engine = engine
         do {
             try translator.start(
                 home: homeLang,
@@ -1379,6 +1405,7 @@ final class ConversationViewModel: ObservableObject {
             // against this, so a pair that was only scrolled past never counts
             // as a change (SPEC §4.4, #146).
             runningPair = (homeLang, partnerLang)
+            runningEngine = engine
         } catch {
             diag("app", "start FAILED: \(error.localizedDescription)")
             errorMessage = strings.micFailed
@@ -1405,6 +1432,7 @@ final class ConversationViewModel: ObservableObject {
         // here would make the next dismissal compare against sessions that no
         // longer exist and skip a restart that is needed.
         runningPair = nil
+        runningEngine = nil
         activity = .idle
         liveTranscript = ""
         liveIsHome = nil

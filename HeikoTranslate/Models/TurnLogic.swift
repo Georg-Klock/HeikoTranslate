@@ -93,6 +93,14 @@ struct TurnLogic {
     /// Codes for the PREVIOUS turn's language straggle in for ~2s after it
     /// finalizes; codes for a different language are a fast reply and count.
     static let staleCodeGrace: TimeInterval = 2.5
+
+    /// Whether this engine's language codes can straggle past the end of a
+    /// turn, and so need `staleCodeGrace`. True for every engine but Soniox,
+    /// whose codes come only from words being spoken now: there the grace
+    /// window threw away the fresh codes of a speaker who simply went on to a
+    /// second sentence, and the turn ended with no language (measured
+    /// 2026-09-23, L3 `de_pause` on Soniox).
+    var codesStraggle = true
     /// Votes collect this long before the plurality settles the spoken-
     /// language guess — the opening burst can be unanimously wrong.
     static let settleWindow: TimeInterval = 1.5
@@ -997,7 +1005,7 @@ struct TurnLogic {
                                     at now: Date = Date()) -> Lang? {
         let c = code.lowercased()
         let spoken = Lang.allCases.first { c.hasPrefix($0.rawValue) }
-        if let spoken,
+        if codesStraggle, let spoken,
            let ended = lastTurnEnd, now.timeIntervalSince(ended) < Self.staleCodeGrace,
            spoken == previousSpokenLang {
             return nil
@@ -1144,6 +1152,30 @@ struct TurnLogic {
         let translation: String
         /// Home language spoken → right side; anything else → left.
         let isHome: Bool
+
+        init(original: String, translation: String, isHome: Bool) {
+            self.original = Self.withoutStrayLead(original)
+            self.translation = Self.withoutStrayLead(translation)
+            self.isHome = isHome
+        }
+
+        /// Punctuation that belongs to the PREVIOUS sentence, stripped off
+        /// the front of this one. Transcript deltas split wherever the server
+        /// likes, so the full stop ending one turn can arrive after it
+        /// commits and open the next: measured on OpenAI 2026-09-23 as
+        /// bubbles reading ". Und wo kann ich…" and "? We can call…".
+        /// `FillerWords.strip` trims this only when it removed a filler (its
+        /// fast path returns text untouched), so it lives here, where every
+        /// bubble passes. Spanish opening marks `¿` `¡` belong to THIS
+        /// sentence and are kept.
+        static func withoutStrayLead(_ text: String) -> String {
+            let stray: Set<Character> = [".", ",", ";", ":", "!", "?", "…"]
+            var result = Substring(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            while let first = result.first, stray.contains(first) || first.isWhitespace {
+                result = result.dropFirst()
+            }
+            return String(result)
+        }
     }
 
     /// The SPEC §5.1 commit gate. A bubble always carries a home-language

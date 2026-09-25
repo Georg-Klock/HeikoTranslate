@@ -4,6 +4,7 @@
 #
 #   Tools/l2probe.sh de "Where is the train station?"
 #   Tools/l2probe.sh de "Wo ist der Bahnhof?" Anna     # optional voice
+#   ENGINE=openai Tools/l2probe.sh de "Where is the train station?"   # or ENGINE=grok
 #
 # Exists because Tools/livetest.py — the Python twin — went silent
 # server-side while GeminiLiveSession kept working (GitHub #76): a probe
@@ -23,7 +24,7 @@ afconvert -f WAVE -d LEI16@16000 -c 1 "$TMP/s.aiff" "$TMP/s.wav"
 
 if OUT=$(./Tools/floorprobe.sh "$TMP/s.wav" "$TARGET"); then
   echo "${OUT#FLOORPROBE-OUT: }"
-  echo "==> L2 OK (${TARGET}, via GeminiLiveSession)"
+  echo "==> L2 OK (${TARGET}, engine ${ENGINE:-gemini}, via the app's session factory)"
 else
   echo "$OUT" >&2
   echo "==> L2 FAILED" >&2
