@@ -1,6 +1,6 @@
 # Heiko Translate — Architecture (current)
 
-Technical truth as of 2026-09-16. The product behavior this implements is
+Technical truth as of 2026-09-23. The product behavior this implements is
 `SPEC.md`; how it's tested is `TESTING.md`. The original design writeup with
 the full decision history is `docs/history.md` (historical — this file wins
 where they disagree).
@@ -74,6 +74,144 @@ adds fr↔es and en↔fr, both high-cognate and low-distance, which puts the
 #125 shape back into an otherwise clean mesh. The full rationale and the
 conditions under which this relaxes are `SPEC.md` §3.0; the independent
 witness that would relax it is #135.
+
+## Engines: Gemini, OpenAI, Grok (2026-09-23)
+
+The pair's two sessions can ride one of three vendors, chosen on the
+settings sheet (SPEC §4.4). **Only the session changes.** Turn arbitration,
+audio I/O, reconnects and every R1–R8 guard are the same code on every
+engine, because an engine is chosen at exactly one place:
+`LiveSessionFactory.make` (`Services/RealtimeDialects.swift`), which the
+service calls whenever it builds a session and which the L2/L3 harnesses
+call too. All three emit the same `GeminiLiveSession.Event` stream.
+
+| | Gemini | OpenAI | Grok |
+|---|---|---|---|
+| Model | `gemini-3.5-live-translate-preview` | `gpt-realtime-translate` | `grok-voice-latest` |
+| Kind | translate model, fixed target | translate model, fixed target | general voice agent, told to interpret |
+| Endpoint | Live `BidiGenerateContent` | `/v1/realtime/translations` | `/v1/realtime` |
+| Input audio | 16kHz | **24kHz only** (`PCMResampler16to24`) | 16kHz |
+| Detected language | streamed by the server | **none** — read off the transcript | **none** — read off the transcript |
+| Turns | continuous | continuous | server VAD; output starts after the pause |
+| Session end | `goAway` | `session.closed` | socket close |
+| Session code | `GeminiLiveSession` | `RealtimeSocketSession` + `OpenAITranslateDialect` | `RealtimeSocketSession` + `GrokVoiceDialect` |
+
+OpenAI's translation model has the same shape as Gemini's (one output language
+per session, source auto-detected), so the two-session design carries over
+as-is. Grok is a conversational model, which brings two extra measures:
+its instructions forbid answering what it hears, and the dialect deletes each
+turn's conversation items once the response is done, so that no history builds
+up for the model to start taking part in.
+
+**The language witness.** `TurnLogic` decides direction from per-session
+language codes, and neither OpenAI nor Grok sends any.
+`TranscriptLanguageWitness` supplies them from the input transcript, using
+Apple's `NLLanguageRecognizer` limited to the app's four languages. It abstains
+below 12 characters and forgets after a 1s gap. Both sessions of a pair
+therefore vote from their own transcripts, and the crossed-code machinery sees
+agreement far more often than on Gemini. Whether that makes direction more
+reliable, or only differently wrong, is a device question: this witness reads
+the vendor's own transcript, so it is not the independent witness #135 asks
+for.
+
+**Heartbeat.** Gemini streams usage frames continuously, and the connection
+banner treats their absence as a starved uplink. The other two engines are
+quiet between utterances, so `RealtimeSocketSession` pings every 2s and
+reports each pong as `.heartbeat`. The event feeds the banner's liveness clock
+but not the mute watch (#139), which still judges a session only by what it
+transcribes.
+
+**Silence gate (OpenAI and Grok).** OpenAI bills per minute of audio received,
+per session, silence included, and the app listens from launch (R4). Live mic
+chunks on those engines pass through `AudioGate`:
+- While the room is quiet, the last 1s of audio stays on the phone and nothing
+  is sent.
+- The gate opens when a chunk's RMS passes 250, below the 400 speech floor on
+  purpose. It sends that second of pre-roll first, so a word's soft onset is
+  not lost.
+- It stays open for 4s after the last loud chunk, because the model needs
+  trailing silence to finish the sentence.
+
+Each run logs `audio gate: sent Xs of Ys heard`. L3 on OpenAI passes 89/89
+through the gate (2026-09-23). Replaying the gate over a scripted, dense
+device conversation sends about 76% of the audio, so it saves little while
+people talk and nearly everything while nobody does. Gemini is not gated:
+input is the cheap half of its bill, and its behaviour was measured on a
+continuous stream.
+
+**One-session interpreter (`openAIRealtime`, 2026-09-23).** A single
+`gpt-realtime-2` session told to interpret both ways, instead of one
+fixed-target session per side (`Services/InterpreterHub.swift`):
+- Each of the two sessions the service builds is a proxy onto one shared
+  connection. Only one proxy's copy of each mic chunk is sent.
+- A reply is held until its transcript shows which of the pair it is in, then
+  delivered to that language's side, with the other language cast as the
+  speaker's vote on both sides. The translating side talks and the other
+  stays silent, which is the shape `TurnLogic` already reads.
+
+Measured before building it: the API refuses audio and text output together,
+and with audio only, a language label asked of the model is spoken aloud. So
+the language is read from the reply, not asked for.
+
+This engine is turn-based: it translates only after the speaker pauses.
+- L3 went 86/89. The failures were all `de_pause`: two sentences with a breath
+  between them became two correct bubbles instead of one, because the input
+  transcript arrives per sentence, after it ends, so the turn logic commits
+  the first before the second's words exist.
+- A 58-word sentence committed about 10s after the speaker finished.
+- `semantic_vad` (low eagerness) lost two whole English turns and was
+  reverted.
+
+Cost: $0.019/min in and $0.077/min out, for one session instead of two.
+
+**Soniox (`soniox`, 2026-09-23).** A different shape again, on the same hub:
+one Soniox speech-to-text stream in `two_way` translation mode transcribes
+and translates both directions, and a second connection speaks the
+translations with Soniox's own voice (`Services/SonioxBackend.swift`).
+
+- **Direction is labelled, not inferred.** Every final token is tagged
+  `original` or `translation`, with its `language`. The original tokens'
+  language is the speaker's vote. Translation tokens and their voice audio go
+  straight to their language's side, skipping the hub's classification.
+- **Only final tokens are passed on.** Soniox revises non-final tokens, and
+  the service appends every transcript it receives.
+- **One voice stream per utterance and language.** The stream is opened by
+  the first translated text and closed at Soniox's `<end>` token. A failed
+  voice stream is logged and does not end the session; the text still arrived.
+- **Keepalives.** Both connections get a keepalive every 10s, because the
+  silence gate can leave them without audio for minutes.
+- **Cost.** About $0.12/hour of audio for speech-to-text plus translation, and
+  about $0.70 per hour of generated voice (2026-09): roughly a tenth of OpenAI.
+- **Verified live 2026-09-23.** L2 was correct on the first try. L3 went 87/89,
+  every bubble on the correct side, Spanish and Korean included. The two
+  failures are `de_pause`: like OpenAI Realtime, Soniox closes a sentence as
+  soon as it ends, so two sentences with a breath between them become two
+  correct bubbles.
+- **Two fixes from those runs.** Codes now come from draft tokens as well as
+  finals: finals alone gave a sentence one code. `TurnLogic.staleCodeGrace` is
+  also off for this engine (`codesStraggle`): it dropped the fresh codes of a
+  speaker who went on to a second sentence, and the turn had no language.
+
+**Server `error` frames** are fatal only before the session is ready. After
+that they are logged and the session continues, because these protocols report
+a rejected client event (for example a history delete) that way without closing
+anything.
+
+**Switching.** A choice on the sheet is persisted immediately and reaches the
+sessions once, when the sheet closes, through the same restart path as a pair
+change (#146). The service reads `engine` only when it builds a session, and
+the view model changes it only across a stop/start, so a reconnect can never
+pair two engines.
+
+**Not engine-agnostic yet:**
+- The key probe (#9) asks Google about the Gemini key, so it is skipped on the
+  other engines. A dead OpenAI or xAI key shows as a connection error, never
+  as the update sentence.
+- The sheet's minutes-spoken row counts Gemini usage frames and does not move
+  on the other engines.
+- The microphone-permission text and the privacy policy name only Google.
+  Both have to name the new vendors before a build that can reach them goes to
+  anyone but the developer.
 
 ## Why three concurrent sessions (historical)
 
@@ -350,6 +488,11 @@ stream input concurrently for every open-mic minute (≈2× input cost,
 ≈$0.011/min), and a typical utterance is translated by one of them. Still a
 small fraction of a dollar per conversation — but the app streams
 continuously while the mic is open and has **no offline mode**.
+
+On OpenAI, `gpt-realtime-translate` is priced by audio duration: $0.034 per
+minute per session (2026-09), so about $0.07 per open-mic minute for the
+pair, several times Gemini's cost. Grok's voice pricing has not been checked
+here; take it from xAI's pricing page before running it for long.
 
 ## Failure handling
 

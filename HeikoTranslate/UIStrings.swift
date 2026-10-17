@@ -107,6 +107,9 @@ struct UIStrings {
     /// reader is finding a legal page, not learning a coinage. German
     /// approved by Georg 2026-08-13; Spanish and Korean ride the #6 backlog.
     let privacyPolicy: String
+    /// The engine picker's label. The options themselves are vendor names
+    /// (`TranslationEngine.displayName`) and are not translated.
+    let translationService: String
 
     // Accessibility
     let settingsLabel: String
@@ -154,6 +157,7 @@ struct UIStrings {
         sendLog: "Protokoll an Georg senden",
         sendLogSubtitleFormat: "Falls etwas nicht klappt · %@",
         privacyPolicy: "Datenschutz",
+        translationService: "Übersetzungsdienst",
         settingsLabel: "Einstellungen",
         startListeningLabel: "Zuhören starten",
         stopListeningLabel: "Zuhören beenden",
@@ -186,6 +190,7 @@ struct UIStrings {
         sendLog: "Send the log to Georg",
         sendLogSubtitleFormat: "If something isn't working · %@",
         privacyPolicy: "Privacy policy",
+        translationService: "Translation service",
         settingsLabel: "Settings",
         startListeningLabel: "Start listening",
         stopListeningLabel: "Stop listening",
@@ -220,6 +225,7 @@ struct UIStrings {
         sendLog: "Enviar el registro a Georg",
         sendLogSubtitleFormat: "Si algo no funciona · %@",
         privacyPolicy: "Política de privacidad",
+        translationService: "Servicio de traducción",
         settingsLabel: "Configuración",
         startListeningLabel: "Empezar a escuchar",
         stopListeningLabel: "Dejar de escuchar",
@@ -252,6 +258,7 @@ struct UIStrings {
         sendLog: "Georg에게 로그 보내기",
         sendLogSubtitleFormat: "문제가 있을 때 · %@",
         privacyPolicy: "개인정보 처리방침",
+        translationService: "번역 서비스",
         settingsLabel: "설정",
         startListeningLabel: "듣기 시작",
         stopListeningLabel: "듣기 중지",

@@ -147,6 +147,11 @@ final class GeminiLiveSession: NSObject {
         case interrupted
         /// Token accounting for this session, as sent by the server.
         case usage([String: Any])
+        /// The server answered a ping: proof the round trip works, for
+        /// engines that go quiet between utterances (see
+        /// `RealtimeSocketSession`). Gemini never sends it — its usage frames
+        /// already stream continuously.
+        case heartbeat
         case raw(String)
         case error(String)
         /// The session ended on its own. Not a user error — the orchestrator

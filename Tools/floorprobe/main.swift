@@ -29,7 +29,7 @@ var lastEventAt = Date()
 let q = DispatchQueue(label: "floorprobe")
 let sem = DispatchSemaphore(value: 0)
 
-let session = GeminiLiveSession(targetLanguageCode: code, apiKey: apiKey) { event in
+let session = makeHarnessSession(target: code, apiKey: apiKey) { event in
     q.async {
         lastEventAt = Date()
         switch event {

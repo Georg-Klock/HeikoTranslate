@@ -4,16 +4,40 @@ import Foundation
 // L2.6 expiry probe). No top-level statements here — each tool has its own
 // main.swift.
 
+/// The engine a harness run drives: `ENGINE=openai Tools/l3replay.sh`.
+/// Defaults to Gemini so every existing invocation means what it meant.
+let harnessEngine: TranslationEngine = {
+    let raw = ProcessInfo.processInfo.environment["ENGINE"] ?? TranslationEngine.default.rawValue
+    guard let engine = TranslationEngine(rawValue: raw) else {
+        fputs("error: ENGINE=\(raw) is not one of \(TranslationEngine.allCases.map(\.rawValue))\n", stderr)
+        exit(2)
+    }
+    return engine
+}()
+
+/// The key for `harnessEngine`, from the same Secrets.plist entry the app
+/// reads (`TranslationEngine.secretsKey`).
 func loadAPIKey() -> String {
     let path = "HeikoTranslate/Resources/Secrets.plist"
+    let entry = harnessEngine.secretsKey
     guard let data = FileManager.default.contents(atPath: path),
           let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-          let key = plist["GEMINI_API_KEY"] as? String, !key.isEmpty
+          let key = plist[entry] as? String, !key.isEmpty, key != "REPLACE-ME"
     else {
-        fputs("error: run from the repo root with \(path) present (see README).\n", stderr)
+        fputs("error: run from the repo root with \(path) holding \(entry) (see README).\n", stderr)
         exit(2)
     }
     return key
+}
+
+/// A session on `harnessEngine` — through the app's own factory, so a
+/// harness exercises exactly the wire path the app would pick.
+func makeHarnessSession(target: String, partner: String? = nil, apiKey: String,
+                        onEvent: @escaping (GeminiLiveSession.Event) -> Void) -> LiveTranslationSocket {
+    LiveSessionFactory.make(engine: harnessEngine, target: target,
+                            partner: partner ?? (target == "de" ? "en" : "de"),
+                            languageSet: ["de", "en", "es", "ko"],
+                            apiKey: apiKey, onEvent: onEvent)
 }
 
 /// Minimal RIFF/WAV reader. Requires the app's mic format: 16kHz, 16-bit,

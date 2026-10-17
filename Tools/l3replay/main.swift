@@ -128,7 +128,7 @@ final class ReplayRunner {
     private let home: TurnLogic.Lang
     private let partner: TurnLogic.Lang
 
-    private var sessions: [TurnLogic.Lang: GeminiLiveSession] = [:]
+    private var sessions: [TurnLogic.Lang: LiveTranslationSocket] = [:]
     private var ready: Set<TurnLogic.Lang> = []
 
     // Mirrors GeminiLiveTranslationService's per-utterance state.
@@ -226,11 +226,14 @@ final class ReplayRunner {
         self.home = home
         self.partner = partner
         self.turn = TurnLogic(home: home, partner: partner)
+        self.turn.codesStraggle = harnessEngine != .soniox
     }
 
     func run(pcm: Data) {
         for lang in [home, partner] {
-            let session = GeminiLiveSession(targetLanguageCode: lang.rawValue, apiKey: apiKey) { [weak self] event in
+            let session = makeHarnessSession(target: lang.rawValue,
+                                             partner: (lang == home ? partner : home).rawValue,
+                                             apiKey: apiKey) { [weak self] event in
                 guard let self else { return }
                 self.q.async { self.handle(lang, event) }
             }
@@ -276,15 +279,30 @@ final class ReplayRunner {
                 let now = Date()
                 q.async { self.lastLoudMicAt = now }
             }
-            for s in sessionList { s.sendAudio(chunk) }
+            send(chunk, to: sessionList)
             offset = end
             Thread.sleep(forTimeInterval: 0.064)
         }
         q.async { self.streamEndedAt = Date() }
         let silence = Data(count: chunkBytes)
         while !(q.sync { finished }) {
-            for s in sessionList { s.sendAudio(silence) }
+            send(silence, to: sessionList)
             Thread.sleep(forTimeInterval: 0.064)
+        }
+        if harnessEngine != .gemini { print("    (\(gate.summary))") }
+    }
+
+    /// The app's own silence gate on the engines it gates (`AudioGate`), so
+    /// a replay on OpenAI or Grok proves the model still finishes its
+    /// translation once the audio stops arriving.
+    private var gate = AudioGate()
+    private func send(_ chunk: Data, to sessionList: [LiveTranslationSocket]) {
+        guard harnessEngine != .gemini else {
+            for s in sessionList { s.sendAudio(chunk) }
+            return
+        }
+        for c in gate.admit(chunk, rms: rms(chunk), at: Date()).send {
+            for s in sessionList { s.sendAudio(c) }
         }
     }
 
@@ -321,7 +339,7 @@ final class ReplayRunner {
             // release (#78).
             releaseArmed = true
             releaseDeferredSince = nil
-        case .outputLanguage:
+        case .outputLanguage, .heartbeat:
             break
         case .outputTranscript(let text):
             trace("OUT", lang, text)
@@ -437,6 +455,11 @@ final class ReplayRunner {
                 // Gating this on `currentID` hung every case until the
                 // timeout, which reads as an API outage rather than a
                 // harness bug.
+                if verbose, let id = turnCoordinator.currentID {
+                    print("      (verbose) stream over with turn \(id) still open: translator=\(turn.translator?.rawValue ?? "none") "
+                          + "lastTranslatorAudio=\(lastTranslatorAudioAt.map { String(format: "%.1fs ago", now.timeIntervalSince($0)) } ?? "never") "
+                          + "mayFinalize=\(turnMayFinalize(id, at: now))")
+                }
                 finished = true
                 doneSem.signal()
                 return
@@ -581,7 +604,7 @@ let names = args.isEmpty
     ? defaultOrder
     : args.map { ($0 as NSString).lastPathComponent.replacingOccurrences(of: ".wav", with: "") }
 
-print("L3 — Replay tests (real GeminiLiveSession + real TurnLogic, live API)")
+print("L3 — Replay tests (real \(harnessEngine.rawValue) session + real TurnLogic, live API)")
 for name in names {
     runCase(name: name, apiKey: apiKey)
 }

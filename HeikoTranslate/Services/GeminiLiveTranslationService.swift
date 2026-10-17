@@ -23,17 +23,6 @@ import Network
 /// audio; the hardware voice-processing unit's echo cancellation (see
 /// `startAudioIO`) stops the app from re-hearing its own output. Each
 /// completed turn is reported via `onUtterance`.
-/// The slice of `GeminiLiveSession` the orchestrator drives. Exists so the
-/// replacement-window rules (GitHub #15) can run against a fake at L1 — for
-/// the same reason `TurnLogic` is pure: the real thing needs a network. The
-/// real session conforms as-is.
-protocol LiveTranslationSocket: AnyObject {
-    func connect()
-    func close()
-    func sendAudio(_ pcm16kData: Data)
-}
-
-extension GeminiLiveSession: LiveTranslationSocket {}
 
 /// The hardware touchpoints of the audio path, extracted so the startup
 /// choreography — the order, the once-only player wiring, the rollback on a
@@ -208,7 +197,12 @@ final class GeminiLiveTranslationService: ObservableObject {
         #if DEBUG
         if let factory = sessionFactoryForTesting { return factory(lang, onEvent) }
         #endif
-        return GeminiLiveSession(targetLanguageCode: lang.rawValue, apiKey: apiKey, onEvent: onEvent)
+        return LiveSessionFactory.make(engine: engine,
+                                       target: lang.rawValue,
+                                       partner: activePair.subtracting([lang]).first?.rawValue ?? lang.rawValue,
+                                       languageSet: Lang.allCases.map(\.rawValue),
+                                       apiKey: apiKey,
+                                       onEvent: onEvent)
     }
     /// The two languages this run is supposed to be running, and the ONLY
     /// ones any code here may connect. `Lang.allCases` is the settings menu
@@ -216,6 +210,15 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// startup watchdog spin up all six, which the device log caught as a
     /// turn with output from five sessions on a two-language pair.
     private var activePair: Set<Lang> = []
+    /// Which vendor the sessions ride. Read when a session is BUILT — at
+    /// start and at every reconnect — so it must only change while stopped:
+    /// a change mid-run would give the pair two different engines after the
+    /// first reconnect. `ConversationViewModel` restarts around a change.
+    /// Gemini until the view model says otherwise: the service's own tests
+    /// are Gemini-shaped, and the view model sets this before every start.
+    var engine: TranslationEngine = .gemini
+    /// Per run; reset at start, summarized at stop.
+    private var audioGate = AudioGate()
     private var dead: Set<Lang> = []
     /// Per-session reconnect attempts after an error, so a transient network
     /// blip doesn't kill a language for the rest of the conversation (R7) —
@@ -618,7 +621,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         #if DEBUG
         if sessionFactoryForTesting != nil { return "unused-under-test-seam" }
         #endif
-        return AppConfig.geminiAPIKey
+        return AppConfig.apiKey(for: engine)
     }
 
     func requestPermissions() async -> Bool {
@@ -670,6 +673,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         anySessionReady = false
         setActivity(.connecting)
         turn = TurnLogic(home: home, partner: partner)
+        turn.codesStraggle = engine != .soniox
         resetForNextUtterance()
         micLiveness.reset()
         resetEchoRecovery()
@@ -713,6 +717,7 @@ final class GeminiLiveTranslationService: ObservableObject {
         // One session per side of the selected pair, both fed the same mic
         // audio. The pair is explicit (settings), so exactly two sessions.
         activePair = [home, partner]
+        audioGate = AudioGate()
         let apiKey = liveAPIKey
         for lang in [home, partner] {
             let session = makeSession(lang, apiKey: apiKey)
@@ -747,6 +752,24 @@ final class GeminiLiveTranslationService: ObservableObject {
                 queueForReplacement(lang, chunk)
             }
         }
+    }
+
+    /// A live mic chunk, through the silence gate on engines that bill for
+    /// every second they receive (`AudioGate`). Gemini keeps the continuous
+    /// stream it was measured on. Audio buffered while connecting is not
+    /// gated: it goes out through `flushPendingAudio` exactly as before.
+    private func forwardLive(_ chunk: Data, rms: Double) {
+        guard engine != .gemini else { forward(chunk); return }
+        let (send, transition) = audioGate.admit(chunk, rms: rms, at: clock.now)
+        switch transition {
+        case .opened(let preRoll)?:
+            diag("audio", "gate OPEN — speech, sending with \(preRoll) pre-roll chunks")
+        case .closed?:
+            diag("audio", "gate CLOSED — \(Int(AudioGate.hangover))s quiet, holding audio on the phone")
+        case nil:
+            break
+        }
+        for c in send { forward(c) }
     }
 
     private func queueForReplacement(_ lang: Lang, _ chunk: Data) {
@@ -791,6 +814,7 @@ final class GeminiLiveTranslationService: ObservableObject {
     /// Mute button — tears everything down.
     func stopSession() {
         diag("app", "listening stopped; mic buffers this run=\(micBufferCount) peakRMS=\(Int(peakMicRMS))")
+        if engine != .gemini, audioGate.offeredBytes > 0 { diag("audio", audioGate.summary) }
         DiagnosticLog.shared.flush()
         isSendingAudio = false
         anySessionReady = false
@@ -964,7 +988,7 @@ final class GeminiLiveTranslationService: ObservableObject {
                     }
                     return
                 }
-                self.forward(pcmData)
+                self.forwardLive(pcmData, rms: rms)
             }
         }
         tapInstalled = true
@@ -1331,6 +1355,12 @@ final class GeminiLiveTranslationService: ObservableObject {
             // not send the signal and the fix must come from somewhere
             // else. GitHub #112.
             diag("turn", "[\(lang.rawValue)] server INTERRUPTED its response — \(pendingOutput[lang]?.count ?? 0) held chunks now superseded")
+        case .heartbeat:
+            // A pong: the engine is reachable even though nobody is talking.
+            // Liveness only — not content, so the mute watch (#139) still
+            // judges a session by what it transcribes.
+            lastServerEventAt = clock.now
+            noteServerRecovered()
         case .usage:
             // Recorded upstream in makeSession's callback (the one recording
             // point — GitHub #4); here a usage frame only proves liveness.

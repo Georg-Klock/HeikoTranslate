@@ -193,6 +193,9 @@ final class GermanUITests: XCTestCase {
         // The privacy-policy row (#91). Approved by Georg 2026-08-13.
         // "Datenschutz" is the word German sites put on exactly this link.
         XCTAssertEqual(g.privacyPolicy, "Datenschutz")
+        // The engine picker's label (2026-09-23). The options are vendor
+        // names and stay untranslated in every set.
+        XCTAssertEqual(g.translationService, "Übersetzungsdienst")
         XCTAssertEqual(g.settingsLabel, "Einstellungen")
     }
 
@@ -223,6 +226,7 @@ final class GermanUITests: XCTestCase {
                 ("minutesSpokenFormat", s.minutesSpokenFormat), ("sendLog", s.sendLog),
                 ("sendLogSubtitleFormat", s.sendLogSubtitleFormat),
                 ("privacyPolicy", s.privacyPolicy), ("settingsLabel", s.settingsLabel),
+                ("translationService", s.translationService),
                 ("startListeningLabel", s.startListeningLabel),
                 ("stopListeningLabel", s.stopListeningLabel),
                 ("echoCancellationOff", s.echoCancellationOff),

@@ -484,6 +484,7 @@ struct LanguageSettingsSheet: View {
 
                 VStack(spacing: 10) {
                     TextSizeSlider(step: $textSizeStep, label: strings.textSize)
+                    engineRow
                     logRow
                     privacyRow
                 }
@@ -554,6 +555,35 @@ struct LanguageSettingsSheet: View {
         .preferredColorScheme(.dark)
     }
 
+
+    /// Which vendor translates. A menu rather than a wheel: three brand
+    /// names, one tap to open, one to choose. Like the language wheels, a
+    /// choice only records itself — the sessions switch once, when the sheet
+    /// closes, so a conversation can change engine mid-flight without a
+    /// restart per tap (`languageSelectionDidFinish`).
+    private var engineRow: some View {
+        HStack {
+            Text(strings.translationService)
+                .fadeThrough(viewModel.homeLang)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Spacer()
+            Picker(strings.translationService, selection: $viewModel.engine) {
+                ForEach(TranslationEngine.allCases) { engine in
+                    Text(engine.displayName).tag(engine)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(.secondary)
+        }
+        .padding(.leading, 20)
+        .padding(.trailing, 8)
+        .padding(.vertical, 4)
+        .background(Color.white.opacity(0.05),
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
 
     /// The one thing the user may be asked to do remotely: send the log.
     /// It has to be one tap from the language pill, in German, and named after
