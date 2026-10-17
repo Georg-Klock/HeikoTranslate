@@ -43,8 +43,9 @@ privacy page along with it, which is harmless.
 
 **Revised 2026-10-16 for the engine picker; German awaiting approval.** Speech
 can now go to Soniox (the default), Google Gemini or OpenAI, whichever is chosen
-on the settings sheet. The live Webflow page still describes Google only and must
-be updated to match this file before the next build reaches a tester. xAI (Grok)
+on the settings sheet. The Webflow page carries this wording word for word as of
+2026-10-16, but staged, not published: a site-wide publish would also release
+other pages' pending edits, so publishing is a separate decision. xAI (Grok)
 is on the picker but no xAI key ships, so nothing can reach xAI; shipping a key
 means naming xAI here first.
 
@@ -80,15 +81,15 @@ nicht gedrückt, nimmt die App nichts auf.
 **Wo die Daten hingehen**
 
 Welcher Übersetzungsdienst verwendet wird, lässt sich in den Einstellungen der
-App unter „Übersetzungsdienst" wählen. Die Sprachaufnahme geht immer nur an den
-gewählten Dienst. Für die Verarbeitung dort gilt jeweils dessen eigene
-Datenschutzerklärung:
+App unter „Übersetzungsdienst“ wählen; voreingestellt ist Soniox. Die
+Sprachaufnahme geht immer nur an den gewählten Dienst. Für die Verarbeitung dort
+gilt jeweils dessen eigene Datenschutzerklärung. Die Google Gemini API läuft auf
+deren kostenloser Stufe; Google kann die dort übermittelten Daten verwenden, um
+seine Produkte zu verbessern.
 
-- **Soniox** (voreingestellt): https://soniox.com/policies/privacy-policy
-- **Google Gemini API**, auf deren kostenloser Stufe. Google kann die dort
-  übermittelten Daten verwenden, um seine Produkte zu verbessern:
-  https://policies.google.com/privacy
-- **OpenAI API**: https://openai.com/policies/privacy-policy/
+Soniox (voreingestellt): https://soniox.com/policies/privacy-policy
+Google Gemini API: https://policies.google.com/privacy
+OpenAI API: https://openai.com/policies/privacy-policy/
 
 Wer damit nicht einverstanden ist, sollte die App nicht benutzen. Ohne diese
 Übertragung kann die App nicht übersetzen; einen Offline-Modus gibt es nicht.
@@ -140,14 +141,15 @@ not pressed, the app records nothing.
 
 **Where the data goes**
 
-The translation service is chosen in the app's settings under
-"Übersetzungsdienst". Speech goes only to the service chosen. Processing there is
-governed by that service's own privacy policy:
+The translation service is chosen in the app’s settings under
+“Übersetzungsdienst”; Soniox is the default. Speech goes only to the service
+chosen. Processing there is governed by that service’s own privacy policy. The
+Google Gemini API runs on its free tier; Google may use data submitted there to
+improve its products.
 
-- **Soniox** (the default): https://soniox.com/policies/privacy-policy
-- **Google Gemini API**, on its free tier. Google may use data submitted there
-  to improve its products: https://policies.google.com/privacy
-- **OpenAI API**: https://openai.com/policies/privacy-policy/
+Soniox (the default): https://soniox.com/policies/privacy-policy
+Google Gemini API: https://policies.google.com/privacy
+OpenAI API: https://openai.com/policies/privacy-policy/
 
 If that is not acceptable to you, please do not use the app. Without this
 transmission the app cannot translate; there is no offline mode.
