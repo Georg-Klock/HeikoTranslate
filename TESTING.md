@@ -1126,6 +1126,33 @@ constrain (see L1.129). With the witness filtering, the next full run went
 **89/89**. One run is a data point, not a flake rate. **Grok has not been run
 against the live API** yet: no key.
 
+**Engine comparison, 2026-10-16** (`ENGINE=… Tools/l3replay.sh`, the four engines
+with keys, run in parallel on the same 11 recordings). The time is when each
+bubble committed, from the start of the clip; L/R is the side.
+
+| Case | Gemini | OpenAI Translate | OpenAI Realtime | Soniox |
+|---|---|---|---|---|
+| en_short | L 7.1 | L 7.1 | L 5.9 | L 4.7 |
+| de_short | R 6.3 | R 5.2 | R 5.8 | R 4.6 |
+| es_short | L 6.7 | L 7.0 | L 6.0 | L 6.1 |
+| en_entities | L 7.6 | L 7.0 | L 5.7 | L 6.6 |
+| en_long | L 24.6 | L 25.1 | L 27.0 | L 28.1 |
+| de_after_en | L 6.4, R 13.6 | L 6.0, R 12.9 | L 4.5, R 13.7 | L 4.4, R 12.9 |
+| de_after_es | L 6.7, R 19.9 | L 6.0, R 20.1 | L 5.9, R 20.5 | L 5.8, R 21.3 |
+| de_pause | R 11.0 | R 12.1 | R 7.9, R 11.9 | R 5.7 (+ a second bubble after the replay ends) |
+| de_price_short | L 6.4 | L 6.7 | L 5.2 | L 4.6 |
+| **L3** | **89/89** | **89/89** | 86/89 | 87/89 |
+
+- **Sides:** every bubble on every engine landed on the correct side.
+- **Speed:** Soniox committed short turns fastest, 1-2s ahead of Gemini, and
+  long ones slowest: its voice is generated after the text, so a long
+  translation finishes later.
+- **Failures:** all of them are `de_pause`. The two engines that close a turn
+  at the first sentence's end (OpenAI Realtime, Soniox) give two correct
+  bubbles where the case expects one.
+- **Cost per hour:** Soniox about $0.35 against $1.20 for Gemini and about $4
+  for OpenAI Translate (ARCHITECTURE.md, "Engines").
+
 **`Tools/l2probe.sh <target> "<sentence>"` is the working one-shot probe**:
 it rides the Swift `GeminiLiveSession` — the path the app ships. It exists
 because `livetest.py` went silent server-side while the Swift path worked
