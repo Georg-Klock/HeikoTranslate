@@ -41,6 +41,13 @@ Two consequences that will bite if forgotten:
 Going live with the case study is one flag flip plus a publish, and it takes the
 privacy page along with it, which is harmless.
 
+**Revised 2026-10-16 for the engine picker; German awaiting approval.** Speech
+can now go to Soniox (the default), Google Gemini or OpenAI, whichever is chosen
+on the settings sheet. The live Webflow page still describes Google only and must
+be updated to match this file before the next build reaches a tester. xAI (Grok)
+is on the picker but no xAI key ships, so nothing can reach xAI; shipping a key
+means naming xAI here first.
+
 Everything below is true of the app as built. If any of it stops being true —
 particularly the "stores nothing off the device" line — this file and the page
 must change on the same day. Since 2026-08-12 that sentence is true BY
@@ -55,7 +62,7 @@ both human-initiated.
 
 **Datenschutzerklärung — Heiko Translate**
 
-Stand: 31. Juli 2026
+Stand: 16. Oktober 2026
 
 Heiko Translate ist eine private, nicht-kommerzielle App. Sie wurde von Georg
 Klock für den persönlichen Gebrauch gebaut und über TestFlight verteilt.
@@ -63,7 +70,7 @@ Klock für den persönlichen Gebrauch gebaut und über TestFlight verteilt.
 **Welche Daten verarbeitet werden**
 
 Während einer Übersetzung nimmt die App über das Mikrofon Sprache auf und
-sendet diese zur Übersetzung an die Google Gemini API. Zurück kommen der
+sendet diese zur Übersetzung an einen Übersetzungsdienst. Zurück kommen der
 erkannte Text und die Übersetzung. Mehr wird nicht übertragen: kein Name, keine
 E-Mail-Adresse, kein Standort, keine Kontakte, keine Geräte- oder Werbe-ID.
 
@@ -72,10 +79,16 @@ nicht gedrückt, nimmt die App nichts auf.
 
 **Wo die Daten hingehen**
 
-Die Übersetzung läuft über die Google Gemini API auf deren kostenloser Stufe.
-Google kann die dort übermittelten Daten verwenden, um seine Produkte zu
-verbessern. Für diese Verarbeitung gilt Googles eigene Datenschutzerklärung:
-https://policies.google.com/privacy
+Welcher Übersetzungsdienst verwendet wird, lässt sich in den Einstellungen der
+App unter „Übersetzungsdienst" wählen. Die Sprachaufnahme geht immer nur an den
+gewählten Dienst. Für die Verarbeitung dort gilt jeweils dessen eigene
+Datenschutzerklärung:
+
+- **Soniox** (voreingestellt): https://soniox.com/policies/privacy-policy
+- **Google Gemini API**, auf deren kostenloser Stufe. Google kann die dort
+  übermittelten Daten verwenden, um seine Produkte zu verbessern:
+  https://policies.google.com/privacy
+- **OpenAI API**: https://openai.com/policies/privacy-policy/
 
 Wer damit nicht einverstanden ist, sollte die App nicht benutzen. Ohne diese
 Übertragung kann die App nicht übersetzen; einen Offline-Modus gibt es nicht.
@@ -110,7 +123,7 @@ Daten. Fragen, Auskunfts- oder Löschwünsche: hi@georgklock.com
 
 **Privacy Policy — Heiko Translate**
 
-Last updated: 31 July 2026
+Last updated: 16 October 2026
 
 Heiko Translate is a private, non-commercial app. It was built by Georg Klock
 for personal use and is distributed through TestFlight.
@@ -118,7 +131,7 @@ for personal use and is distributed through TestFlight.
 **What data is processed**
 
 While a translation is running, the app captures speech through the microphone
-and sends it to the Google Gemini API to be translated. The recognised text and
+and sends it to a translation service to be translated. The recognised text and
 its translation come back. Nothing else is transmitted: no name, no email
 address, no location, no contacts, no device or advertising identifier.
 
@@ -127,9 +140,14 @@ not pressed, the app records nothing.
 
 **Where the data goes**
 
-Translation runs on the Google Gemini API on its free tier. Google may use data
-submitted there to improve its products. That processing is governed by
-Google's own privacy policy: https://policies.google.com/privacy
+The translation service is chosen in the app's settings under
+"Übersetzungsdienst". Speech goes only to the service chosen. Processing there is
+governed by that service's own privacy policy:
+
+- **Soniox** (the default): https://soniox.com/policies/privacy-policy
+- **Google Gemini API**, on its free tier. Google may use data submitted there
+  to improve its products: https://policies.google.com/privacy
+- **OpenAI API**: https://openai.com/policies/privacy-policy/
 
 If that is not acceptable to you, please do not use the app. Without this
 transmission the app cannot translate; there is no offline mode.

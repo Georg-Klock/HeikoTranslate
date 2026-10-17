@@ -8,8 +8,9 @@
     <key>NSPrivacyTrackingDomains</key>
     <array/>
 
-    <!-- Speech leaves the device: it is sent to the Gemini Live API to be
-         translated, and the translation comes back. Nothing is stored off
+    <!-- Speech leaves the device: it is sent to the translation service
+         chosen on the settings sheet (Soniox by default, or Google Gemini or
+         OpenAI) to be translated, and the translation comes back. Nothing is stored off
          the device by this app, nothing is linked to an identity, and none
          of it is used for tracking. -->
     <key>NSPrivacyCollectedDataTypes</key>
